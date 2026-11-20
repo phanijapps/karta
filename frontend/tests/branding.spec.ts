@@ -1,13 +1,24 @@
 import { test, expect } from '@playwright/test';
 
+// The chat surface loads /api/chat/messages on mount; every test stubs it.
+async function mockChat(page: import('@playwright/test').Page, messages: unknown[] = []) {
+  await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
+    if (route.request().method() === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ messages, next_cursor: 0, truncated: false }) });
+    }
+    return route.fallback();
+  });
+}
+
+
 test('Karta identity is consistent without changing compatibility paths', async ({ page }) => {
+  await mockChat(page);
   await page.goto('/');
   await expect(page).toHaveTitle('Karta — Local workspace');
   await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', 'Karta — your local agent workspace. Shell preview.');
   const wordmark = page.locator('.wordmark');
   await expect(wordmark).toHaveText('Karta');
   await expect(page.getByRole('textbox', { name: 'Message Karta' })).toBeVisible();
-  await expect(page.getByRole('article', { name: 'Mock assistant message' }).getByText('Karta', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Toggle left sidebar' }).click();
   await expect(wordmark.locator('.brand-text')).toBeHidden();
   await expect(wordmark).toBeVisible();

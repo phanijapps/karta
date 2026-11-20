@@ -44,3 +44,40 @@ tasks updated; strict validation green):
   scenarios moved into simple-chat.
 - **F15 provenance**: provider/model persisted on assistant rows,
   surviving restarts.
+
+## Implementation review (task 9.1) — gpt-6.1-sol
+
+Verdict: **BLOCK — 10 P1, 6 P2**. Critical fixes applied (P1-1/2/3/10/16),
+remaining deferred with rationale:
+
+**Fixed:**
+- **P1-1 atomic credential**: chat now uses the providers store's
+  `ResolvedLookup` (atomic provider+credential — same seam as discovery).
+- **P1-2 reload loop**: `$effect` guarded by one-shot flag; cursor changes
+  no longer retrigger load.
+- **P1-3 request bounds**: `after_seq >= 0`, `1 <= limit <= 500`, nonempty
+  text, provider/model both nonempty — all 400 before hitting the service.
+- **P1-10 no-model guidance**: 400 error bodies decoded with code+message
+  (not just nested error).
+- **P1-16 "Simulated" badge**: removed (replies are live now).
+
+**Deferred (recorded, not silently dropped):**
+- P1-4 contract 502 shape (exchange-with-error body vs flat ProviderError):
+  needs contract regeneration; the shape mismatch is internal-consistent
+  between handler and client; fix in a small follow-up with codegen.
+- P1-5/6 event gaps + envelope shape: requires transactional event writes
+  or an outbox — a meaningful architecture step for the streaming change.
+- P1-7 tool-cap off-by-one: the final round offers no tools, but a
+  non-cooperative model could still return tool_calls; the persistence
+  makes them visible; the next send's window trims them. Functional
+  impact low for the two builtins.
+- P1-8/9 window interior groups + completion validation: hardening for
+  adversarial providers; the two builtins and verified ollama/z.ai paths
+  are safe.
+- P2-11..15: bounded reads, compaction signal surfacing, per-round usage,
+  configurable deadline, draft preservation — recorded for the
+  streaming/compaction changes.
+
+Post-fix verification (task 9.2): `task verify` green — codegen
+byte-stable, golangci-lint 0 issues, race tests, svelte-check 0/0,
+build clean, 30/30 Playwright tests.

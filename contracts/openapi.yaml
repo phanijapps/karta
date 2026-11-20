@@ -204,6 +204,64 @@ paths:
         '502':
           $ref: '#/components/responses/ProviderFailure'
 
+  /api/chat/messages:
+    get:
+      operationId: syncChatMessages
+      summary: Sync the chat transcript (cursor-paginated)
+      description: |
+        Returns transcript rows ordered by `seq`. `next_cursor` is the last
+        DELIVERED sequence (a page cursor, never the database tail); page
+        until `truncated` is false. One eternal conversation (`default`).
+      parameters:
+        - name: after_seq
+          in: query
+          description: Return only rows with seq greater than this cursor.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          description: Maximum rows per page (1-500).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: A page of the transcript.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSync'
+    post:
+      operationId: sendChatMessage
+      summary: Send a message and get the assistant's reply
+      description: |
+        Appends the user message, runs one bounded completion (with the
+        built-in tools) against the selected model, and returns every row
+        the exchange appended in order plus the end cursor. Typed failures
+        return the persisted user row and its cursor. Synchronous;
+        streaming is a future change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatSend'
+      responses:
+        '200':
+          description: The appended rows of the exchange, in order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatExchange'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '502':
+          $ref: '#/components/responses/ProviderFailure'
+
   /api/goals:
     post:
       operationId: createGoal
@@ -592,6 +650,104 @@ components:
             format: date-time
           propertyNames:
             pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
+
+    ChatMessage:
+      type: object
+      additionalProperties: false
+      required: [id, seq, role, content, created_at]
+      properties:
+        id:
+          type: string
+          pattern: '^msg-[A-Za-z0-9-]{1,64}$'
+        seq:
+          type: integer
+          minimum: 1
+        role:
+          type: string
+          enum: [user, assistant, tool, system, summary]
+        content:
+          type: string
+          maxLength: 262144
+        created_at:
+          type: string
+          format: date-time
+        tool_calls:
+          type: string
+          description: JSON array of tool calls (assistant intent rows).
+          maxLength: 65536
+        tool_call_id:
+          type: string
+          maxLength: 128
+        tool_name:
+          type: string
+          maxLength: 256
+        provider:
+          type: string
+          maxLength: 128
+          description: "Provenance — which provider answered (assistant rows)."
+        model:
+          type: string
+          maxLength: 256
+          description: "Provenance — which model answered (assistant rows)."
+        prompt_tokens:
+          type: integer
+          minimum: 0
+          description: REQUEST usage (bills the whole request context);
+            not content size.
+        completion_tokens:
+          type: integer
+          minimum: 0
+
+    ChatSend:
+      type: object
+      additionalProperties: false
+      required: [text, model]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 65536
+        model:
+          type: string
+          minLength: 3
+          maxLength: 384
+          pattern: '^[a-z0-9][a-z0-9-]{0,63}/[\s\S]+$'
+          description: Qualified selection from the picker
+            (`provider/model-id`).
+
+    ChatExchange:
+      type: object
+      additionalProperties: false
+      required: [messages, end_cursor]
+      properties:
+        messages:
+          type: array
+          maxItems: 64
+          description: Every row this exchange appended, in order.
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        end_cursor:
+          type: integer
+          minimum: 0
+        error:
+          $ref: '#/components/schemas/ProviderError'
+
+    ChatSync:
+      type: object
+      additionalProperties: false
+      required: [messages, next_cursor, truncated]
+      properties:
+        messages:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        next_cursor:
+          type: integer
+          minimum: 0
+          description: Last DELIVERED seq — pass back as after_seq.
+        truncated:
+          type: boolean
 
     ProviderFailureReason:
       type: string

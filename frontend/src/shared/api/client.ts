@@ -164,3 +164,50 @@ export async function refreshProviderModels(name: string): Promise<ModelsResult>
   const body = (await res.json()) as components['schemas']['ModelList'];
   return { ok: true, models: body.models };
 }
+
+/** One transcript row from the daemon. */
+export type ChatMessage = components['schemas']['ChatMessage'];
+
+/** Page the transcript: next_cursor is the last DELIVERED seq. */
+export async function syncChatMessages(afterSeq = 0, limit = 100): Promise<{ messages: ChatMessage[]; nextCursor: number; truncated: boolean }> {
+  const body = (await getJSON(`/api/chat/messages?after_seq=${afterSeq}&limit=${limit}`)) as components['schemas']['ChatSync'];
+  return { messages: body.messages ?? [], nextCursor: body.next_cursor ?? 0, truncated: body.truncated };
+}
+
+/** Typed send outcome: every row the exchange appended (failures carry
+ * the persisted user row + the typed provider error). */
+export type ChatExchange = {
+  ok: boolean;
+  messages: ChatMessage[];
+  endCursor: number;
+  errorReason?: string;
+  errorMessage?: string;
+};
+
+export async function sendChatMessage(text: string, model: string): Promise<ChatExchange> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/api/chat/messages`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, model }),
+    });
+  } catch (err) {
+    return { ok: false, messages: [], endCursor: 0, errorReason: 'daemon', errorMessage: `daemon unreachable (${String(err)})` };
+  }
+  const body = (await res.json().catch(() => null)) as any;
+  if (!body) {
+    return { ok: false, messages: [], endCursor: 0, errorReason: 'daemon', errorMessage: `daemon answered ${res.status}` };
+  }
+  if (res.status === 400) {
+    return { ok: false, messages: body.messages ?? [], endCursor: body.end_cursor ?? 0,
+      errorReason: body.code ?? 'invalid_request', errorMessage: body.message ?? 'invalid request' };
+  }
+  return {
+    ok: res.ok,
+    messages: body.messages ?? [],
+    endCursor: body.end_cursor ?? 0,
+    errorReason: body.error?.reason,
+    errorMessage: body.error?.message,
+  };
+}

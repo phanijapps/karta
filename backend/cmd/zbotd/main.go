@@ -16,9 +16,13 @@ import (
 	"syscall"
 	"time"
 
+	"zbot/backend/internal/chat"
 	"zbot/backend/internal/config"
+	"zbot/backend/internal/eventbus"
 	"zbot/backend/internal/providers"
 	"zbot/backend/internal/server"
+	zbotstore "zbot/backend/internal/store"
+	"zbot/backend/internal/tools"
 )
 
 // version is stamped via -ldflags "-X main.version=..." in releases.
@@ -47,20 +51,30 @@ func run(homeFlag string) error {
 		return err // Load errors already name config.yaml and the detail.
 	}
 
-	// The store merges config.yaml entries with the managed
+	// The provider store merges config.yaml entries with the managed
 	// config/providers/ directory and watches it for external changes.
-	store, err := providers.NewStore(paths, cfg, providers.NewKeyringStore(home))
+	provStore, err := providers.NewStore(paths, cfg, providers.NewKeyringStore(home))
 	if err != nil {
 		return fmt.Errorf("providers: %w", err)
 	}
 
+	// The eternal chat: local SQLite store + provider plane + builtins.
+	db, err := zbotstore.Open(paths.DataDir + "/zbot.db")
+	if err != nil {
+		return fmt.Errorf("store: %w", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	bus := eventbus.New()
+	chatSvc := chat.NewStoreBacked(db, provStore, providers.NewChatClient(), tools.BuiltinProvider{}, bus, nil)
+
 	srv := &http.Server{
 		Addr:              cfg.Server.Address,
-		Handler:           server.New(store, providers.NewClient(), providers.NewCatalog(), version).Routes(),
+		Handler:           server.New(provStore, providers.NewClient(), providers.NewCatalog(), chatSvc, version).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	defer store.Close() // stops the providers watcher on any exit path
+	defer provStore.Close() // stops the providers watcher on any exit path
 
 	// Graceful shutdown on SIGINT/SIGTERM: in-flight requests drain,
 	// then the daemon exits. Provider config changes apply on restart.

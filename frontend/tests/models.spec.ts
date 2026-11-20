@@ -1,5 +1,16 @@
 import { test, expect, type Page } from '@playwright/test';
 
+// The chat surface loads /api/chat/messages on mount; every test stubs it.
+async function mockChat(page: import('@playwright/test').Page, messages: unknown[] = []) {
+  await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
+    if (route.request().method() === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ messages, next_cursor: 0, truncated: false }) });
+    }
+    return route.fallback();
+  });
+}
+
+
 // The header model picker is catalog-backed: route-mocked, no daemon.
 
 async function mockCatalog(page: Page, models: unknown[], refreshed: Record<string, string> = {}) {
@@ -14,18 +25,18 @@ test('picker groups catalog models by provider and selects in memory', async ({ 
     { provider: 'ollama', id: 'qwen:7b' },
     { provider: 'zai', id: 'glm-5.3' },
   ]);
+  await mockChat(page);
   await page.goto('/');
   const header = page.getByRole('combobox', { name: 'Header model' });
   await expect(header.locator('optgroup[label="ollama"] option')).toHaveCount(2);
   await expect(header.locator('optgroup[label="zai"] option')).toHaveCount(1);
   await header.selectOption('zai/glm-5.3');
   await expect(header).toHaveValue('zai/glm-5.3');
-  // Honest labeling: replies stay simulated until the engine lands.
-  await expect(page.getByText('Simulated', { exact: true }).first()).toBeVisible();
 });
 
 test('empty catalog shows an explicit state, never fixture models', async ({ page }) => {
   await mockCatalog(page, []);
+  await mockChat(page);
   await page.goto('/');
   await expect(page.getByRole('combobox', { name: 'Header model' })).toBeDisabled();
   await expect(page.getByRole('combobox', { name: 'Header model' })).toContainText('No models yet');
@@ -33,6 +44,7 @@ test('empty catalog shows an explicit state, never fixture models', async ({ pag
 
 test('daemon unreachable picker state', async ({ page }) => {
   await page.route((url) => url.pathname.startsWith('/api/'), (route) => route.abort());
+  await mockChat(page);
   await page.goto('/');
   await expect(page.getByRole('combobox', { name: 'Header model' })).toBeDisabled();
   await expect(page.getByRole('combobox', { name: 'Header model' })).toContainText('Daemon unreachable');
@@ -51,6 +63,7 @@ test('settings refresh action updates the catalog the picker reads', async ({ pa
   await page.route('**/api/providers', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ providers: [{ name: 'ollama', type: 'openai-compatible', base_url: 'http://localhost:11434/v1', credential: 'none', credential_status: 'unset', origin: 'config', credential_configured: false }] }) }),
   );
+  await mockChat(page);
   await page.goto('/');
   await expect(page.getByRole('combobox', { name: 'Header model' })).toContainText('old-model');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -66,6 +79,7 @@ test('selection preserves provider identity across duplicate ids', async ({ page
     { provider: 'ollama', id: 'shared-model' },
     { provider: 'zai', id: 'shared-model' },
   ]);
+  await mockChat(page);
   await page.goto('/');
   const header = page.getByRole('combobox', { name: 'Header model' });
   await header.selectOption('ollama/shared-model');
@@ -89,6 +103,7 @@ test('stale selection clears when a refresh removes the model', async ({ page })
     models = [{ provider: 'ollama', id: 'fresh-model' }];
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: [{ id: 'fresh-model' }] }) });
   });
+  await mockChat(page);
   await page.goto('/');
   const header = page.getByRole('combobox', { name: 'Header model' });
   await header.selectOption('ollama/old-model');
@@ -111,6 +126,7 @@ test('refresh typed failure renders guidance and keeps the catalog', async ({ pa
   await page.route('**/api/providers/ollama/models/refresh', (route) =>
     route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ code: 'provider_failure', message: 'dial refused', reason: 'unreachable' }) }),
   );
+  await mockChat(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Settings', exact: true });

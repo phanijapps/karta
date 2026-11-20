@@ -1,82 +1,158 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { ArrowUp, Plus, Sparkles } from '@lucide/svelte';
-  import { type Sessions } from '../../entities/session/session.svelte';
+  import { ArrowUp, Plus, Sparkles, Wrench } from '@lucide/svelte';
   import ModelPicker from '../../shared/ui/ModelPicker.svelte';
+  import { sendChatMessage } from '../../shared/api/client';
+  import type { Sessions } from '../../entities/session/session.svelte';
+
   let { sessions }: { sessions: Sessions } = $props();
+
   let draft = $state('');
-  let announcement = $state('');
-  let textarea: HTMLTextAreaElement;
-  let bottom: HTMLDivElement;
-  let previousId: number | undefined;
-  $effect(() => { if (sessions.selected !== previousId) { draft = ''; previousId = sessions.selected; } });
-  async function send() {
-    if (!draft.trim()) return;
-    sessions.send(draft);
-    draft = '';
-    announcement = `Simulated assistant reply added. ${sessions.active.messages.length} messages in this conversation.`;
+  let sending = $state(false);
+  let transcriptEl: HTMLElement;
+
+  // One-shot load (cursor changes inside load() must not retrigger).
+  let loaded = false;
+  $effect(() => {
+    if (loaded) return;
+    loaded = true;
+    void sessions.load();
+  });
+
+  async function scrollToLatest() {
     await tick();
-    bottom.scrollIntoView({ block: 'nearest' });
-    textarea.focus();
+    transcriptEl?.scrollTo({ top: transcriptEl.scrollHeight });
+  }
+
+  $effect(() => {
+    sessions.messages;
+    void scrollToLatest();
+  });
+
+  const canSend = $derived(draft.trim() !== '' && !sending);
+
+  async function send() {
+    const text = draft.trim();
+    if (!text || sending) return;
+    sending = true;
+    sessions.sendError = '';
+    try {
+      const result = await sendChatMessage(text, sessions.model);
+      // Reconcile from the last contiguously delivered cursor on EVERY
+      // outcome — the daemon returns the persisted rows either way.
+      await sessions.reconcile();
+      if (!result.ok) {
+        sessions.sendError = result.errorMessage ?? 'send failed';
+      }
+      draft = '';
+    } catch {
+      sessions.sendError = 'daemon';
+    } finally {
+      sending = false;
+      await scrollToLatest();
+      composerFocus();
+    }
+  }
+
+  function composerFocus() {
+    document.getElementById('composer-input')?.focus();
+  }
+
+  function onkeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      void send();
+    }
   }
 </script>
 
-<div class="chat">
-  <section class="transcript" aria-label="Conversation messages">
-    <div class="message-column">
-      {#if !sessions.active.messages.length}
-        <div class="greeting">
-          <Sparkles size={30} strokeWidth={1.4} />
-          <h1>What’s on your mind?</h1>
-          <p class="muted">A little space for your next big idea.</p>
-          <button class="starter" onclick={() => { draft = 'Help me plan my next project.'; textarea.focus(); }}>Help me plan my next project <span aria-hidden="true">↗</span></button>
-        </div>
-      {:else}
-        <h1 class="sr-only">{sessions.active.title}</h1>
-        {#each sessions.active.messages as message (message.id)}
-          <article class:user={message.role === 'user'} aria-label={message.role === 'user' ? 'Your message' : 'Mock assistant message'}>
-            {#if message.role === 'assistant'}<div class="assistant-label"><span class="avatar" aria-hidden="true">K</span><strong>Karta</strong><span class="badge">Mock</span></div>{/if}
-            <p>{message.text}</p>
-          </article>
-        {/each}
-      {/if}
-      <div bind:this={bottom!}></div>
+<div class="chat-region">
+  {#if sessions.sendError === 'daemon'}
+    <div class="chat-banner" role="alert">
+      <strong>Daemon unreachable.</strong> Start it with <code>go run ./cmd/zbotd</code> from <code>backend/</code>; your transcript is safe locally.
     </div>
-  </section>
-  <div class="composer-region">
-    <form class="composer" onsubmit={(event) => { event.preventDefault(); void send(); }}>
-      <label class="sr-only" for="message">Message Karta</label>
-      <textarea id="message" bind:this={textarea!} bind:value={draft} rows="2" placeholder="Send a message" onkeydown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void send(); } }}></textarea>
-      <div class="composer-tools">
-        <button class="icon-button" type="button" disabled aria-label="Attachments unavailable in shell preview" title="Attachments are not implemented"><Plus size={20} /></button>
-        <div class="model-label"><ModelPicker id="composer-model" label="Model" bind:value={sessions.model} /></div>
-        <button class="send icon-button" type="submit" aria-label="Send message" disabled={!draft.trim()}><ArrowUp size={20} /></button>
+  {:else if sessions.sendError}
+    <div class="chat-banner" role="alert">{sessions.sendError}</div>
+  {/if}
+
+  <div class="transcript" bind:this={transcriptEl} aria-label="Conversation transcript">
+    {#if sessions.loading}
+      <div class="chat-empty"><Sparkles size={28} strokeWidth={1.2} /><p class="muted">Loading the conversation…</p></div>
+    {:else if sessions.messages.length === 0}
+      <div class="chat-empty">
+        <Sparkles size={28} strokeWidth={1.2} />
+        <h3>A conversation that stays yours</h3>
+        <p class="muted">One persistent conversation — every message is kept locally, forever. Pick a model above and say hello.</p>
       </div>
-    </form>
-    <p class="disclaimer">Shell preview. Replies are simulated. Nothing is saved.</p>
+    {:else}
+      {#each sessions.messages as m (m.id)}
+        {#if m.role === 'tool'}
+          <article class="tool-row" aria-label={`Tool ${m.tool_name ?? 'call'}`}>
+            <Wrench size={14} />
+            <span class="tool-name">{m.tool_name ?? 'tool'}</span>
+            <code class="tool-output">{m.content}</code>
+          </article>
+        {:else}
+          <article class="bubble {m.role}" aria-label={m.role === 'user' ? 'Your message' : 'Assistant message'}>
+            {m.content}
+          </article>
+        {/if}
+      {/each}
+      {#if sending}
+        <article class="bubble assistant pending" aria-label="Assistant is working">
+          <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="sr-only">Working on your message…</span>
+        </article>
+      {/if}
+    {/if}
   </div>
-  <div class="sr-only" aria-live="polite">{announcement}</div>
+
+  <div class="composer-region">
+    <div class="model-label"><ModelPicker id="composer-model" label="Model" bind:value={sessions.model} /></div>
+    <form class="composer" onsubmit={(e) => { e.preventDefault(); void send(); }}>
+      <button type="button" class="icon-button" aria-label="Attach (not implemented)" disabled title="Not implemented"><Plus size={18} /></button>
+      <label class="sr-only" for="composer-input">Message Karta</label>
+      <textarea
+        id="composer-input"
+        bind:value={draft}
+        onkeydown={onkeydown}
+        placeholder={sessions.model === '' ? 'Pick a model first…' : 'Message Karta'}
+        aria-label="Message Karta"
+        autocomplete="off"
+        rows="1"></textarea>
+      <button type="submit" class="send" disabled={!canSend} aria-label="Send message" title="Send"><ArrowUp size={18} /></button>
+    </form>
+    <p class="composer-note">Replies come from your selected model via your local daemon. Replies are saved locally, forever.</p>
+  </div>
 </div>
 
 <style>
-  .chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  .transcript { overflow-y: auto; flex: 1; min-height: 0; padding: var(--ds-space-8) var(--ds-space-6); }
-  .message-column { max-width: var(--ds-chat-width); margin: auto; }
-  article { margin: 0 0 2.5rem; font-size: var(--ds-font-chat); line-height: 1.8; }
-  article p { white-space: pre-wrap; overflow-wrap: anywhere; }
-  article.user { background: var(--ds-color-bubble); padding: var(--ds-space-3) var(--ds-space-6); border-radius: var(--ds-radius-composer); width: fit-content; max-width: 85%; margin-left: auto; }
-  .assistant-label { display: flex; align-items: center; gap: var(--ds-space-2); margin-bottom: var(--ds-space-4); font-size: var(--ds-font-control); }
-  .avatar { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--ds-color-border); border-radius: 50%; font-weight: 700; }
-  .composer-region { padding: var(--ds-space-3) var(--ds-space-6) var(--ds-space-4); }
-  .composer { max-width: var(--ds-chat-width); margin: auto; padding: var(--ds-space-4) var(--ds-space-3) var(--ds-space-2); border: 1px solid var(--ds-color-border); border-radius: var(--ds-radius-composer); background: var(--ds-color-surface); box-shadow: 0 6px 24px -4px #0001; }
-  textarea { width: 100%; min-height: 56px; max-height: 160px; resize: vertical; border: 0; padding: 0 var(--ds-space-2); font-size: var(--ds-font-chat); }
-  .composer-tools { display: flex; align-items: center; gap: var(--ds-space-2); }
-  .model-label { display: flex; align-items: center; gap: var(--ds-space-2); min-width: 0; }
-  .send { margin-left: auto; background: var(--ds-color-text); color: var(--ds-color-background); border-radius: 50%; }
-  .send:hover:not(:disabled) { background: var(--ds-color-muted); }
-  .disclaimer { text-align: center; color: var(--ds-color-muted); font-size: 0.6875rem; margin-top: var(--ds-space-3); }
-  .greeting { min-height: 40dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--ds-space-4); text-align: center; }
-  .greeting h1 { font-size: 1.875rem; font-weight: 600; letter-spacing: -0.04em; }
-  .starter { border: 1px solid var(--ds-color-border); padding: var(--ds-space-3) var(--ds-space-4); margin-top: var(--ds-space-6); border-radius: var(--ds-radius-composer); }
-  @media (max-width: 767px) { .transcript { padding: var(--ds-space-4); } .composer-region { padding: var(--ds-space-2); } }
+  .chat-region { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+  .chat-banner { border: 1px solid var(--ds-color-border); background: var(--ds-color-surface); padding: var(--ds-space-2) var(--ds-space-3); border-radius: var(--ds-radius-control); font-size: var(--ds-font-nav); color: var(--ds-color-muted); margin: var(--ds-space-2) var(--ds-space-4) 0; }
+  .transcript { flex: 1; overflow-y: auto; padding: var(--ds-space-6) max(calc(50% - 29rem), var(--ds-space-4)); scroll-behavior: smooth; }
+  .chat-empty { display: grid; justify-items: center; gap: var(--ds-space-2); padding-top: 15vh; color: var(--ds-color-muted); text-align: center; }
+  .chat-empty h3 { font-size: 1.05rem; font-weight: 600; color: var(--ds-color-text); }
+  .bubble { max-width: 48rem; padding: var(--ds-space-3) var(--ds-space-4); border-radius: var(--ds-radius-composer); margin-bottom: var(--ds-space-3); line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .bubble.user { background: var(--ds-color-surface-raised, var(--ds-color-hover)); margin-left: auto; border: 1px solid var(--ds-color-border); }
+  .bubble.assistant { background: transparent; color: var(--ds-color-text); }
+  .bubble.pending { color: var(--ds-color-muted); display: flex; align-items: center; gap: var(--ds-space-2); }
+  .dots { display: inline-flex; gap: 4px; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.4; animation: dot-pulse 1.2s infinite; }
+  .dots i:nth-child(2) { animation-delay: 0.2s; }
+  .dots i:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dot-pulse { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+  .tool-row { display: flex; align-items: baseline; gap: var(--ds-space-2); max-width: 48rem; margin: 0 auto var(--ds-space-3) 0; font-size: 0.8125rem; color: var(--ds-color-muted); border: 1px dashed var(--ds-color-border); border-radius: var(--ds-radius-control); padding: var(--ds-space-1) var(--ds-space-2); }
+  .tool-name { font-weight: 600; }
+  .tool-output { font-size: 0.75rem; overflow-wrap: anywhere; max-width: 100%; }
+  .composer-region { padding: var(--ds-space-2) max(calc(50% - 29rem), var(--ds-space-4)) var(--ds-space-4); }
+  .model-label { margin-bottom: var(--ds-space-2); }
+  .composer { display: flex; align-items: center; gap: var(--ds-space-2); border: 1px solid var(--ds-color-border); background: var(--ds-color-surface); border-radius: var(--ds-radius-composer); padding: var(--ds-space-2); box-shadow: 0 1px 3px rgb(0 0 0 / 0.06); }
+  .composer textarea { flex: 1; background: transparent; border: 0; outline: none; font-size: 1rem; color: var(--ds-color-text); min-height: 28px; resize: none; font-family: inherit; }
+  .composer textarea::placeholder { color: var(--ds-color-muted); }
+  .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 999px; color: var(--ds-color-muted); }
+  .icon-button:disabled { opacity: 0.4; }
+  .send { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 999px; background: var(--ds-color-text); color: var(--ds-color-background); }
+  .send:disabled { opacity: 0.3; }
+  .composer-note { text-align: center; font-size: 0.6875rem; color: var(--ds-color-muted); margin-top: var(--ds-space-2); }
+  @media (max-width: 767px) { .transcript { padding: var(--ds-space-4); } .composer-region { padding: var(--ds-space-2) var(--ds-space-2) var(--ds-space-3); } }
 </style>

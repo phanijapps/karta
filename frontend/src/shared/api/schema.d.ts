@@ -147,6 +147,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sync the chat transcript (cursor-paginated)
+         * @description Returns transcript rows ordered by `seq`. `next_cursor` is the last
+         *     DELIVERED sequence (a page cursor, never the database tail); page
+         *     until `truncated` is false. One eternal conversation (`default`).
+         */
+        get: operations["syncChatMessages"];
+        put?: never;
+        /**
+         * Send a message and get the assistant's reply
+         * @description Appends the user message, runs one bounded completion (with the
+         *     built-in tools) against the selected model, and returns every row
+         *     the exchange appended in order plus the end cursor. Typed failures
+         *     return the persisted user row and its cursor. Synchronous;
+         *     streaming is a future change.
+         */
+        post: operations["sendChatMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/goals": {
         parameters: {
             query?: never;
@@ -343,6 +373,43 @@ export interface components {
             refreshed_at?: {
                 [key: string]: string;
             };
+        };
+        ChatMessage: {
+            id: string;
+            seq: number;
+            /** @enum {string} */
+            role: "user" | "assistant" | "tool" | "system" | "summary";
+            content: string;
+            /** Format: date-time */
+            created_at: string;
+            /** @description JSON array of tool calls (assistant intent rows). */
+            tool_calls?: string;
+            tool_call_id?: string;
+            tool_name?: string;
+            /** @description Provenance — which provider answered (assistant rows). */
+            provider?: string;
+            /** @description Provenance — which model answered (assistant rows). */
+            model?: string;
+            /** @description REQUEST usage (bills the whole request context); not content size. */
+            prompt_tokens?: number;
+            completion_tokens?: number;
+        };
+        ChatSend: {
+            text: string;
+            /** @description Qualified selection from the picker (`provider/model-id`). */
+            model: string;
+        };
+        ChatExchange: {
+            /** @description Every row this exchange appended, in order. */
+            messages: components["schemas"]["ChatMessage"][];
+            end_cursor: number;
+            error?: components["schemas"]["ProviderError"];
+        };
+        ChatSync: {
+            messages: components["schemas"]["ChatMessage"][];
+            /** @description Last DELIVERED seq — pass back as after_seq. */
+            next_cursor: number;
+            truncated: boolean;
         };
         /**
          * @description Which provider-side failure occurred.
@@ -726,6 +793,57 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderFailure"];
+        };
+    };
+    syncChatMessages: {
+        parameters: {
+            query?: {
+                /** @description Return only rows with seq greater than this cursor. */
+                after_seq?: number;
+                /** @description Maximum rows per page (1-500). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the transcript. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSync"];
+                };
+            };
+        };
+    };
+    sendChatMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatSend"];
+            };
+        };
+        responses: {
+            /** @description The appended rows of the exchange, in order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatExchange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             502: components["responses"]["ProviderFailure"];
         };
     };

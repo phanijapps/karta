@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -8,8 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"zbot/backend/internal/chat"
 	"zbot/backend/internal/config"
 	"zbot/backend/internal/providers"
+	zbotstore "zbot/backend/internal/store"
 )
 
 // newTestDaemon builds the daemon over a temp home (config.yaml entries +
@@ -41,7 +44,7 @@ func newTestDaemon(t *testing.T, providerHandler http.HandlerFunc, cfgProviders 
 	}
 	t.Cleanup(store.Close)
 	catalog := providers.NewCatalog()
-	daemon := httptest.NewServer(New(store, providers.NewClient(), catalog, "test").Routes())
+	daemon := httptest.NewServer(New(store, providers.NewClient(), catalog, newFakeChatService(), "test").Routes())
 	t.Cleanup(daemon.Close)
 	return daemon, store, &fakeSecretsHarness{fake: fake, secrets: secrets, paths: paths, catalog: catalog}
 }
@@ -191,4 +194,16 @@ func TestUnimplementedContractOperations(t *testing.T) {
 			t.Fatalf("GET %s = %d, want 501", path, resp.StatusCode)
 		}
 	}
+}
+
+// newFakeChatService gives handler tests an empty transcript service.
+func newFakeChatService() ChatService { return &stubChatService{} }
+
+type stubChatService struct{}
+
+func (s *stubChatService) Send(ctx context.Context, text, providerName, model string) chat.SendOutcome {
+	return chat.SendOutcome{Err: fmt.Errorf("stub")}
+}
+func (s *stubChatService) Sync(afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error) {
+	return nil, afterSeq, false, nil
 }

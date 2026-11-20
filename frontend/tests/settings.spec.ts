@@ -1,5 +1,16 @@
 import { test, expect, type Page } from '@playwright/test';
 
+// The chat surface loads /api/chat/messages on mount; every test stubs it.
+async function mockChat(page: import('@playwright/test').Page, messages: unknown[] = []) {
+  await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
+    if (route.request().method() === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ messages, next_cursor: 0, truncated: false }) });
+    }
+    return route.fallback();
+  });
+}
+
+
 // Route-mocked daemon: the Settings Providers section is live, so tests
 // stub the provider endpoints instead of asserting fixtures.
 async function mockProviders(page: Page, providers: unknown[]) {
@@ -19,6 +30,7 @@ const liveProviders = [
 
 test('integration details and logging/advanced fields are honest previews', async ({ page }) => {
   await mockProviders(page, liveProviders);
+  await mockChat(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Settings', exact: true });
@@ -48,6 +60,7 @@ test('narrow settings, internal scroll and focus recovery from drawer', async ({
   // Deterministic offline daemon for the live Providers section.
   await page.route((url) => url.pathname.startsWith('/api/'), (route) => route.abort());
   await page.setViewportSize({ width: 375, height: 600 });
+  await mockChat(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'Toggle left sidebar' }).click();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -66,12 +79,9 @@ test('narrow settings, internal scroll and focus recovery from drawer', async ({
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('collapsed search expands the rail and filters fixture history', async ({ page }) => {
+test('sidebar shows the single persistent conversation', async ({ page }) => {
+  await mockChat(page);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Toggle left sidebar' }).click();
-  await page.getByRole('button', { name: 'Search chats' }).click();
-  await page.getByRole('textbox', { name: 'Filter sample chats' }).fill('not in samples');
-  await expect(page.getByText('No matching sample chats.')).toBeVisible();
-  await page.getByRole('textbox', { name: 'Filter sample chats' }).fill('first release');
-  await expect(page.getByRole('button', { name: 'Plan a small, useful first release' })).toBeVisible();
+  await expect(page.getByText('One persistent conversation').first()).toBeVisible();
+  await expect(page.getByText('lives here forever')).toBeVisible();
 });

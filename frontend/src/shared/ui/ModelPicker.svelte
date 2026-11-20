@@ -87,7 +87,6 @@
       {/each}
     </select>
   {/if}
-  <span class="badge" title="Replies are simulated until the agent engine lands">Simulated</span>
 </div>
 
 <style>
@@ -110,6 +109,5 @@
   }
   select:hover { background: var(--ds-color-hover); color: var(--ds-color-text); }
   select:disabled { color: var(--ds-color-muted); cursor: default; background: transparent; }
-  .badge { font-size: 0.6875rem; border: 1px solid var(--ds-color-border); border-radius: 999px; padding: 2px var(--ds-space-2); color: var(--ds-color-muted); white-space: nowrap; }
-  @media (max-width: 767px) { select { max-width: 140px; } .badge { display: none; } }
+  @media (max-width: 767px) { select { max-width: 140px; } }
 </style>

@@ -1,5 +1,16 @@
 import { test, expect, type Page } from '@playwright/test';
 
+// The chat surface loads /api/chat/messages on mount; every test stubs it.
+async function mockChat(page: import('@playwright/test').Page, messages: unknown[] = []) {
+  await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
+    if (route.request().method() === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ messages, next_cursor: 0, truncated: false }) });
+    }
+    return route.fallback();
+  });
+}
+
+
 // The Providers section is a live daemon view with CRUD: every test stubs
 // the provider endpoints (route mocks) — no live daemon or keyring in the
 // test run.
@@ -17,6 +28,7 @@ async function mockProviderList(page: Page, providers: unknown[]) {
 }
 
 async function openSettings(page: Page) {
+  await mockChat(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   return page.getByRole('dialog', { name: 'Settings', exact: true });

@@ -13,6 +13,33 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for ChatMessageRole.
+const (
+	ChatMessageRoleAssistant ChatMessageRole = "assistant"
+	ChatMessageRoleSummary   ChatMessageRole = "summary"
+	ChatMessageRoleSystem    ChatMessageRole = "system"
+	ChatMessageRoleTool      ChatMessageRole = "tool"
+	ChatMessageRoleUser      ChatMessageRole = "user"
+)
+
+// Valid indicates whether the value is a known member of the ChatMessageRole enum.
+func (e ChatMessageRole) Valid() bool {
+	switch e {
+	case ChatMessageRoleAssistant:
+		return true
+	case ChatMessageRoleSummary:
+		return true
+	case ChatMessageRoleSystem:
+		return true
+	case ChatMessageRoleTool:
+		return true
+	case ChatMessageRoleUser:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CredentialKind.
 const (
 	CredentialKindEnv     CredentialKind = "env"
@@ -111,22 +138,22 @@ func (e HookAction) Valid() bool {
 
 // Defines values for MessageRole.
 const (
-	Assistant MessageRole = "assistant"
-	System    MessageRole = "system"
-	Tool      MessageRole = "tool"
-	User      MessageRole = "user"
+	MessageRoleAssistant MessageRole = "assistant"
+	MessageRoleSystem    MessageRole = "system"
+	MessageRoleTool      MessageRole = "tool"
+	MessageRoleUser      MessageRole = "user"
 )
 
 // Valid indicates whether the value is a known member of the MessageRole enum.
 func (e MessageRole) Valid() bool {
 	switch e {
-	case Assistant:
+	case MessageRoleAssistant:
 		return true
-	case System:
+	case MessageRoleSystem:
 		return true
-	case Tool:
+	case MessageRoleTool:
 		return true
-	case User:
+	case MessageRoleUser:
 		return true
 	default:
 		return false
@@ -269,6 +296,58 @@ func (e TimelineEventKind) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// ChatExchange defines model for ChatExchange.
+type ChatExchange struct {
+	EndCursor int            `json:"end_cursor"`
+	Error     *ProviderError `json:"error,omitempty"`
+
+	// Messages Every row this exchange appended, in order.
+	Messages []ChatMessage `json:"messages"`
+}
+
+// ChatMessage defines model for ChatMessage.
+type ChatMessage struct {
+	CompletionTokens *int      `json:"completion_tokens,omitempty"`
+	Content          string    `json:"content"`
+	CreatedAt        time.Time `json:"created_at"`
+	Id               string    `json:"id"`
+
+	// Model Provenance — which model answered (assistant rows).
+	Model *string `json:"model,omitempty"`
+
+	// PromptTokens REQUEST usage (bills the whole request context); not content size.
+	PromptTokens *int `json:"prompt_tokens,omitempty"`
+
+	// Provider Provenance — which provider answered (assistant rows).
+	Provider   *string         `json:"provider,omitempty"`
+	Role       ChatMessageRole `json:"role"`
+	Seq        int             `json:"seq"`
+	ToolCallId *string         `json:"tool_call_id,omitempty"`
+
+	// ToolCalls JSON array of tool calls (assistant intent rows).
+	ToolCalls *string `json:"tool_calls,omitempty"`
+	ToolName  *string `json:"tool_name,omitempty"`
+}
+
+// ChatMessageRole defines model for ChatMessage.Role.
+type ChatMessageRole string
+
+// ChatSend defines model for ChatSend.
+type ChatSend struct {
+	// Model Qualified selection from the picker (`provider/model-id`).
+	Model string `json:"model"`
+	Text  string `json:"text"`
+}
+
+// ChatSync defines model for ChatSync.
+type ChatSync struct {
+	Messages []ChatMessage `json:"messages"`
+
+	// NextCursor Last DELIVERED seq — pass back as after_seq.
+	NextCursor int  `json:"next_cursor"`
+	Truncated  bool `json:"truncated"`
 }
 
 // CompactionStats defines model for CompactionStats.
@@ -533,6 +612,15 @@ type NotFound = Error
 // ProviderFailure defines model for ProviderFailure.
 type ProviderFailure = ProviderError
 
+// SyncChatMessagesParams defines parameters for SyncChatMessages.
+type SyncChatMessagesParams struct {
+	// AfterSeq Return only rows with seq greater than this cursor.
+	AfterSeq *int `form:"after_seq,omitempty" json:"after_seq,omitempty"`
+
+	// Limit Maximum rows per page (1-500).
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // ListSessionsParams defines parameters for ListSessions.
 type ListSessionsParams struct {
 	// Limit Maximum number of sessions to return (1-200).
@@ -541,6 +629,9 @@ type ListSessionsParams struct {
 	// Cursor Opaque pagination cursor from a previous truncated response.
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
+
+// SendChatMessageJSONRequestBody defines body for SendChatMessage for application/json ContentType.
+type SendChatMessageJSONRequestBody = ChatSend
 
 // CreateGoalJSONRequestBody defines body for CreateGoal for application/json ContentType.
 type CreateGoalJSONRequestBody = GoalRequest
@@ -556,6 +647,12 @@ type ResumeSessionJSONRequestBody = UserInput
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// SyncChatMessages Sync the chat transcript (cursor-paginated)
+	// (GET /api/chat/messages)
+	SyncChatMessages(w http.ResponseWriter, r *http.Request, params SyncChatMessagesParams)
+	// SendChatMessage Send a message and get the assistant's reply
+	// (POST /api/chat/messages)
+	SendChatMessage(w http.ResponseWriter, r *http.Request)
 	// CreateGoal Start an autonomous goal run
 	// (POST /api/goals)
 	CreateGoal(w http.ResponseWriter, r *http.Request)
@@ -603,6 +700,18 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// SyncChatMessages Sync the chat transcript (cursor-paginated)
+// (GET /api/chat/messages)
+func (_ Unimplemented) SyncChatMessages(w http.ResponseWriter, r *http.Request, params SyncChatMessagesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SendChatMessage Send a message and get the assistant's reply
+// (POST /api/chat/messages)
+func (_ Unimplemented) SendChatMessage(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // CreateGoal Start an autonomous goal run
 // (POST /api/goals)
@@ -696,6 +805,66 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// SyncChatMessages operation middleware
+func (siw *ServerInterfaceWrapper) SyncChatMessages(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SyncChatMessagesParams
+
+	// ------------- Optional query parameter "after_seq" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "after_seq", r.URL.Query(), &params.AfterSeq, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "after_seq"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "after_seq", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SyncChatMessages(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SendChatMessage operation middleware
+func (siw *ServerInterfaceWrapper) SendChatMessage(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SendChatMessage(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // CreateGoal operation middleware
 func (siw *ServerInterfaceWrapper) CreateGoal(w http.ResponseWriter, r *http.Request) {
@@ -1157,6 +1326,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/providers/{name}/models/refresh", wrapper.RefreshProviderModels)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/chat/messages", wrapper.SyncChatMessages)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/chat/messages", wrapper.SendChatMessage)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/goals", wrapper.CreateGoal)
