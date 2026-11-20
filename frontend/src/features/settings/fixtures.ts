@@ -1,11 +1,10 @@
 export const sections = ['Providers', 'MCP', 'Skills', 'Logging', 'Advanced'] as const;
 export type Section = typeof sections[number];
-export const providers = [
-  { name: 'Local provider', type: 'OpenAI-compatible', url: 'http://localhost:11434/v1', models: 'local-model', credential: 'LOCAL_API_KEY' },
-  { name: 'Custom endpoint', type: 'OpenAI-compatible', url: 'https://provider.example/v1', models: 'example-model', credential: 'PROVIDER_API_KEY' },
-];
+// Providers are NOT fixtures: the Settings Providers section is a live
+// read-only daemon view (src/shared/api/client.ts). Only the sections
+// below carry shell-preview drafts.
 export function settingsFixtures() {
-  return { providers: structuredClone(providers), level: 'Info', diagnostics: false, engine: 'eino', address: '127.0.0.1:9246', maxTokens: 32000, reserveTokens: 4096, wards: '~/.zbot/wards' };
+  return { level: 'Info', diagnostics: false, engine: 'eino', address: '127.0.0.1:9246', maxTokens: 32000, reserveTokens: 4096, wards: '~/.zbot/wards' };
 }
 export const mcps = [
   { name: 'Project tools', transport: 'stdio', value: 'example-mcp --workspace <path>', description: 'Illustrative local tool server. No process is started.' },

@@ -28,6 +28,182 @@ paths:
               schema:
                 $ref: '#/components/schemas/Health'
 
+  /api/providers:
+    get:
+      operationId: listProviders
+      summary: List configured model providers
+      description: |
+        Providers resolved from `config.yaml` (origin `config`) and
+        `config/providers/*.yaml` (origin `file`) at load and on change.
+        Responses carry the credential env-var NAME and status — never a
+        credential value.
+      responses:
+        '200':
+          description: The configured providers (empty list when none are
+            configured).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderList'
+    post:
+      operationId: createProvider
+      summary: Create a provider (daemon-managed file)
+      description: |
+        Writes `config/providers/<name>.yaml`. The optional credential
+        object either references an environment variable or stores a
+        one-shot API key in the platform keyring; the key value appears
+        in no response, file, or log. Applies immediately — no restart.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderCreate'
+      responses:
+        '201':
+          description: Created; the provider is listed and usable now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Provider'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Duplicate name, full provider list, or origin-
+            protected provider.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: The platform keyring is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/providers/{name}:
+    patch:
+      operationId: updateProvider
+      summary: Edit a daemon-managed provider
+      description: |
+        Rewrites the provider's file. Absent fields keep their current
+        values; a present `credential` object replaces or clears the
+        credential. Rename removes the old file and re-keys the keyring
+        item. Origin-protected (config.yaml) providers are refused.
+      parameters:
+        - $ref: '#/components/parameters/ProviderName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderUpdate'
+      responses:
+        '200':
+          description: Updated; immediately visible in listings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Provider'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Target-name conflict or origin-protected provider.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: The platform keyring is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      operationId: deleteProvider
+      summary: Delete a daemon-managed provider
+      description: |
+        Removes the provider's file and deletes its keyring item
+        best-effort (a failed secret cleanup does not block the delete).
+      parameters:
+        - $ref: '#/components/parameters/ProviderName'
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Origin-protected provider (declared in config.yaml).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/providers/{name}/models:
+    get:
+      operationId: listProviderModels
+      summary: Discover a provider's models through the daemon
+      description: |
+        Proxies OpenAI-compatible model discovery: the daemon calls the
+        provider's `{base_url}/models` endpoint (with the referenced
+        credential, when configured) and returns the discovered model
+        identifiers. The client never contacts the provider directly.
+      parameters:
+        - $ref: '#/components/parameters/ProviderName'
+      responses:
+        '200':
+          description: The provider's discovered models.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelList'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/ProviderFailure'
+
+  /api/models:
+    get:
+      operationId: listModels
+      summary: Read the daemon's model catalog
+      description: |
+        Every catalogued model across providers (flat `provider` + `id`
+        entries) with each provider's last refresh timestamp. Served from
+        memory — this endpoint never contacts a provider. Manual-refresh
+        catalog: empty until a provider is refreshed or tested.
+      responses:
+        '200':
+          description: The catalog (possibly empty).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelCatalog'
+
+  /api/providers/{name}/models/refresh:
+    post:
+      operationId: refreshProviderModels
+      summary: Refresh one provider's models (manual)
+      description: |
+        Live-fetches the provider's model list, updates the catalog, and
+        returns the fetched models. On failure the catalog keeps the
+        previous entry. The Settings Test connection uses the same path.
+      parameters:
+        - $ref: '#/components/parameters/ProviderName'
+      responses:
+        '200':
+          description: The fetched models; the catalog is updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelList'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/ProviderFailure'
+
   /api/goals:
     post:
       operationId: createGoal
@@ -167,6 +343,14 @@ components:
       schema:
         $ref: '#/components/schemas/Id'
 
+    ProviderName:
+      name: name
+      in: path
+      required: true
+      description: The configured provider's name.
+      schema:
+        $ref: '#/components/schemas/Id'
+
   responses:
     BadRequest:
       description: Invalid request body or parameters.
@@ -175,11 +359,18 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     NotFound:
-      description: The session does not exist.
+      description: The referenced resource does not exist.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    ProviderFailure:
+      description: The provider request failed (unreachable, credential
+        rejected, or malformed response).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProviderError'
     Conflict:
       description: The session is not in a resumable (waiting) state.
       content:
@@ -209,6 +400,219 @@ components:
           type: string
           minLength: 1
           maxLength: 64
+
+    ProviderType:
+      type: string
+      description: The provider connection family. Only OpenAI-compatible
+        endpoints are supported today; the enum reserves the extension point.
+      enum: [openai-compatible]
+
+    ProviderOrigin:
+      type: string
+      description: Where the provider is declared. `file` entries live in
+        `config/providers/` and are daemon-managed (editable); `config`
+        entries live in the user-owned `config.yaml` (read-only via API).
+      enum: [file, config]
+
+    CredentialStatus:
+      type: string
+      description: Credential resolution state. `ready` — resolvable now;
+        `missing` — referenced but unset or absent; `unavailable` — the
+        keyring cannot be reached; `unset` — no credential reference.
+      enum: [unset, ready, missing, unavailable]
+
+    CredentialKind:
+      type: string
+      enum: [none, env, keyring]
+
+    CredentialInput:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      description: Explicit credential intent. `none` clears; `env`
+        requires `env_name`; `keyring` requires a one-shot `key` on create
+        (stored in the platform keyring, never echoed) — on edit an absent
+        `key` retains the stored key.
+      properties:
+        kind:
+          $ref: '#/components/schemas/CredentialKind'
+        env_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z_][A-Za-z0-9_]*$'
+        key:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+
+    ProviderCreate:
+      type: object
+      additionalProperties: false
+      required: [name, base_url]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
+          description: Daemon-managed name; becomes the file stem.
+        type:
+          $ref: '#/components/schemas/ProviderType'
+          default: openai-compatible
+        base_url:
+          type: string
+          minLength: 8
+          maxLength: 2048
+          pattern: '^https?://'
+        credential:
+          $ref: '#/components/schemas/CredentialInput'
+
+    ProviderUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Absent fields keep their current values; a present
+        `credential` replaces or clears the credential.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
+        base_url:
+          type: string
+          minLength: 8
+          maxLength: 2048
+          pattern: '^https?://'
+        credential:
+          $ref: '#/components/schemas/CredentialInput'
+
+    Provider:
+      type: object
+      additionalProperties: false
+      required: [name, type, base_url, credential_configured, origin, credential_status]
+      properties:
+        name:
+          $ref: '#/components/schemas/Id'
+        type:
+          $ref: '#/components/schemas/ProviderType'
+        base_url:
+          type: string
+          minLength: 8
+          maxLength: 2048
+          pattern: '^https?://'
+          description: The provider's OpenAI-compatible API root, used
+            verbatim (version prefix included, e.g. `http://localhost:11434/v1`).
+        api_key_env:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z_][A-Za-z0-9_]*$'
+          description: Environment variable NAME the daemon reads the
+            credential from at request time. Absent when the provider needs
+            no credential or uses the keyring.
+        credential:
+          type: string
+          enum: [none, env, keyring]
+          description: How this provider's credential is referenced (`env`
+            via api_key_env; `keyring` via the api_key marker, file-declared
+            providers only; `none` when absent).
+        origin:
+          $ref: '#/components/schemas/ProviderOrigin'
+        credential_status:
+          $ref: '#/components/schemas/CredentialStatus'
+        credential_configured:
+          type: boolean
+          description: True when `credential_status` is `ready` (kept for
+            compatibility; prefer `credential_status`).
+
+    ProviderList:
+      type: object
+      additionalProperties: false
+      required: [providers]
+      properties:
+        providers:
+          type: array
+          maxItems: 64
+          items:
+            $ref: '#/components/schemas/Provider'
+
+    Model:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 256
+
+    ModelList:
+      type: object
+      additionalProperties: false
+      required: [models]
+      properties:
+        models:
+          type: array
+          maxItems: 1024
+          items:
+            $ref: '#/components/schemas/Model'
+
+    ModelEntry:
+      type: object
+      additionalProperties: false
+      required: [provider, id]
+      properties:
+        provider:
+          $ref: '#/components/schemas/Id'
+        id:
+          type: string
+          minLength: 1
+          maxLength: 256
+
+    ModelCatalog:
+      type: object
+      additionalProperties: false
+      required: [models]
+      properties:
+        models:
+          type: array
+          maxItems: 65536
+          description: Flat catalog entries; group or namespace client-side.
+          items:
+            $ref: '#/components/schemas/ModelEntry'
+        refreshed_at:
+          type: object
+          description: Last successful refresh per provider (absent when
+            the provider was never refreshed).
+          additionalProperties:
+            type: string
+            format: date-time
+          propertyNames:
+            pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
+
+    ProviderFailureReason:
+      type: string
+      description: Which provider-side failure occurred.
+      enum: [unreachable, unauthorized, malformed, credential_unavailable]
+
+    ProviderError:
+      type: object
+      additionalProperties: false
+      required: [code, message, reason]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        reason:
+          $ref: '#/components/schemas/ProviderFailureReason'
 
     SessionStatus:
       type: string

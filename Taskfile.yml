@@ -47,7 +47,6 @@ tasks:
       # Always: validate the contract (fails the task on any error).
       - npx --yes @redocly/cli lint --format summary {{.CONTRACT}}
       # Frontend TS client: only once frontend/package.json exists.
-      # Go server types arrive with the internal/server change (design D5).
       - |
         if [ -f frontend/package.json ]; then
           cd frontend && npx --yes openapi-typescript ../{{.CONTRACT}} \
@@ -55,6 +54,12 @@ tasks:
         else
           echo "frontend/ not scaffolded yet - skipping client generation"
         fi
+      # Go server types (design D5 of add-openai-compatible-providers):
+      # oapi-codegen via the backend module's tool directive; output committed.
+      - |
+        cd backend && go tool oapi-codegen \
+          --config internal/server/apigen/oapi-codegen.yaml \
+          ../{{.CONTRACT}}
 
   dev:
     desc: Start the frontend-only workspace preview

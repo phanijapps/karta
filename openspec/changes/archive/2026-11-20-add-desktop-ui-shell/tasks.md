@@ -37,10 +37,10 @@
 ## 5. Integrated acceptance and visual evidence
 
 - [x] 5.1 Add an integrated offline test that blocks non-local runtime requests, detects daemon/SSE/provider attempts, checks browser storage/cookies, and reloads the shell; verify chat/settings/theme/navigation work and all transient state resets without persistent writes or telemetry.
-- [ ] 5.2 Capture and inspect shell and Settings in both themes at 1440×900 plus narrow shell/Settings at 375×812; record screenshots and results in `docs/architecture/frontend-shell-evidence.md`, comparing navigation density, neutral surfaces, typography, 58rem chat/composer width, rounded geometry, focus visibility, and scrolling against `design.md`; fix mismatches or explicitly record remaining gaps.
-- [ ] 5.3 Run `task check:frontend`, `task test:frontend`, codegen idempotence, and `task verify`; inspect FSD import direction, no hand-rolled daemon access, no Wails imports outside the platform seam, and unchanged backend boundaries; verify all pass and record command outcomes in the evidence note.
+- [x] 5.2 Capture and inspect shell and Settings in both themes at 1440×900 plus narrow shell/Settings at 375×812; record screenshots and results in `docs/architecture/frontend-shell-evidence.md`, comparing navigation density, neutral surfaces, typography, 58rem chat/composer width, rounded geometry, focus visibility, and scrolling against `design.md`; fix mismatches or explicitly record remaining gaps.
+- [x] 5.3 Run `task check:frontend`, `task test:frontend`, codegen idempotence, and `task verify`; inspect FSD import direction, no hand-rolled daemon access, no Wails imports outside the platform seam, and unchanged backend boundaries; verify all pass and record command outcomes in the evidence note.
 
 ## 6. Review and hardening
 
-- [ ] 6.1 Run the read-only `zbot-reviewer` subagent over the implementation, these change artifacts, and constitution boundaries; fix every P0/P1 finding, fix P2s or record why deferred, and verify findings are resolved with targeted tests and the review summary.
-- [ ] 6.2 Re-run `task verify` after the final review fixes and evidence/documentation edits; verify it is green with no generated drift or unrelated files, and record the final result before declaring implementation complete.
+- [x] 6.1 Run the read-only `zbot-reviewer` subagent over the implementation, these change artifacts, and constitution boundaries; fix every P0/P1 finding, fix P2s or record why deferred, and verify findings are resolved with targeted tests and the review summary.
+- [x] 6.2 Re-run `task verify` after the final review fixes and evidence/documentation edits; verify it is green with no generated drift or unrelated files, and record the final result before declaring implementation complete.

@@ -18,8 +18,13 @@ the rebrand does not authorize an API or data migration.
 1. **Local-first storage.** All persistent state lives under `~/.zbot/`: the
    SQLite database at `~/.zbot/data/zbot.db` (sessions, Timeline Tree,
    sqlite-vec, FTS5, knowledge graph) and the configuration tree
-   `~/.zbot/config/{prompts,agents,skills,hooks,mcps}/**`. No cloud storage,
-   no remote state, no data leaving the device.
+   `~/.zbot/config/{prompts,agents,skills,hooks,mcps,providers}/**`. The one
+   scoped exception: provider credential VALUES for daemon-managed providers
+   live in the platform keyring (Linux Secret Service, macOS Keychain,
+   Windows Credential Manager), namespaced per home root — never under
+   `~/.zbot/`, never in files, responses, or logs, and never a plaintext
+   fallback. No cloud storage, no remote state, no other data leaving the
+   device.
 2. **Contract-first API.** `contracts/openapi.yaml` is the single source of
    truth for the daemon HTTP/SSE API. Endpoint changes update the contract
    first, then regenerate clients (`task codegen`), then implement handlers.

@@ -13,9 +13,12 @@ test('Karta identity is consistent without changing compatibility paths', async 
   await expect(wordmark).toBeVisible();
   await expect(wordmark).toHaveText('Karta'); // The hidden suffix preserves a single wordmark component.
   await expect(page.getByRole('navigation', { name: 'Workspace navigation' }).getByText('Karta', { exact: true }).last()).toBeAttached();
+  await page.route((url) => url.pathname.startsWith('/api/'), (route) => route.abort());
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Settings', exact: true });
   await expect(dialog.getByText('Karta', { exact: true })).toBeVisible();
-  await expect(dialog.getByText('~/.zbot/config.yaml', { exact: true })).toBeVisible();
+  // Compatibility-path labeling: config-origin providers name their source file.
+  await dialog.getByRole('button', { name: 'Advanced', exact: true }).click();
+  await expect(dialog.getByText('~/.zbot/config.yaml', { exact: false }).first()).toBeVisible();
   await expect(page.getByText('z-Bot', { exact: true })).toHaveCount(0);
 });

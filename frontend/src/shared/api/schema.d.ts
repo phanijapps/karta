@@ -21,6 +21,132 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List configured model providers
+         * @description Providers resolved from `config.yaml` (origin `config`) and
+         *     `config/providers/*.yaml` (origin `file`) at load and on change.
+         *     Responses carry the credential env-var NAME and status — never a
+         *     credential value.
+         */
+        get: operations["listProviders"];
+        put?: never;
+        /**
+         * Create a provider (daemon-managed file)
+         * @description Writes `config/providers/<name>.yaml`. The optional credential
+         *     object either references an environment variable or stores a
+         *     one-shot API key in the platform keyring; the key value appears
+         *     in no response, file, or log. Applies immediately — no restart.
+         */
+        post: operations["createProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/providers/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a daemon-managed provider
+         * @description Removes the provider's file and deletes its keyring item
+         *     best-effort (a failed secret cleanup does not block the delete).
+         */
+        delete: operations["deleteProvider"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit a daemon-managed provider
+         * @description Rewrites the provider's file. Absent fields keep their current
+         *     values; a present `credential` object replaces or clears the
+         *     credential. Rename removes the old file and re-keys the keyring
+         *     item. Origin-protected (config.yaml) providers are refused.
+         */
+        patch: operations["updateProvider"];
+        trace?: never;
+    };
+    "/api/providers/{name}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Discover a provider's models through the daemon
+         * @description Proxies OpenAI-compatible model discovery: the daemon calls the
+         *     provider's `{base_url}/models` endpoint (with the referenced
+         *     credential, when configured) and returns the discovered model
+         *     identifiers. The client never contacts the provider directly.
+         */
+        get: operations["listProviderModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the daemon's model catalog
+         * @description Every catalogued model across providers (flat `provider` + `id`
+         *     entries) with each provider's last refresh timestamp. Served from
+         *     memory — this endpoint never contacts a provider. Manual-refresh
+         *     catalog: empty until a provider is refreshed or tested.
+         */
+        get: operations["listModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/providers/{name}/models/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh one provider's models (manual)
+         * @description Live-fetches the provider's model list, updates the catalog, and
+         *     returns the fetched models. On failure the catalog keeps the
+         *     previous entry. The Settings Test connection uses the same path.
+         */
+        post: operations["refreshProviderModels"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/goals": {
         parameters: {
             query?: never;
@@ -143,6 +269,91 @@ export interface components {
             status: "ok";
             version: string;
         };
+        /**
+         * @description The provider connection family. Only OpenAI-compatible endpoints are supported today; the enum reserves the extension point.
+         * @enum {string}
+         */
+        ProviderType: "openai-compatible";
+        /**
+         * @description Where the provider is declared. `file` entries live in `config/providers/` and are daemon-managed (editable); `config` entries live in the user-owned `config.yaml` (read-only via API).
+         * @enum {string}
+         */
+        ProviderOrigin: "file" | "config";
+        /**
+         * @description Credential resolution state. `ready` — resolvable now; `missing` — referenced but unset or absent; `unavailable` — the keyring cannot be reached; `unset` — no credential reference.
+         * @enum {string}
+         */
+        CredentialStatus: "unset" | "ready" | "missing" | "unavailable";
+        /** @enum {string} */
+        CredentialKind: "none" | "env" | "keyring";
+        /** @description Explicit credential intent. `none` clears; `env` requires `env_name`; `keyring` requires a one-shot `key` on create (stored in the platform keyring, never echoed) — on edit an absent `key` retains the stored key. */
+        CredentialInput: {
+            kind: components["schemas"]["CredentialKind"];
+            env_name?: string;
+            key?: string;
+        };
+        ProviderCreate: {
+            /** @description Daemon-managed name; becomes the file stem. */
+            name: string;
+            /** @default openai-compatible */
+            type: components["schemas"]["ProviderType"];
+            base_url: string;
+            credential?: components["schemas"]["CredentialInput"];
+        };
+        /** @description Absent fields keep their current values; a present `credential` replaces or clears the credential. */
+        ProviderUpdate: {
+            name?: string;
+            base_url?: string;
+            credential?: components["schemas"]["CredentialInput"];
+        };
+        Provider: {
+            name: components["schemas"]["Id"];
+            type: components["schemas"]["ProviderType"];
+            /** @description The provider's OpenAI-compatible API root, used verbatim (version prefix included, e.g. `http://localhost:11434/v1`). */
+            base_url: string;
+            /** @description Environment variable NAME the daemon reads the credential from at request time. Absent when the provider needs no credential or uses the keyring. */
+            api_key_env?: string;
+            /**
+             * @description How this provider's credential is referenced (`env` via api_key_env; `keyring` via the api_key marker, file-declared providers only; `none` when absent).
+             * @enum {string}
+             */
+            credential?: "none" | "env" | "keyring";
+            origin: components["schemas"]["ProviderOrigin"];
+            credential_status: components["schemas"]["CredentialStatus"];
+            /** @description True when `credential_status` is `ready` (kept for compatibility; prefer `credential_status`). */
+            credential_configured: boolean;
+        };
+        ProviderList: {
+            providers: components["schemas"]["Provider"][];
+        };
+        Model: {
+            id: string;
+        };
+        ModelList: {
+            models: components["schemas"]["Model"][];
+        };
+        ModelEntry: {
+            provider: components["schemas"]["Id"];
+            id: string;
+        };
+        ModelCatalog: {
+            /** @description Flat catalog entries; group or namespace client-side. */
+            models: components["schemas"]["ModelEntry"][];
+            /** @description Last successful refresh per provider (absent when the provider was never refreshed). */
+            refreshed_at?: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * @description Which provider-side failure occurred.
+         * @enum {string}
+         */
+        ProviderFailureReason: "unreachable" | "unauthorized" | "malformed" | "credential_unavailable";
+        ProviderError: {
+            code: string;
+            message: string;
+            reason: components["schemas"]["ProviderFailureReason"];
+        };
         /** @enum {string} */
         SessionStatus: "created" | "running" | "waiting" | "completed" | "cancelled" | "failed";
         Session: {
@@ -248,13 +459,22 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description The session does not exist. */
+        /** @description The referenced resource does not exist. */
         NotFound: {
             headers: {
                 [name: string]: unknown;
             };
             content: {
                 "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The provider request failed (unreachable, credential rejected, or malformed response). */
+        ProviderFailure: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ProviderError"];
             };
         };
         /** @description The session is not in a resumable (waiting) state. */
@@ -269,6 +489,8 @@ export interface components {
     };
     parameters: {
         SessionId: components["schemas"]["Id"];
+        /** @description The configured provider's name. */
+        ProviderName: components["schemas"]["Id"];
     };
     requestBodies: never;
     headers: never;
@@ -294,6 +516,217 @@ export interface operations {
                     "application/json": components["schemas"]["Health"];
                 };
             };
+        };
+    };
+    listProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The configured providers (empty list when none are configured). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderList"];
+                };
+            };
+        };
+    };
+    createProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderCreate"];
+            };
+        };
+        responses: {
+            /** @description Created; the provider is listed and usable now. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Provider"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Duplicate name, full provider list, or origin- protected provider. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The platform keyring is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The configured provider's name. */
+                name: components["parameters"]["ProviderName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Origin-protected provider (declared in config.yaml). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The configured provider's name. */
+                name: components["parameters"]["ProviderName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated; immediately visible in listings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Provider"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            /** @description Target-name conflict or origin-protected provider. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The platform keyring is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listProviderModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The configured provider's name. */
+                name: components["parameters"]["ProviderName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The provider's discovered models. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelList"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderFailure"];
+        };
+    };
+    listModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The catalog (possibly empty). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelCatalog"];
+                };
+            };
+        };
+    };
+    refreshProviderModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The configured provider's name. */
+                name: components["parameters"]["ProviderName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The fetched models; the catalog is updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelList"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderFailure"];
         };
     };
     createGoal: {

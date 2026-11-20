@@ -1,8 +1,11 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -94,7 +97,7 @@ func TestBootstrapFirstRunCreatesStructureOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load after bootstrap: %v", err)
 	}
-	if cfg != Default() {
+	if !reflect.DeepEqual(cfg, Default()) {
 		t.Fatalf("bootstrapped config %+v != defaults %+v", cfg, Default())
 	}
 }
@@ -218,5 +221,173 @@ func TestWardsRootResolution(t *testing.T) {
 	cfg.Wards.Root = "/abs/wards"
 	if got := cfg.WardsRoot(paths); got != "/abs/wards" {
 		t.Fatalf("absolute root not passed through: %s", got)
+	}
+}
+
+func TestLoadProviders(t *testing.T) {
+	base := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\n"
+
+	t.Run("absent providers key loads as empty list", func(t *testing.T) {
+		_, paths := tempHome(t)
+		writeConfig(t, paths, base)
+		cfg, err := Load(paths)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if len(cfg.Providers) != 0 {
+			t.Fatalf("want empty providers, got %+v", cfg.Providers)
+		}
+	})
+
+	t.Run("valid provider loads with fields intact", func(t *testing.T) {
+		_, paths := tempHome(t)
+		writeConfig(t, paths, base+"providers:\n    - name: ollama\n      type: openai-compatible\n      base_url: http://localhost:11434/v1\n    - name: zai\n      type: openai-compatible\n      base_url: https://api.z.ai/v1\n      api_key_env: ZAI_API_KEY\n")
+		cfg, err := Load(paths)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if len(cfg.Providers) != 2 {
+			t.Fatalf("want 2 providers, got %+v", cfg.Providers)
+		}
+		got := cfg.Providers[0]
+		if got.Name != "ollama" || got.Type != "openai-compatible" || got.BaseURL != "http://localhost:11434/v1" || got.APIKeyEnv != "" {
+			t.Fatalf("unexpected provider: %+v", got)
+		}
+		if cfg.Providers[1].APIKeyEnv != "ZAI_API_KEY" {
+			t.Fatalf("unexpected credential ref: %+v", cfg.Providers[1])
+		}
+	})
+
+	t.Run("base url used verbatim without version prefix", func(t *testing.T) {
+		_, paths := tempHome(t)
+		writeConfig(t, paths, base+"providers:\n    - name: ollama\n      type: openai-compatible\n      base_url: http://localhost:11434\n")
+		cfg, err := Load(paths)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Providers[0].BaseURL != "http://localhost:11434" {
+			t.Fatalf("base_url must round-trip verbatim, got %q", cfg.Providers[0].BaseURL)
+		}
+	})
+
+	t.Run("duplicate names rejected naming entry", func(t *testing.T) {
+		_, paths := tempHome(t)
+		writeConfig(t, paths, base+"providers:\n    - name: ollama\n      type: openai-compatible\n      base_url: http://localhost:11434/v1\n    - name: ollama\n      type: openai-compatible\n      base_url: http://other:1/v1\n")
+		_, err := Load(paths)
+		if err == nil || !strings.Contains(err.Error(), "duplicate provider name") || !strings.Contains(err.Error(), "ollama") || !strings.Contains(err.Error(), "config.yaml") {
+			t.Fatalf("want duplicate-name error naming file and entry, got: %v", err)
+		}
+	})
+
+	t.Run("unsupported type rejected naming entry", func(t *testing.T) {
+		_, paths := tempHome(t)
+		writeConfig(t, paths, base+"providers:\n    - name: x\n      type: anthropic\n      base_url: https://api.example/v1\n")
+		_, err := Load(paths)
+		if err == nil || !strings.Contains(err.Error(), "unsupported provider type") || !strings.Contains(err.Error(), "anthropic") {
+			t.Fatalf("want unsupported-type error, got: %v", err)
+		}
+	})
+
+	t.Run("invalid base url rejected", func(t *testing.T) {
+		for _, bad := range []string{"", "localhost:11434/v1", "ftp://localhost:11434/v1", "/v1"} {
+			_, paths := tempHome(t)
+			writeConfig(t, paths, base+"providers:\n    - name: x\n      type: openai-compatible\n      base_url: "+strconv.Quote(bad)+"\n")
+			_, err := Load(paths)
+			if err == nil || !strings.Contains(err.Error(), "base_url") {
+				t.Fatalf("base_url %q: want error, got: %v", bad, err)
+			}
+		}
+	})
+
+	t.Run("malformed api_key_env rejected", func(t *testing.T) {
+		_, paths := tempHome(t)
+		writeConfig(t, paths, base+"providers:\n    - name: x\n      type: openai-compatible\n      base_url: http://localhost:1/v1\n      api_key_env: \"$SECRET\"\n")
+		_, err := Load(paths)
+		if err == nil || !strings.Contains(err.Error(), "api_key_env") {
+			t.Fatalf("want api_key_env error, got: %v", err)
+		}
+	})
+}
+
+func TestLoadProviderBoundaries(t *testing.T) {
+	base := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\n"
+
+	t.Run("name outside contract Id pattern rejected", func(t *testing.T) {
+		_, paths := tempHome(t)
+		writeConfig(t, paths, base+"providers:\n    - name: my provider\n      type: openai-compatible\n      base_url: http://localhost:1/v1\n")
+		_, err := Load(paths)
+		if err == nil || !strings.Contains(err.Error(), "name must match") {
+			t.Fatalf("want Id-pattern error, got: %v", err)
+		}
+	})
+
+	t.Run("more than 64 providers rejected", func(t *testing.T) {
+		_, paths := tempHome(t)
+		yaml := base + "providers:\n"
+		for i := 0; i < 65; i++ {
+			yaml += fmt.Sprintf("    - name: p%d\n      type: openai-compatible\n      base_url: http://localhost:1/v1\n", i)
+		}
+		writeConfig(t, paths, yaml)
+		_, err := Load(paths)
+		if err == nil || !strings.Contains(err.Error(), "more than 64") {
+			t.Fatalf("want provider-count error, got: %v", err)
+		}
+	})
+}
+
+func TestServerAddressLoopbackOnly(t *testing.T) {
+	base := func(addr string) string {
+		return "engine: eino\nserver:\n    address: " + strconv.Quote(addr) + "\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\n"
+	}
+	t.Run("loopback addresses accepted", func(t *testing.T) {
+		for _, addr := range []string{"127.0.0.1:8787", "localhost:8787", "[::1]:8787", "127.42.0.9:9000"} {
+			_, paths := tempHome(t)
+			writeConfig(t, paths, base(addr))
+			if _, err := Load(paths); err != nil {
+				t.Fatalf("%s: %v", addr, err)
+			}
+		}
+	})
+	t.Run("non-loopback addresses rejected", func(t *testing.T) {
+		for _, addr := range []string{"0.0.0.0:8787", "192.168.1.5:8787", "example.com:8787", "8787"} {
+			_, paths := tempHome(t)
+			writeConfig(t, paths, base(addr))
+			_, err := Load(paths)
+			if err == nil || !strings.Contains(err.Error(), "loopback") || !strings.Contains(err.Error(), "config.yaml") {
+				t.Fatalf("%s: want loopback error naming file, got: %v", addr, err)
+			}
+		}
+	})
+}
+
+func TestProvidersDirectoryBootstrapped(t *testing.T) {
+	home := t.TempDir()
+	paths := NewPaths(filepath.Join(home, "zbot"))
+	if err := Bootstrap(paths); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(paths.ProvidersDir); err != nil || !info.IsDir() {
+		t.Fatalf("config/providers missing after bootstrap: %v", err)
+	}
+	// Self-heal recreates it when removed.
+	if err := os.RemoveAll(paths.ProvidersDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(paths); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(paths.ProvidersDir); err != nil || !info.IsDir() {
+		t.Fatalf("config/providers not self-healed: %v", err)
+	}
+}
+
+func TestConfigYAMLRejectsKeyringMarker(t *testing.T) {
+	// config.yaml provider entries are environment-reference only; the
+	// api_key marker is rejected by strict decoding (unknown key).
+	_, paths := tempHome(t)
+	writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\nproviders:\n    - name: x\n      type: openai-compatible\n      base_url: http://localhost:1/v1\n      api_key: keyring\n")
+	_, err := Load(paths)
+	if err == nil || !strings.Contains(err.Error(), "api_key") {
+		t.Fatalf("want unknown-key error for api_key in config.yaml, got: %v", err)
 	}
 }

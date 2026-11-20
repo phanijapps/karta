@@ -1,12 +1,27 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+// Route-mocked daemon: the Settings Providers section is live, so tests
+// stub the provider endpoints instead of asserting fixtures.
+async function mockProviders(page: Page, providers: unknown[]) {
+  await page.route('**/api/providers', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ providers }),
+    }),
+  );
+}
+
+const liveProviders = [
+  { name: 'ollama', type: 'openai-compatible', base_url: 'http://localhost:11434/v1', credential_configured: false },
+  { name: 'zai', type: 'openai-compatible', base_url: 'https://api.z.ai/v1', api_key_env: 'ZAI_API_KEY', credential_configured: true },
+];
 
 test('integration details and logging/advanced fields are honest previews', async ({ page }) => {
+  await mockProviders(page, liveProviders);
   await page.goto('/');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Settings', exact: true });
-  await dialog.getByRole('button', { name: 'Custom endpoint' }).click();
-  await expect(dialog.getByRole('textbox', { name: 'Base URL' })).toHaveValue('https://provider.example/v1');
-  await expect(dialog.getByRole('button', { name: 'Test connection unavailable' })).toBeDisabled();
   await dialog.getByRole('button', { name: 'MCP', exact: true }).click();
   await dialog.getByRole('button', { name: 'Remote tools' }).click();
   await expect(dialog.getByRole('textbox', { name: 'URL preview' })).toHaveValue('https://mcp.example/mcp');
@@ -30,11 +45,16 @@ test('integration details and logging/advanced fields are honest previews', asyn
 });
 
 test('narrow settings, internal scroll and focus recovery from drawer', async ({ page }) => {
+  // Deterministic offline daemon for the live Providers section.
+  await page.route((url) => url.pathname.startsWith('/api/'), (route) => route.abort());
   await page.setViewportSize({ width: 375, height: 600 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Toggle left sidebar' }).click();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(1);
+  // The footer (drafts/reset) exists only on fixture-backed sections; the
+  // default Providers section is a live read-only view.
+  await page.getByRole('button', { name: 'Advanced', exact: true }).click();
   await page.getByRole('button', { name: 'Reset preview' }).scrollIntoViewIfNeeded();
   await expect(page.getByRole('button', { name: 'Reset preview' })).toBeInViewport();
   for (const name of ['Advanced', 'Logging', 'Skills', 'MCP', 'Providers']) {

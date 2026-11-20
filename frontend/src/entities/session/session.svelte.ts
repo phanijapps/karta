@@ -1,6 +1,5 @@
 export interface Message { id: number; role: 'user' | 'assistant'; text: string }
 export interface Conversation { id: number; title: string; messages: Message[] }
-export const models = ['Local assistant', 'Reasoning preview', 'Fast preview'];
 const fixtures: Conversation[] = [
   { id: 1, title: 'A workspace that stays yours', messages: [
     { id: 1, role: 'user', text: 'Help me set up a workspace for my next project.' },
@@ -15,7 +14,7 @@ const fixtures: Conversation[] = [
 export function createSessions() {
   let conversations = $state<Conversation[]>(structuredClone(fixtures));
   let selected = $state(1);
-  let model = $state(models[0]);
+  let model = $state(''); // catalog-backed picker sets this; no fixture default
   let nextId = 5;
   const active = () => conversations.find((chat) => chat.id === selected)!;
   return {

@@ -1,10 +1,10 @@
-# Spec Delta
+# desktop-shell Specification
 
 ## Purpose
 
 Provide a desktop-style z-Bot workspace with recognizable Open WebUI visual styling, accessible navigation, and room for future context tools.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Open WebUI desktop visual language
 
@@ -64,7 +64,7 @@ Settings and narrow-screen sidebar overlays SHALL have names, managed focus, Esc
 
 ### Requirement: Daemon-independent local preview
 
-The shell SHALL start and function without a daemon or credentials. Runtime state SHALL stay in memory; the shell SHALL NOT use browser persistence, telemetry, external assets, provider requests, daemon HTTP/SSE, or filesystem writes. Fixture content SHALL be clearly identified as mock data.
+The shell SHALL start and function without a daemon or credentials. Runtime state SHALL stay in memory; mock surfaces SHALL NOT use browser persistence, telemetry, external assets, provider requests, daemon HTTP/SSE, or filesystem writes. Fixture content SHALL be clearly identified as mock data, and settings sections that are live daemon views SHALL degrade to a visible daemon-connection state without fixture fallback.
 
 #### Scenario: Offline preview
 - **WHEN** the built shell is served locally with no daemon and external network access blocked

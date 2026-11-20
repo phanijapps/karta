@@ -1,7 +1,8 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { ArrowUp, Plus, Sparkles } from '@lucide/svelte';
-  import { models, type Sessions } from '../../entities/session/session.svelte';
+  import { type Sessions } from '../../entities/session/session.svelte';
+  import ModelPicker from '../../shared/ui/ModelPicker.svelte';
   let { sessions }: { sessions: Sessions } = $props();
   let draft = $state('');
   let announcement = $state('');
@@ -48,7 +49,7 @@
       <textarea id="message" bind:this={textarea!} bind:value={draft} rows="2" placeholder="Send a message" onkeydown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void send(); } }}></textarea>
       <div class="composer-tools">
         <button class="icon-button" type="button" disabled aria-label="Attachments unavailable in shell preview" title="Attachments are not implemented"><Plus size={20} /></button>
-        <label class="model-label"><span class="sr-only">Mock model</span><select aria-label="Mock model" bind:value={sessions.model}>{#each models as model}<option>{model}</option>{/each}</select><span class="badge">Mock</span></label>
+        <div class="model-label"><ModelPicker id="composer-model" label="Model" bind:value={sessions.model} /></div>
         <button class="send icon-button" type="submit" aria-label="Send message" disabled={!draft.trim()}><ArrowUp size={20} /></button>
       </div>
     </form>
@@ -71,12 +72,11 @@
   textarea { width: 100%; min-height: 56px; max-height: 160px; resize: vertical; border: 0; padding: 0 var(--ds-space-2); font-size: var(--ds-font-chat); }
   .composer-tools { display: flex; align-items: center; gap: var(--ds-space-2); }
   .model-label { display: flex; align-items: center; gap: var(--ds-space-2); min-width: 0; }
-  .model-label select { border: 0; width: 156px; max-width: 100%; font-size: var(--ds-font-nav); padding-left: 0; }
   .send { margin-left: auto; background: var(--ds-color-text); color: var(--ds-color-background); border-radius: 50%; }
   .send:hover:not(:disabled) { background: var(--ds-color-muted); }
   .disclaimer { text-align: center; color: var(--ds-color-muted); font-size: 0.6875rem; margin-top: var(--ds-space-3); }
   .greeting { min-height: 40dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--ds-space-4); text-align: center; }
   .greeting h1 { font-size: 1.875rem; font-weight: 600; letter-spacing: -0.04em; }
   .starter { border: 1px solid var(--ds-color-border); padding: var(--ds-space-3) var(--ds-space-4); margin-top: var(--ds-space-6); border-radius: var(--ds-radius-composer); }
-  @media (max-width: 767px) { .transcript { padding: var(--ds-space-4); } .composer-region { padding: var(--ds-space-2); } .model-label select { width: 130px; } }
+  @media (max-width: 767px) { .transcript { padding: var(--ds-space-4); } .composer-region { padding: var(--ds-space-2); } }
 </style>

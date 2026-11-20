@@ -1,6 +1,6 @@
 # Karta
 
-A local-first agent workspace. The current frontend is an Open WebUI-style **shell preview**: mock chat, two sidebars, and configuration-shaped Settings. It does not yet call agents or modify daemon configuration.
+A local-first agent workspace. The current frontend is an Open WebUI-style workspace: mock chat, two sidebars, and a Settings dialog whose Providers section is a live, manageable daemon view (`zbotd` — add/edit/delete providers with OS-keyring credentials; the other sections are previews). Chats do not yet call agents; `config.yaml` itself is never written by the daemon.
 
 ## Run the preview
 
