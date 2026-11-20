@@ -135,3 +135,13 @@ func (s *Server) GetDefaultModel(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"model": model})
 }
+
+// ClearChat wipes the eternal conversation's transcript (user-initiated,
+// destructive).
+func (s *Server) ClearChat(w http.ResponseWriter, r *http.Request) {
+	if err := s.db.ClearSession(chat.SessionID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

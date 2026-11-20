@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import { PanelLeft, PanelRight, Sun, Moon, ArrowLeft, Folder } from '@lucide/svelte';
+  import { PanelLeft, PanelRight, Sun, Moon, ArrowLeft, Folder, Trash2 } from '@lucide/svelte';
   import Sidebar from './Sidebar.svelte';
   import ContextPanel from './ContextPanel.svelte';
   import Chat from '../features/chat-stream/Chat.svelte';
@@ -14,6 +14,7 @@
   let rightExpanded = $state(false);
   let drawer = $state<'left' | 'right' | null>(null);
   let settings = $state(false);
+  let confirmClear = $state(false);
   let placeholder = $state('');
   // Browser-only SPA (no SSR): read the preference synchronously so the
   // first paint matches the user's scheme instead of flashing dark.
@@ -46,7 +47,7 @@
     <header class="workspace-header">
       <button class="icon-button" onclick={toggleLeft} aria-label="Toggle left sidebar" aria-expanded={leftDocked ? leftExpanded : drawer === 'left'} aria-controls={leftDocked || drawer === 'left' ? 'left-sidebar' : undefined}><PanelLeft size={20} strokeWidth={1.5} /></button>
       <div class="header-model"><ModelPicker id="header-model" label="Header model" bind:value={sessions.model} /></div>
-      <div class="header-actions"><button class="icon-button" onclick={() => theme = theme === 'dark' ? 'light' : 'dark'} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}>{#if theme === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}</button><button class="icon-button" onclick={toggleRight} aria-label="Toggle right sidebar" aria-expanded={rightDocked ? rightExpanded : drawer === 'right'} aria-controls={rightDocked && rightExpanded || drawer === 'right' ? 'right-sidebar' : undefined}><PanelRight size={20} strokeWidth={1.5} /></button></div>
+      <div class="header-actions"><button class="icon-button" onclick={() => (confirmClear = true)} aria-label="Clear conversation" title="Clear conversation (deletes all messages)"><Trash2 size={18} strokeWidth={1.6} /></button><button class="icon-button" onclick={() => theme = theme === 'dark' ? 'light' : 'dark'} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}>{#if theme === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}</button><button class="icon-button" onclick={toggleRight} aria-label="Toggle right sidebar" aria-expanded={rightDocked ? rightExpanded : drawer === 'right'} aria-controls={rightDocked && rightExpanded || drawer === 'right' ? 'right-sidebar' : undefined}><PanelRight size={20} strokeWidth={1.5} /></button></div>
     </header>
     <main id="workspace" bind:this={main!} tabindex="-1">
       {#if placeholder}<div class="placeholder"><Folder size={32} strokeWidth={1.2} /><h1>{placeholder}</h1><span class="badge">TODO · Coming soon</span><p class="muted">{placeholder === 'Code Wards' ? 'Sandboxed project directories will give your agents a place to work.' : 'Your local configuration workspace will live here.'}</p><p class="muted">Not implemented. No files are read or changed.</p><button class="return" onclick={showChat}><ArrowLeft size={16} />Back to chat</button></div>{:else}<Chat {sessions} />{/if}
@@ -55,6 +56,18 @@
   {#if rightDocked && rightExpanded}<div class="right-panel" id="right-sidebar"><ContextPanel onclose={() => rightExpanded = false} /></div>{/if}
 </div>
 {#if drawer === 'left'}<Modal label="Workspace navigation" kind="left" onclose={() => drawer = null}><div id="left-sidebar" class="drawer-content"><Sidebar {sessions} ontoggle={() => drawer = null} onselect={showChat} onplaceholder={showPlaceholder} onsettings={openSettings} /></div></Modal>{:else if drawer === 'right'}<Modal label="Session context" kind="right" onclose={() => drawer = null}><div id="right-sidebar" class="drawer-content"><ContextPanel onclose={() => drawer = null} /></div></Modal>{/if}
+{#if confirmClear}
+  <div class="form-backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) confirmClear = false; }}>
+    <div class="confirm-card" role="alertdialog" aria-label="Clear conversation">
+      <h3>Clear the conversation?</h3>
+      <p class="muted">All messages will be permanently deleted from your local database. This cannot be undone.</p>
+      <div class="confirm-actions">
+        <button class="cancel" onclick={() => (confirmClear = false)}>Cancel</button>
+        <button class="danger" onclick={async () => { await fetch('/api/chat/messages', { method: 'DELETE' }); confirmClear = false; sessions.load(); }}>Clear everything</button>
+      </div>
+    </div>
+  </div>
+{/if}
 {#if settings}<Settings onclose={() => settings = false} />{/if}
 
 <style>
@@ -74,4 +87,12 @@
   .return { display: flex; align-items: center; gap: var(--ds-space-2); padding: var(--ds-space-3); border: 1px solid var(--ds-color-border); }
   @media (min-width: 768px) and (max-width: 1279px) { .workspace.right-open { grid-template-columns: 260px minmax(0, 1fr); } .workspace.left-rail.right-open { grid-template-columns: 44px minmax(0, 1fr); } }
   @media (max-width: 767px) { .workspace, .workspace.left-rail, .workspace.right-open, .workspace.left-rail.right-open { grid-template-columns: minmax(0, 1fr); } .workspace-header { padding: 0 var(--ds-space-2); } }
+
+  .form-backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); display: grid; place-items: center; z-index: 10; }
+  .confirm-card { background: var(--ds-color-background); border: 1px solid var(--ds-color-border); border-radius: var(--ds-radius-dialog); padding: var(--ds-space-6); width: min(24rem, 90vw); display: grid; gap: var(--ds-space-4); }
+  .confirm-card h3 { font-size: 1.05rem; font-weight: 600; }
+  .confirm-actions { display: flex; justify-content: flex-end; gap: var(--ds-space-2); }
+  .confirm-actions button { padding: var(--ds-space-2) var(--ds-space-4); min-height: 36px; border-radius: var(--ds-radius-control); font-size: var(--ds-font-nav); cursor: pointer; }
+  .cancel { border: 1px solid var(--ds-color-border); background: var(--ds-color-background); color: var(--ds-color-text); }
+  .danger { border: 1px solid #b3261e55; background: #b3261e; color: white; }
 </style>

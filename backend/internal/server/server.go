@@ -59,6 +59,7 @@ func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
 	// Small non-contract endpoint: the chat's default model (last-used).
 	r.Get("/api/chat/default-model", s.GetDefaultModel)
+	r.Delete("/api/chat/messages", s.ClearChat)
 	return guardMutations(apigen.HandlerFromMux(s, r))
 }
 

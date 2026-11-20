@@ -259,3 +259,18 @@ func nullStr(s string) any {
 	}
 	return s
 }
+
+// ClearSession removes all messages and events for a session (the
+// user-initiated "clear chat" — destructive by design).
+func (s *Store) ClearSession(sessionID string) error {
+	if _, err := s.db.Exec(`DELETE FROM messages WHERE session_id = ?`, sessionID); err != nil {
+		return fmt.Errorf("store: clear messages: %w", err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM timeline_events WHERE session_id = ?`, sessionID); err != nil {
+		return fmt.Errorf("store: clear events: %w", err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM compactions WHERE session_id = ?`, sessionID); err != nil {
+		return fmt.Errorf("store: clear compactions: %w", err)
+	}
+	return nil
+}
