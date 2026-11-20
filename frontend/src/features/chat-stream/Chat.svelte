@@ -108,7 +108,6 @@
   </div>
 
   <div class="composer-region">
-    <div class="model-label"><ModelPicker id="composer-model" label="Model" bind:value={sessions.model} /></div>
     <form class="composer" onsubmit={(e) => { e.preventDefault(); void send(); }}>
       <button type="button" class="icon-button" aria-label="Attach (not implemented)" disabled title="Not implemented"><Plus size={18} /></button>
       <label class="sr-only" for="composer-input">Message Karta</label>
@@ -145,7 +144,6 @@
   .tool-name { font-weight: 600; }
   .tool-output { font-size: 0.75rem; overflow-wrap: anywhere; max-width: 100%; }
   .composer-region { padding: var(--ds-space-2) max(calc(50% - 29rem), var(--ds-space-4)) var(--ds-space-4); }
-  .model-label { margin-bottom: var(--ds-space-2); }
   .composer { display: flex; align-items: center; gap: var(--ds-space-2); border: 1px solid var(--ds-color-border); background: var(--ds-color-surface); border-radius: var(--ds-radius-composer); padding: var(--ds-space-2); box-shadow: 0 1px 3px rgb(0 0 0 / 0.06); }
   .composer textarea { flex: 1; background: transparent; border: 0; outline: none; font-size: 1rem; color: var(--ds-color-text); min-height: 28px; resize: none; font-family: inherit; }
   .composer textarea::placeholder { color: var(--ds-color-muted); }
