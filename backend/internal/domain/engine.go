@@ -29,6 +29,8 @@ type GoalRequest struct {
 	Goal string `json:"goal"`
 	// Agent optionally selects a registry agent; the default agent is used when empty.
 	Agent string `json:"agent,omitempty"`
+	// Model optionally names the qualified provider/model ("provider/model-id").
+	Model string `json:"model,omitempty"`
 	// Context carries prior conversation messages into the run, when resuming
 	// history client-side.
 	Context []Message `json:"context,omitempty"`

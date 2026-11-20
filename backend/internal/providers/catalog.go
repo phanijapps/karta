@@ -15,6 +15,7 @@ import (
 type Catalog struct {
 	mu      sync.Mutex
 	entries map[string]catalogEntry
+	onSet   func(provider string, models []Model, refreshedAt time.Time) // optional persistence hook
 }
 
 type catalogEntry struct {
@@ -27,13 +28,36 @@ func NewCatalog() *Catalog {
 	return &Catalog{entries: map[string]catalogEntry{}}
 }
 
+// OnSet registers a persistence callback fired after every successful Set.
+func (c *Catalog) OnSet(fn func(provider string, models []Model, refreshedAt time.Time)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onSet = fn
+}
+
+// LoadEntry restores one provider's entry (called at startup from the store).
+func (c *Catalog) LoadEntry(provider string, models []Model, refreshedAt time.Time) {
+	list := make([]Model, len(models))
+	copy(list, models)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries[provider] = catalogEntry{models: list, refreshedAt: refreshedAt}
+}
+
 // Set replaces one provider's catalog entry and stamps the refresh time.
 func (c *Catalog) Set(provider string, models []Model) {
 	list := make([]Model, len(models))
 	copy(list, models)
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.entries[provider] = catalogEntry{models: list, refreshedAt: time.Now().UTC()}
+	entry := catalogEntry{models: list, refreshedAt: time.Now().UTC()}
+	c.entries[provider] = entry
+	onSet := c.onSet
+	refreshedAt := entry.refreshedAt
+	c.mu.Unlock()
+	// Persist outside the lock (the hook writes to SQLite).
+	if onSet != nil {
+		onSet(provider, list, refreshedAt)
+	}
 }
 
 // Get returns one provider's entry (ok=false when never refreshed).

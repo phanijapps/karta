@@ -277,14 +277,21 @@ type sqlNull = sql.NullInt64
 type ProviderStore interface {
 	Lookup(name string) (providers.Provider, error)
 	ResolvedLookup(ctx context.Context, name string) (providers.Provider, string, error)
+	Secrets() providers.SecretStore
 }
 
 // NewStoreBacked wires the chat over the providers store's atomic
 // lookup+credential seam, avoiding the update-race where a provider's
 // new key could be sent to its old URL.
+// NewStoreBacked wires the chat over the providers store's atomic
+// lookup+credential seam, avoiding the update-race where a provider's
+// new key could be sent to its old URL.
 func NewStoreBacked(db *store.Store, provStore ProviderStore, completer Completer, toolProv tools.Provider, bus *eventbus.Bus, idGen func() string) *Service {
-	return New(db,
+	svc := New(db,
 		provStore.Lookup,
-		func(ctx context.Context, _ providers.Provider) (string, error) { return "", nil },
+		func(ctx context.Context, p providers.Provider) (string, error) {
+			return providers.ResolveCredential(ctx, p, provStore.Secrets())
+		},
 		completer, toolProv, bus, idGen)
+	return svc
 }

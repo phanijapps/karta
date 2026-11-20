@@ -109,6 +109,11 @@ CREATE TABLE IF NOT EXISTS timeline_events (
     created_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_session ON timeline_events(session_id, created_at);
+CREATE TABLE IF NOT EXISTS model_catalog (
+    provider     TEXT PRIMARY KEY,
+    model_ids    TEXT NOT NULL,
+    refreshed_at TEXT NOT NULL
+);
 PRAGMA user_version = %d;
 `
 

@@ -44,7 +44,7 @@ func newTestDaemon(t *testing.T, providerHandler http.HandlerFunc, cfgProviders 
 	}
 	t.Cleanup(store.Close)
 	catalog := providers.NewCatalog()
-	daemon := httptest.NewServer(New(store, providers.NewClient(), catalog, newFakeChatService(), "test").Routes())
+	daemon := httptest.NewServer(New(store, providers.NewClient(), catalog, newFakeChatService(), nil, nil, nil, "test").Routes())
 	t.Cleanup(daemon.Close)
 	return daemon, store, &fakeSecretsHarness{fake: fake, secrets: secrets, paths: paths, catalog: catalog}
 }
@@ -184,15 +184,15 @@ func TestUnimplementedContractOperations(t *testing.T) {
 	// stay on the generated 501 stubs (bare status, no body) until their
 	// owning change lands.
 	daemon, _, _ := newTestDaemon(t, func(w http.ResponseWriter, r *http.Request) {}, nil)
-	for _, path := range []string{"/api/sessions", "/api/sessions/x"} {
-		resp, err := http.Get(daemon.URL + path)
-		if err != nil {
-			t.Fatalf("GET %s: %v", path, err)
-		}
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusNotImplemented {
-			t.Fatalf("GET %s = %d, want 501", path, resp.StatusCode)
-		}
+	// Sessions are now implemented (list returns 200); goals is implemented
+	// too. Only resume remains 501.
+	resp, err := http.Post(daemon.URL+"/api/sessions/x/resume", "application/json", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("resume = %d, want 501", resp.StatusCode)
 	}
 }
 

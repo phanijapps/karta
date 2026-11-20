@@ -391,9 +391,12 @@ type GoalRequest struct {
 	Agent *string `json:"agent,omitempty"`
 
 	// Context Prior conversation messages carried into the run (mirrors domain GoalRequest.Context).
-	Context   *[]Message `json:"context,omitempty"`
-	Goal      string     `json:"goal"`
-	SessionId *Id        `json:"session_id,omitempty"`
+	Context *[]Message `json:"context,omitempty"`
+	Goal    string     `json:"goal"`
+
+	// Model Qualified model selection (provider/model-id); overrides the agent's model.
+	Model     *string `json:"model,omitempty"`
+	SessionId *Id     `json:"session_id,omitempty"`
 }
 
 // Health defines model for Health.

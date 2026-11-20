@@ -16,9 +16,11 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"zbot/backend/internal/chat"
+	"zbot/backend/internal/domain"
+	"zbot/backend/internal/eventbus"
 	"zbot/backend/internal/providers"
 	apigen "zbot/backend/internal/server/apigen"
-	"zbot/backend/internal/store"
+	zbotstore "zbot/backend/internal/store"
 )
 
 // Server implements the daemon's contract operations. apigen.Unimplemented
@@ -30,6 +32,9 @@ type Server struct {
 	client  *providers.Client
 	catalog *providers.Catalog
 	chat    ChatService
+	engine  domain.AgentEngine
+	bus     *eventbus.Bus
+	db      *zbotstore.Store
 	version string
 }
 
@@ -37,14 +42,14 @@ type Server struct {
 // *chat.Service in production; a fake in handler tests).
 type ChatService interface {
 	Send(ctx context.Context, text, providerName, model string) chat.SendOutcome
-	Sync(afterSeq int64, limit int) ([]store.Message, int64, bool, error)
+	Sync(afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error)
 }
 
 // New builds a server over the provider store and model catalog.
 // version lands in /healthz (zbotd injects its build version; "dev" in
 // development).
-func New(store *providers.Store, client *providers.Client, catalog *providers.Catalog, chatSvc ChatService, version string) *Server {
-	return &Server{store: store, client: client, catalog: catalog, chat: chatSvc, version: version}
+func New(store *providers.Store, client *providers.Client, catalog *providers.Catalog, chatSvc ChatService, eng domain.AgentEngine, bus *eventbus.Bus, db *zbotstore.Store, version string) *Server {
+	return &Server{store: store, client: client, catalog: catalog, chat: chatSvc, engine: eng, bus: bus, db: db, version: version}
 }
 
 // Routes mounts every contract operation (paths stay in lockstep with

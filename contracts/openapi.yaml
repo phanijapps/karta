@@ -840,6 +840,13 @@ components:
         agent:
           type: string
           maxLength: 128
+        model:
+          type: string
+          minLength: 3
+          maxLength: 384
+          pattern: '^[a-z0-9][a-z0-9-]{0,63}/[\s\S]+$'
+          description: Qualified model selection (provider/model-id);
+            overrides the agent's model.
         context:
           type: array
           maxItems: 1000

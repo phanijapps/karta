@@ -449,6 +449,8 @@ export interface components {
             goal: string;
             session_id?: components["schemas"]["Id"];
             agent?: string;
+            /** @description Qualified model selection (provider/model-id); overrides the agent's model. */
+            model?: string;
             /** @description Prior conversation messages carried into the run (mirrors domain GoalRequest.Context). */
             context?: components["schemas"]["Message"][];
         };
