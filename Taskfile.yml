@@ -1,0 +1,87 @@
+version: '3'
+
+# z-Bot unified tasks. Prerequisites: Go 1.26+, Task (taskfile.dev), Node
+# (for contract tooling via npx), golangci-lint. Plain `go` commands also
+# work — these tasks are thin wrappers over the Go toolchain.
+
+vars:
+  GO_PACKAGES: './...'
+  CONTRACT: contracts/openapi.yaml
+
+tasks:
+  build:
+    desc: Build all backend packages
+    dir: backend
+    cmds:
+      - go build {{.GO_PACKAGES}}
+
+  test:
+    desc: Run all backend tests (race detector on)
+    aliases: [test:backend]
+    dir: backend
+    cmds:
+      - go test -race {{.GO_PACKAGES}}
+
+  lint:
+    desc: Vet and gofmt-check the backend
+    dir: backend
+    cmds:
+      - go vet {{.GO_PACKAGES}}
+      - test -z "$(gofmt -l .)" || { gofmt -l .; echo 'gofmt needed - run task fmt'; exit 1; }
+
+  lint:backend:
+    desc: golangci-lint over the backend (constitution Verification)
+    dir: backend
+    cmds:
+      - golangci-lint run ./...
+
+  fmt:
+    desc: Format the backend
+    dir: backend
+    cmds:
+      - gofmt -w .
+
+  codegen:
+    desc: Validate the API contract and regenerate clients (always runs validation)
+    cmds:
+      # Always: validate the contract (fails the task on any error).
+      - npx --yes @redocly/cli lint --format summary {{.CONTRACT}}
+      # Frontend TS client: only once frontend/package.json exists.
+      # Go server types arrive with the internal/server change (design D5).
+      - |
+        if [ -f frontend/package.json ]; then
+          cd frontend && npx --yes openapi-typescript ../{{.CONTRACT}} \
+            --output src/shared/api/schema.d.ts
+        else
+          echo "frontend/ not scaffolded yet - skipping client generation"
+        fi
+
+  dev:
+    desc: Start the frontend-only workspace preview
+    dir: frontend
+    cmds:
+      - pnpm dev
+
+  check:frontend:
+    desc: Check Svelte and TypeScript and build the static SPA
+    dir: frontend
+    cmds:
+      - pnpm check
+      - pnpm build
+
+  test:frontend:
+    desc: Run offline Chromium shell interaction tests
+    dir: frontend
+    cmds:
+      - pnpm test
+
+  verify:
+    desc: End-to-end check - codegen, lint, tests, build (constitution Verification)
+    cmds:
+      - task: codegen
+      - task: lint
+      - task: lint:backend
+      - task: test
+      - task: build
+      - task: check:frontend
+      - task: test:frontend

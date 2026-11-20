@@ -1,0 +1,325 @@
+{
+  "basis": "Declared breakpoints 768 and 1280; supported minimum 375 CSS px. Required widths: 375, 768, 1280; short/tall heights 600/900. Additional requested viewports 1440x900 and 375x812.",
+  "captures": [
+    {
+      "route": "/",
+      "viewport-width": 375,
+      "viewport-height": 600,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "dark",
+      "image": "dark-375x600-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 375,
+      "viewport-height": 600,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "dark",
+      "image": "dark-375x600-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 375,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "dark",
+      "image": "dark-375x900-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 375,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "dark",
+      "image": "dark-375x900-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 768,
+      "viewport-height": 600,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "dark",
+      "image": "dark-768x600-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 768,
+      "viewport-height": 600,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "dark",
+      "image": "dark-768x600-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 768,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "dark",
+      "image": "dark-768x900-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 768,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "dark",
+      "image": "dark-768x900-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 1280,
+      "viewport-height": 600,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "dark",
+      "image": "dark-1280x600-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 1280,
+      "viewport-height": 600,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "dark",
+      "image": "dark-1280x600-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 1280,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "dark",
+      "image": "dark-1280x900-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 1280,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "dark",
+      "image": "dark-1280x900-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 1440,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "dark",
+      "image": "dark-1440x900-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 1440,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "dark",
+      "image": "dark-1440x900-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 375,
+      "viewport-height": 812,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "dark",
+      "image": "dark-375x812-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 375,
+      "viewport-height": 812,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "dark",
+      "image": "dark-375x812-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 375,
+      "viewport-height": 600,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "light",
+      "image": "light-375x600-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 375,
+      "viewport-height": 600,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "light",
+      "image": "light-375x600-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 375,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "light",
+      "image": "light-375x900-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 375,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "light",
+      "image": "light-375x900-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 768,
+      "viewport-height": 600,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "light",
+      "image": "light-768x600-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 768,
+      "viewport-height": 600,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "light",
+      "image": "light-768x600-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 768,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "light",
+      "image": "light-768x900-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 768,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "light",
+      "image": "light-768x900-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 1280,
+      "viewport-height": 600,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "light",
+      "image": "light-1280x600-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 1280,
+      "viewport-height": 600,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "light",
+      "image": "light-1280x600-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 1280,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "light",
+      "image": "light-1280x900-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 1280,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "light",
+      "image": "light-1280x900-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 1440,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "light",
+      "image": "light-1440x900-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 1440,
+      "viewport-height": 900,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "light",
+      "image": "light-1440x900-settings.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 375,
+      "viewport-height": 812,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "shell",
+      "theme": "light",
+      "image": "light-375x812-shell.png"
+    },
+    {
+      "route": "/",
+      "viewport-width": 375,
+      "viewport-height": 812,
+      "scroll-position": 0,
+      "page-scrollable": "no",
+      "surface": "settings",
+      "theme": "light",
+      "image": "light-375x812-settings.png"
+    }
+  ]
+}

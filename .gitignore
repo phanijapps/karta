@@ -1,0 +1,32 @@
+# Scratch / progress files written by agent workflows
+progress.md
+
+# Task runner
+.task/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.vite/
+
+# Desktop build outputs
+desktop/build/
+
+# Local env & secrets
+.env
+.env.*
+
+# Local databases / data (never commit local state)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Go
+backend/bin/
+
+# OS noise
+.DS_Store
+Thumbs.db

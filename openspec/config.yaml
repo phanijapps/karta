@@ -1,0 +1,42 @@
+schema: spec-driven
+
+# Project context: constraints that guide OpenSpec artifacts and workflows.
+context: |
+  z-Bot: local-first, autonomous, goal-oriented multi-agent desktop system.
+  Locked stack: Go 1.26+ daemon (zbotd) + Bubbletea CLI; Svelte 5 TS Vite SPA
+  (pure, zero SSR); Wails v3 shell; SQLite + sqlite-vec + FTS5 + local ONNX;
+  CloudWeGo Eino behind the domain.AgentEngine seam.
+  Authoritative rules live in AGENTS.md (root), backend/AGENTS.md,
+  frontend/AGENTS.md — read them before planning. Product truth:
+  docs/product/product-context.md. Founding record:
+  docs/architecture/architecture-brief.md.
+  Load-bearing constraints: only internal/engine/eino/ imports eino;
+  compaction lives in internal/compaction (domain.Compactor); contract-first
+  API via contracts/openapi.yaml; channel-agnostic core; every agent step /
+  tool call / hook decision / compaction event emits to internal/eventbus;
+  all persistent state under ~/.zbot/ (local-first, zero hardcoded agents or
+  tools). Dev skills in .agents/skills/; sub-agent roster in .pi/agents/ or .codex/agents/.
+
+# Per-artifact rules: every generated task list carries the review phase.
+rules:
+  tasks:
+    - Every tasks.md MUST end with a "Review and hardening" group containing
+      one tracked task to run the read-only zbot-reviewer subagent over the
+      change scope and fix every P0/P1 finding, and one tracked task to
+      re-run `task verify` green after the fixes.
+
+# Per-operation guidance: how apply and archive conduct themselves.
+operations:
+  apply:
+    guidance:
+      - On a review task, launch the zbot-reviewer subagent (read-only) with
+        the change scope, the change artifacts under openspec/changes/, and
+        the five constitution boundaries; fix all P0/P1 findings yourself;
+        fix P2s or record in the change summary why not.
+      - After fixing review findings, re-run `task verify`; mark the review
+        task complete only when it is green.
+  archive:
+    guidance:
+      - Archive only when the review task is complete — the reviewer ran, all
+        P0/P1 findings are fixed, and `task verify` is green after the final
+        edit.

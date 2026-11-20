@@ -1,0 +1,43 @@
+# frontend/ — Svelte 5 Constitution
+
+Scope rules for all work in `frontend/` (the pure SPA served in browsers and
+embedded in the Wails v3 shell), on top of the root constitution. Target
+stack: Svelte 5 + TypeScript + Vite + Tailwind, zero SSR.
+
+## Svelte 5 Runes Only
+
+Use `$state`, `$derived`, `$effect`, `$props`. **Never** legacy Svelte 4
+reactive syntax (`$:` statements, `export let`). The SSE Timeline Tree store
+in particular must be runes-based so 100+ tokens/sec streams render without
+jank.
+
+## FSD Import Rules
+
+Layer direction, strictly one way:
+
+```
+app → features → entities → shared
+```
+
+- No cross-feature imports (`features/chat-stream` never imports
+  `features/wards`).
+- Layers only import downward: `app` may import `features`; `shared` imports
+  nothing above it.
+- Feature folders: `chat-stream`, `timeline-tree`, `wards`, `config-editor`,
+  `settings`. Entities: `session`, `agent`, `memory-fact`, `timeline-event`.
+
+## API Client Rule
+
+All daemon access goes through the generated client in `src/shared/api/`
+(regenerated from `contracts/openapi.yaml` via `task codegen`) and the
+centralized SSE Timeline Tree store. No hand-rolled `fetch` calls to the
+daemon, no per-feature API clients.
+
+## Wails Integration Rule
+
+- `frontend/` runs identically in a browser (`task dev`) and inside the Wails
+  WebView (`task build:desktop`).
+- Keep every `@wailsio/runtime` call behind `src/shared/platform/`; nothing
+  outside that adapter may import Wails APIs.
+- `vite.config.ts` uses `server.port = Number(process.env.WAILS_VITE_PORT) ||
+  9245` with `strictPort: true`; static output lands in `frontend/dist/`.

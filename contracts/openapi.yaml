@@ -1,0 +1,445 @@
+openapi: 3.1.0
+info:
+  title: z-Bot Daemon API
+  version: 0.1.0
+  description: |
+    The local-first HTTP/SSE contract between the zbotd daemon and its
+    clients (web UI, Wails desktop shell, Bubbletea CLI, future channels).
+    Single source of truth: handlers and clients are generated from this
+    file. Evolution is additive within a major version.
+servers:
+  - url: http://127.0.0.1:8787
+    description: Local daemon (loopback only)
+
+# z-Bot is local-first: the daemon binds loopback only and requires no
+# authentication. Declared explicitly so tooling sees the decision.
+security: []
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      summary: Liveness probe
+      responses:
+        '200':
+          description: The daemon is up.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /api/goals:
+    post:
+      operationId: createGoal
+      summary: Start an autonomous goal run
+      description: Creates (or reuses) a session and starts an engine run
+        toward the goal. Timeline events stream on the session events
+        endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoalRequest'
+      responses:
+        '201':
+          description: Run started; the session is running.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/sessions:
+    get:
+      operationId: listSessions
+      summary: List sessions (bounded, explicit truncation)
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of sessions to return (1-200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          description: Opaque pagination cursor from a previous truncated
+            response.
+          schema:
+            type: string
+            maxLength: 256
+      responses:
+        '200':
+          description: A page of sessions. `truncated` is true when more
+            results exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/sessions/{sessionId}:
+    get:
+      operationId: getSession
+      summary: Read one session's identity and status
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: The session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/sessions/{sessionId}/cancel:
+    post:
+      operationId: cancelSession
+      summary: Cancel a session's active run
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: The session, now cancelled (or already terminal).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/sessions/{sessionId}/resume:
+    post:
+      operationId: resumeSession
+      summary: Resume a waiting session with user input
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserInput'
+      responses:
+        '200':
+          description: Input accepted; the run continues and streams events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/sessions/{sessionId}/events:
+    get:
+      operationId: streamSessionEvents
+      summary: Stream the session's Timeline Tree events over SSE
+      description: |
+        Server-Sent Events stream of timeline events for one session. Each
+        SSE `data:` line carries one TimelineEvent as JSON. Replay of
+        already-persisted events precedes live streaming.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: SSE event stream.
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/TimelineEvent'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+
+  responses:
+    BadRequest:
+      description: Invalid request body or parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: The session does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: The session is not in a resumable (waiting) state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Id:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
+
+    Health:
+      type: object
+      additionalProperties: false
+      required: [service, status, version]
+      properties:
+        service:
+          type: string
+          enum: [zbotd]
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+          minLength: 1
+          maxLength: 64
+
+    SessionStatus:
+      type: string
+      enum: [created, running, waiting, completed, cancelled, failed]
+
+    Session:
+      type: object
+      additionalProperties: false
+      required: [id, status, created_at, updated_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        status:
+          $ref: '#/components/schemas/SessionStatus'
+        agent:
+          type: string
+          maxLength: 128
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SessionSummary:
+      type: object
+      additionalProperties: false
+      required: [id, status, updated_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        status:
+          $ref: '#/components/schemas/SessionStatus'
+        agent:
+          type: string
+          maxLength: 128
+        updated_at:
+          type: string
+          format: date-time
+
+    SessionList:
+      type: object
+      additionalProperties: false
+      required: [sessions, truncated]
+      properties:
+        sessions:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/SessionSummary'
+        truncated:
+          type: boolean
+          description: True when more results exist beyond this page.
+        next_cursor:
+          type: string
+          maxLength: 256
+
+    GoalRequest:
+      type: object
+      additionalProperties: false
+      required: [goal]
+      properties:
+        goal:
+          type: string
+          minLength: 1
+          maxLength: 16384
+        session_id:
+          $ref: '#/components/schemas/Id'
+        agent:
+          type: string
+          maxLength: 128
+        context:
+          type: array
+          maxItems: 1000
+          description: Prior conversation messages carried into the run
+            (mirrors domain GoalRequest.Context).
+          items:
+            $ref: '#/components/schemas/Message'
+
+    Message:
+      type: object
+      additionalProperties: false
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant, tool]
+        content:
+          type: string
+          maxLength: 1048576
+        tokens:
+          type: integer
+          minimum: 0
+
+    UserInput:
+      type: object
+      additionalProperties: false
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 65536
+
+    TimelineEventKind:
+      type: string
+      description: Mirrors the domain TimelineEventKind set.
+      enum: [session, agent_step, delegation, tool_call, hook_decision, compaction_triggered]
+
+    TimelineEvent:
+      type: object
+      additionalProperties: false
+      required: [id, session_id, kind, timestamp]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        session_id:
+          $ref: '#/components/schemas/Id'
+        parent_id:
+          $ref: '#/components/schemas/Id'
+        agent:
+          type: string
+          maxLength: 128
+        kind:
+          $ref: '#/components/schemas/TimelineEventKind'
+        timestamp:
+          type: string
+          format: date-time
+        text:
+          type: string
+          maxLength: 16384
+        tool_call:
+          $ref: '#/components/schemas/ToolCallPayload'
+        delegation:
+          $ref: '#/components/schemas/DelegationPayload'
+        hook:
+          $ref: '#/components/schemas/HookDecision'
+        compaction:
+          $ref: '#/components/schemas/CompactionStats'
+
+    ToolCallPayload:
+      type: object
+      additionalProperties: false
+      required: [tool]
+      properties:
+        tool:
+          type: string
+          minLength: 1
+          maxLength: 256
+        input:
+          type: object
+          additionalProperties: true
+        output:
+          type: string
+          maxLength: 131072
+        error:
+          type: string
+          maxLength: 16384
+        duration_ms:
+          type: integer
+          minimum: 0
+
+    DelegationPayload:
+      type: object
+      additionalProperties: false
+      required: [child_agent, task]
+      properties:
+        child_agent:
+          type: string
+          minLength: 1
+          maxLength: 128
+        child_session_id:
+          type: string
+          maxLength: 128
+        task:
+          type: string
+          minLength: 1
+          maxLength: 16384
+
+    HookAction:
+      type: string
+      enum: [allow, block, warn]
+
+    HookDecision:
+      type: object
+      additionalProperties: false
+      required: [action]
+      properties:
+        action:
+          $ref: '#/components/schemas/HookAction'
+        reason:
+          type: string
+          maxLength: 16384
+        context:
+          type: object
+          additionalProperties: true
+
+    CompactionStats:
+      type: object
+      additionalProperties: false
+      required: [strategy, tokens_before, tokens_after, messages_before, messages_after]
+      properties:
+        strategy:
+          type: string
+          minLength: 1
+          maxLength: 64
+        tokens_before:
+          type: integer
+          minimum: 0
+        tokens_after:
+          type: integer
+          minimum: 0
+        messages_before:
+          type: integer
+          minimum: 0
+        messages_after:
+          type: integer
+          minimum: 0
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        session_id:
+          $ref: '#/components/schemas/Id'
