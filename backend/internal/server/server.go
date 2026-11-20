@@ -56,7 +56,10 @@ func New(store *providers.Store, client *providers.Client, catalog *providers.Ca
 // contracts/openapi.yaml via the generated glue) and returns the handler.
 // Mutating methods pass the cross-origin guard first.
 func (s *Server) Routes() http.Handler {
-	return guardMutations(apigen.HandlerFromMux(s, chi.NewRouter()))
+	r := chi.NewRouter()
+	// Small non-contract endpoint: the chat's default model (last-used).
+	r.Get("/api/chat/default-model", s.GetDefaultModel)
+	return guardMutations(apigen.HandlerFromMux(s, r))
 }
 
 // writeJSON emits one typed response body.

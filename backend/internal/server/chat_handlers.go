@@ -58,6 +58,10 @@ func (s *Server) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	outcome := s.chat.Send(r.Context(), req.Text, providerName, modelID)
+	// Persist the model as the default (last-used wins).
+	if s.db != nil {
+		_ = s.db.SetDefaultModel(req.Model)
+	}
 	if outcome.Err != nil {
 		body := apigen.ChatExchange{
 			Messages:  chatViews(outcome.Rows),
@@ -121,3 +125,13 @@ func nilStrPtr(s string) *string {
 }
 
 var _ = chat.SessionID
+
+// GetDefaultModel returns the stored default model for the chat.
+func (s *Server) GetDefaultModel(w http.ResponseWriter, r *http.Request) {
+	model, err := s.db.DefaultModel()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"model": model})
+}

@@ -53,3 +53,27 @@ func (s *Store) LoadCatalog() ([]CatalogEntry, error) {
 }
 
 var _ = sql.ErrNoRows
+
+// SetDefaultModel persists the user's default model choice (the model
+// the chat uses when the picker selection is saved).
+func (s *Store) SetDefaultModel(qualified string) error {
+	_, err := s.db.Exec(`INSERT INTO app_settings (key, value) VALUES ('default_model', ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, qualified)
+	if err != nil {
+		return fmt.Errorf("store: set default model: %w", err)
+	}
+	return nil
+}
+
+// DefaultModel returns the stored default model ("" when unset).
+func (s *Store) DefaultModel() (string, error) {
+	var v string
+	err := s.db.QueryRow(`SELECT value FROM app_settings WHERE key = 'default_model'`).Scan(&v)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("store: default model: %w", err)
+	}
+	return v, nil
+}

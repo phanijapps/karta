@@ -14,6 +14,14 @@ export function createSessions() {
     loading = true;
     sendError = '';
     try {
+      // Pre-select the default (last-used) model.
+      try {
+        const res = await fetch('/api/chat/default-model');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.model && model === '') model = data.model;
+        }
+      } catch { /* non-critical */ }
       messages = [];
       cursor = 0;
       // Catch-up loop: page until not truncated.

@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"strings"
 	"sync"
 
@@ -45,7 +46,8 @@ type Adapter struct {
 	idGen     func() string
 
 	mu      sync.Mutex
-	cancels map[string]context.CancelFunc // sessionID → cancel
+	cancels map[string]context.CancelFunc    // sessionID → cancel
+	models  map[string]*einoopenai.ChatModel // cache: provider/model/key → model
 }
 
 // New creates the engine adapter.
@@ -53,6 +55,7 @@ func New(provStore ProviderStore, st *store.Store, bus *eventbus.Bus, toolProv t
 	return &Adapter{
 		provStore: provStore, st: st, bus: bus, toolProv: toolProv,
 		cancels: map[string]context.CancelFunc{},
+		models:  map[string]*einoopenai.ChatModel{},
 		idGen:   func() string { return fmt.Sprintf("evt-%d", nextID()) },
 	}
 }
@@ -149,19 +152,31 @@ func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events cha
 		}
 	}
 
-	// Build the chat model (eino OpenAI-compatible).
-	chatModel, err := einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
-		BaseURL: in.prov.BaseURL,
-		APIKey:  in.token,
-		Model:   in.modelID,
-	})
-	if err != nil {
-		emit(domain.EventAgentStep, "engine: failed to create chat model: "+err.Error())
-		_ = a.st.FinishExecution(in.execID, "failed", err.Error(), 0, 0)
-		return
+	// Build or reuse the chat model (cached per provider+model+key to
+	// avoid re-initializing the HTTP client on every run).
+	modelKey := in.providerName + "/" + in.modelID + "/" + hashToken(in.token)
+	a.mu.Lock()
+	chatModel, ok := a.models[modelKey]
+	a.mu.Unlock()
+	if !ok {
+		var err error
+		chatModel, err = einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
+			BaseURL: in.prov.BaseURL,
+			APIKey:  in.token,
+			Model:   in.modelID,
+		})
+		if err != nil {
+			emit(domain.EventAgentStep, "engine: failed to create chat model: "+err.Error())
+			_ = a.st.FinishExecution(in.execID, "failed", err.Error(), 0, 0)
+			return
+		}
+		a.mu.Lock()
+		a.models[modelKey] = chatModel
+		a.mu.Unlock()
 	}
 
 	// Append the goal as the opening user message.
+	var err error
 	_, err = a.st.Append(store.Message{
 		ID: fmt.Sprintf("msg-goal-%d", nextID()), SessionID: in.sessionID,
 		ExecutionID: in.execID, Role: "user", Content: in.goal,
@@ -309,3 +324,11 @@ func (a *Adapter) Resume(ctx context.Context, sessionID string, input domain.Use
 }
 
 const systemPrompt = "You are Karta, a local-first assistant. Work toward the user's goal using the available tools. Be direct and useful."
+
+// hashToken produces a short stable hash for cache keying (never the
+// token itself).
+func hashToken(token string) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(token))
+	return fmt.Sprint(h.Sum32())
+}
