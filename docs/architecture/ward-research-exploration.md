@@ -121,9 +121,14 @@ recall), knowledge (the ward).
 2. **Intent middleware** in the engine path (root runs only): a cheap
    router (bypass/pin) + intent agent writing a typed contract;
    inject as a prompt section; emit events; complexity → step budget.
-3. **Ward tool** for the root agent: `ward_use(name)` / `ward_create(name,
-   archetype)` — sets the run's sticky ward; layout template injected into
-   the run's agents (children included) with digest.
+3. **MCP tool loading + ward tool** for the root agent: enabled MCPs'
+   tools become per-run loadable (intent-recommended subset by default);
+   `ward_use(name)` / `ward_create(name, archetype)` sets the sticky
+   ward; layout template injected (children included) with digest.
+   Programmatic orchestration: `list_tools`/`call_tool` over the loaded
+   MCP set — chat and goal runs share the mechanism. Local ward-scoped
+   execution (shell/python via uv/node) first; Docker sandbox operator
+   experimental, config-gated.
 4. **Delegation guard**: delegate tool's contract grows "children act via
    declared ward roles; structural ward mutations return bounded requests
    to the root."
@@ -147,6 +152,31 @@ recall), knowledge (the ward).
 - Async delegation continuation (agentzero's model) vs Karta's synchronous
   v1 — wards make cross-session resumption attractive; the run-ownership
   follow-up already owns that machinery.
+
+## Tool plane direction (operator refinement — MCP-first, recorded)
+
+The operator's refinement of the execution strategy:
+
+- **MCPs are the primary dynamic tool plane.** Karta already manages
+  MCPs (CRUD, enablement, prober that discovers each server's tools
+  with names+descriptions). The gap is RUNTIME tool loading: today MCP
+  tools are probed for display but not offered to runs. The direction:
+  enabled MCPs' tools become loadable per-run — intent analysis
+  recommends which MCPs to activate (from the probed tool index), the
+  orchestrator/chat loads exactly those tools, keeping the default
+  offering light.
+- **Dynamic during intent analysis — and in chat too.** The same
+  discovery+load mechanism serves goal runs (ward-hosted research) and
+  quick chat: a `list_available_tools`-style capability (over the
+  enabled MCP index) lets the model see what exists and orchestrate
+  programmatic tool calls (call an MCP tool by name with args), instead
+  of Karta hardwiring tool inventories per surface.
+- **Docker sandbox stays EXPERIMENTAL.** The eino-ext DockerSandbox
+  operator is the isolation upgrade path (Code Wards convergence) but
+  ships behind a config flag, off by default. First test target: the
+  LOCAL HOST OS — a local ward-scoped operator (direct exec, cwd=ward,
+  guardrails) proves the pipeline; Docker wraps the same Operator
+  interface later when hardened.
 
 ## Tool-execution findings (investigated for slice 3, recorded here)
 

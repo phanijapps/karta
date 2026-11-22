@@ -91,16 +91,18 @@ shell/python/node execution, spec→plan→tasks skills, chitta bridge.
    `archetype`, `lint` findings, `canonical_title`; the layout tree
    endpoint returns node ids + matches (the same ids the ward tool will
    inject as the Active Ward Template).
-6. **Tool-execution strategy recorded for slice 3** (not built here):
-   a `wardops` package implements eino-ext's Operator interface with a
-   LOCAL ward-scoped backend (cwd pinned to the active ward, agentzero-
-   derived blocked-command list, output caps, timeout; RunCommand takes
-   []string — direct exec, no shell-string injection surface); tools =
-   upstream PyExecutor (python command = `uv run python`, per-ward venv
-   `.venv/` gitignored) + StrReplaceEditor + a Karta ward-shell tool;
-   node via `node`/`npx` through the same operator; absent runtime =
-   typed tool error naming the install path; DockerSandbox operator =
-   optional config upgrade for isolation-heavy work.
+6. **Tool-execution strategy recorded for slice 3** (not built here) —
+   MCP-first (operator refinement): enabled MCPs are the primary
+   dynamic tool plane; the prober's discovered tool index feeds intent
+   analysis (which MCP tools to load per run); a `list_tools`/
+   `call_tool` pair over the loaded MCP set gives programmatic
+   orchestration in BOTH goal runs and chat (default offering stays
+   light). Ward-scoped local execution via a `wardops` Operator
+   (eino-ext interface: direct-exec RunCommand, cwd=ward, guardrails;
+   PyExecutor with `uv run python` per-ward venv; StrReplaceEditor;
+   node/npx) is the FIRST test target on the local host OS; the
+   DockerSandbox operator stays EXPERIMENTAL — config-gated, off by
+   default, hardened before it becomes the Code Wards isolation story.
 
 ## Risks / Trade-offs
 
