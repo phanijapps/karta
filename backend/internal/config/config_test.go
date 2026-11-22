@@ -91,7 +91,7 @@ func TestBootstrapFirstRunCreatesStructureOnly(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ReadDir %s: %v", dir, err)
 		}
-		if dir == paths.ConfigDir("agents") {
+		if dir == paths.AgentsDir {
 			if len(entries) != 2 {
 				t.Fatalf("agents seed count: %d", len(entries))
 			}
@@ -534,7 +534,7 @@ func TestBootstrapSeedsExampleAgents(t *testing.T) {
 	if err := Bootstrap(paths); err != nil {
 		t.Fatal(err)
 	}
-	dir := paths.ConfigDir("agents")
+	dir := paths.AgentsDir
 	for _, name := range []string{"research-agent.example.md", "reviewer-agent.example.md"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Fatalf("missing seed %s: %v", name, err)
@@ -560,5 +560,75 @@ func TestBootstrapSeedsExampleAgents(t *testing.T) {
 	raw, _ := os.ReadFile(owned)
 	if !strings.Contains(string(raw), "mine now") {
 		t.Fatal("bootstrap overwrote a user-owned agent file")
+	}
+}
+
+// Legacy config/agents migrates one-time to ~/.zbot/agents; user edits
+// survive; the legacy dir is removed afterward.
+func TestBootstrapMigratesLegacyAgentsDir(t *testing.T) {
+	t.Parallel()
+	paths := NewPaths(t.TempDir())
+	legacy := paths.ConfigDir("agents")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, "my-agent.md"), []byte("---\nname: my-agent\ndescription: mine\n---\nPrompt."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Bootstrap(paths); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(paths.AgentsDir, "my-agent.md")); err != nil {
+		t.Fatalf("legacy agent did not migrate: %v", err)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatal("legacy dir should be removed after migration")
+	}
+	// User-owned afterward: edits survive re-bootstrap, no reseeding over.
+	owned := filepath.Join(paths.AgentsDir, "my-agent.md")
+	if err := os.WriteFile(owned, []byte("---\nname: my-agent\ndescription: edited\n---\nNew."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Bootstrap(paths); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(owned)
+	if !strings.Contains(string(raw), "edited") {
+		t.Fatal("re-bootstrap overwrote a migrated user file")
+	}
+}
+
+// P1 regression: the migration must run for EXISTING installs too (a
+// pre-existing config.yaml must not strand a populated legacy config/agents).
+func TestBootstrapMigratesLegacyAgentsOnExistingInstall(t *testing.T) {
+	t.Parallel()
+	paths := NewPaths(t.TempDir())
+	// Existing install: bootstrap once (seeds agents at the NEW home)...
+	if err := Bootstrap(paths); err != nil {
+		t.Fatal(err)
+	}
+	// ...then simulate a LEGACY install: remove the new home and place
+	// files in config/agents (as pre-relocation installs had).
+	if err := os.RemoveAll(paths.AgentsDir); err != nil {
+		t.Fatal(err)
+	}
+	legacy := paths.ConfigDir("agents")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, "old.md"), []byte("---\nname: old\ndescription: legacy\n---\nL."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// config.yaml EXISTS → the old early-return path; migration must still run.
+	if err := Bootstrap(paths); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(paths.AgentsDir, "old.md")); err != nil {
+		t.Fatalf("existing-install migration did not run: %v", err)
+	}
+	// And Load must not resurrect config/agents.
+	_, _ = Load(paths)
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatal("Load resurrected the legacy config/agents dir")
 	}
 }

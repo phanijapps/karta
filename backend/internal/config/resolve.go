@@ -10,7 +10,7 @@ import (
 )
 
 // Subdirs are the control-plane registry directories under <home>/config/.
-var Subdirs = []string{"prompts", "agents", "skills", "hooks", "mcps", "providers"}
+var Subdirs = []string{"prompts", "skills", "hooks", "mcps", "providers"}
 
 // ResolveHome resolves the z-Bot home root with strict precedence: a
 // non-empty flagOverride, then the ZBOT_HOME environment variable, then
@@ -37,6 +37,7 @@ type Paths struct {
 	DataDir      string
 	WardsDir     string
 	ProvidersDir string
+	AgentsDir    string // ~/.zbot/agents — the agent roster's top-level home
 }
 
 // NewPaths derives Paths for a resolved home.
@@ -47,6 +48,7 @@ func NewPaths(home string) Paths {
 		DataDir:      filepath.Join(home, "data"),
 		WardsDir:     filepath.Join(home, "wards"),
 		ProvidersDir: filepath.Join(home, "config", "providers"),
+		AgentsDir:    filepath.Join(home, "agents"),
 	}
 }
 

@@ -143,13 +143,20 @@ func Default() Config {
 	}
 }
 
-// Bootstrap creates the control-plane tree, creating missing directories
-// (the five config subdirectories, data/, wards/) and — only when absent —
-// the default config.yaml. It never overwrites an existing file, seeds no
-// content, and is idempotent. Bootstrap is the only writer of config.yaml;
+// Bootstrap creates the control-plane tree (config subdirectories, data/,
+// wards/), migrates a legacy config/agents directory to ~/.zbot/agents
+// (one-time, non-destructive), and — only when config.yaml is absent —
+// writes the defaults and seeds two example agents. It never overwrites
+// an existing file and is idempotent. Bootstrap is the only writer of config.yaml;
 // Load never regenerates it.
 func Bootstrap(paths Paths) error {
 	if err := ensureDirs(paths); err != nil {
+		return err
+	}
+	// Legacy migration runs for EXISTING installs too (the config.yaml
+	// early-return below must not strand a populated config/agents).
+	migrated, err := migrateLegacyAgents(paths)
+	if err != nil {
 		return err
 	}
 	raw, err := yaml.Marshal(Default())
@@ -170,10 +177,46 @@ func Bootstrap(paths Paths) error {
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("config: close %s: %w", paths.ConfigFile, err)
 	}
+	if migrated {
+		return nil // migrated user files: never seed examples over them
+	}
 	if err := seedExampleAgents(paths); err != nil {
 		return err
 	}
 	return nil
+}
+
+// migrateLegacyAgents one-time-moves files from the legacy config/agents
+// to ~/.zbot/agents (only when the new directory is absent). Reports
+// whether a migration happened.
+func migrateLegacyAgents(paths Paths) (bool, error) {
+	dir := paths.AgentsDir
+	legacy := paths.ConfigDir("agents")
+	if dir == "" || legacy == "" || legacy == dir {
+		return false, nil
+	}
+	entries, err := os.ReadDir(legacy)
+	if err != nil || len(entries) == 0 {
+		return false, nil
+	}
+	if _, err := os.Stat(dir); err == nil {
+		return false, nil // new home exists: nothing to migrate
+	} else if !os.IsNotExist(err) {
+		return false, fmt.Errorf("config: probe agents dir: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return false, fmt.Errorf("config: migrate agents dir: %w", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if err := os.Rename(filepath.Join(legacy, e.Name()), filepath.Join(dir, e.Name())); err != nil {
+			return false, fmt.Errorf("config: migrate agent %s: %w", e.Name(), err)
+		}
+	}
+	_ = os.Remove(legacy)
+	return true, nil
 }
 
 // ensureDirs self-heals the directory tree without writing any file.
@@ -331,11 +374,13 @@ func validateProviders(cfg Config, file string) error {
 func boolPtrLocal(b bool) *bool { return &b }
 
 // seedExampleAgents writes two EXAMPLE agent definitions (Claude-style
-// frontmatter markdown) into config/agents on first bootstrap — files are
-// user-owned afterward (never overwritten). Delegation is usable out of
-// the box; the examples document the format.
+// frontmatter markdown) into ~/.zbot/agents on first bootstrap — files are
+// user-owned afterward (never overwritten). A populated legacy
+// config/agents directory migrates to the new home once (when the new
+// directory is absent). Delegation is usable out of the box; the examples
+// document the format.
 func seedExampleAgents(paths Paths) error {
-	dir := paths.ConfigDir("agents")
+	dir := paths.AgentsDir
 	if dir == "" {
 		return nil
 	}

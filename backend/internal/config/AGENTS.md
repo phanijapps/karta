@@ -7,7 +7,7 @@ in the dependency graph (nothing here imports registry/eventbus/engine).
 - Resolution precedence: `--home` flag > `ZBOT_HOME` env > `~/.zbot`. The
   winner relocates the whole root. All paths derive from `config.Paths`.
 - Bootstrap is create-only: default `config.yaml` written with `O_EXCL`
-  (never overwrites), empty registry dirs, idempotent, seeds no content.
+  (never overwrites), registry dirs, idempotent; a fresh home seeds two example agents under ~/.zbot/agents (never over a migration or user files).
 - Loading is strict and hard-fails: unknown keys, invalid YAML, and absent
   files are errors naming the file — never a fallback to defaults.
 - `providers:` (optional list, absent = empty): one entry per model

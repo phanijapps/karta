@@ -83,7 +83,7 @@ func run(homeFlag string) error {
 	reg := registry.New()
 	if _, errs := reg.LoadAll(registry.Dirs{
 		Prompts:    paths.ConfigDir("prompts"),
-		Agents:     paths.ConfigDir("agents"),
+		Agents:     paths.AgentsDir,
 		Skills:     paths.ConfigDir("skills"),
 		Hooks:      paths.ConfigDir("hooks"),
 		MCPs:       paths.ConfigDir("mcps"),
@@ -218,7 +218,7 @@ func run(homeFlag string) error {
 	// Registry hot-reload: external config edits land without a restart.
 	if _, err := reg.Watch(ctx, registry.Dirs{
 		Prompts:    paths.ConfigDir("prompts"),
-		Agents:     paths.ConfigDir("agents"),
+		Agents:     paths.AgentsDir,
 		Skills:     paths.ConfigDir("skills"),
 		Hooks:      paths.ConfigDir("hooks"),
 		MCPs:       paths.ConfigDir("mcps"),

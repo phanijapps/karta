@@ -9,8 +9,7 @@ is an explicit operator choice that adapts the request guard, see
 internal/server/guard.go) with graceful SIGINT/SIGTERM shutdown. Provider
 changes: managed files under `config/providers/` (create/edit/delete,
 watched) apply immediately; `config.yaml` provider entries apply on
-restart. Control-plane registry: loads config/{prompts,agents,skills,
-hooks,mcps} once at startup and hot-reloads on external edits
+restart. Control-plane registry: loads config/{prompts,skills,hooks,mcps} and ~/.zbot/agents once at startup and hot-reloads on external edits
 (`registry.Watch`); Settings MCP/skill management mutates through the
 registry's write paths, and the MCP connection probe is wired to
 `mcpclient.GoSDKProber`. `version` is stamped via `-ldflags "-X main.version=..."`.

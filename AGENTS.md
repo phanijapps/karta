@@ -21,7 +21,8 @@ the rebrand does not authorize an API or data migration.
    `~/.zbot/data/chitta/` (ONE LadybugDB holding both chitta domains:
    memory records and the knowledge graph, with their cross-domain
    links), plus the configuration tree
-   `~/.zbot/config/{prompts,agents,skills,hooks,mcps,providers}/**`. The one
+   `~/.zbot/agents/**` and
+   `~/.zbot/config/{prompts,skills,hooks,mcps,providers}/**`. The one
    scoped exception: provider credential VALUES for daemon-managed providers
    live in the platform keyring (Linux Secret Service, macOS Keychain,
    Windows Credential Manager), namespaced per home root — never under

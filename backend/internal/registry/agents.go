@@ -10,7 +10,7 @@ import (
 )
 
 // AgentSpec is a declarative sub-agent definition loaded from
-// config/agents. The system prompt is either literal (SystemPrompt) or a
+// ~/.zbot/agents. The system prompt is either literal (SystemPrompt) or a
 // reference to a prompt template by name (Prompt).
 type AgentSpec struct {
 	Name         string   `yaml:"name"`
@@ -32,7 +32,7 @@ type AgentSpec struct {
 	Path string `yaml:"-"`
 }
 
-// loadAgents loads config/agents/*.yaml plus *.md files whose YAML
+// loadAgents loads ~/.zbot/agents/*.yaml plus *.md files whose YAML
 // frontmatter carries the spec (the markdown body becomes the system
 // prompt). The first spec (lexicographic file order) wins a duplicate-name
 // conflict; the conflict is reported with both paths.
