@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -19,8 +20,11 @@ const Debounce = 150 * time.Millisecond
 type ChangeType string
 
 const (
-	ChangeAdded   ChangeType = "added"
+	// ChangeAdded — ChangeType values — watcher event kinds.
+	ChangeAdded ChangeType = "added"
+	// ChangeChanged — one of the ChangeType values.
 	ChangeChanged ChangeType = "changed"
+	// ChangeRemoved — one of the ChangeType values.
 	ChangeRemoved ChangeType = "removed"
 )
 
@@ -42,7 +46,6 @@ type Watcher struct {
 	fw   *fsnotify.Watcher
 
 	mu      sync.Mutex
-	subs    []func(Change)
 	pending map[string]*time.Timer
 	quit    chan struct{}
 	quitOne sync.Once
@@ -59,6 +62,7 @@ func (r *Registry) Watch(ctx context.Context, dirs Dirs) (*Watcher, error) {
 	if err != nil {
 		return nil, err
 	}
+	r.dirsPtr.Store(&dirs)
 	w := &Watcher{reg: r, dirs: dirs, fw: fw, pending: map[string]*time.Timer{}, quit: make(chan struct{})}
 	for _, dir := range dirs.byKind() {
 		w.watchTree(dir)
@@ -71,13 +75,12 @@ func (r *Registry) Watch(ctx context.Context, dirs Dirs) (*Watcher, error) {
 }
 
 // OnChange registers a subscriber callback for entry-level changes.
-// Callbacks are invoked synchronously from watcher debounce goroutines:
-// they must be safe for concurrent use and must not block (a blocking
-// callback stalls that reload's swap and notification).
+// Callbacks are invoked synchronously from watcher debounce goroutines
+// and registry mutations: they must be safe for concurrent use and must
+// not block (a blocking callback stalls that reload's swap and
+// notification).
 func (w *Watcher) OnChange(fn func(Change)) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.subs = append(w.subs, fn)
+	w.reg.Subscribe(fn)
 }
 
 // Close stops the watcher and its debounce timers. It is idempotent.
@@ -172,13 +175,14 @@ func (w *Watcher) flush(path string) {
 	default:
 	}
 
-	// Serialized with LoadAll and other flushes: load→store→diff must be
-	// atomic per reload or a concurrent flush reverts this one (lost update).
+	// Serialized with LoadAll, mutations, and other flushes: load→store→diff
+	// must be atomic per reload or a concurrent flush reverts this one
+	// (lost update).
 	w.reg.reloadMu.Lock()
 	defer w.reg.reloadMu.Unlock()
 
 	if w.dirs.ConfigFile != "" && path == w.dirs.ConfigFile {
-		w.notify(Change{Kind: KindConfigFile, Name: "config.yaml", Type: ChangeChanged})
+		w.reg.notify(Change{Kind: KindConfigFile, Name: "config.yaml", Type: ChangeChanged})
 		return
 	}
 
@@ -186,33 +190,13 @@ func (w *Watcher) flush(path string) {
 	if !ok {
 		return // outside every registry directory
 	}
-	dir := w.dirs.byKind()[kind]
 
-	// Rebuild the kind's entries from disk into a fresh map.
-	fresh := emptySnapshot()
-	var errs []LoadError
-	loadKind(fresh, dir, kind, &errs)
-
-	// Swap: copy the other kinds by reference (their maps are never
-	// mutated in place) and replace this kind.
-	current := w.reg.snap.Load()
-	next := emptySnapshot()
-	*next = *current
-	switch kind {
-	case KindPrompt:
-		next.Prompts = fresh.Prompts
-	case KindAgent:
-		next.Agents = fresh.Agents
-	case KindSkill:
-		next.Skills = fresh.Skills
-	case KindHook:
-		next.Hooks = fresh.Hooks
-	case KindMCP:
-		next.MCPs = fresh.MCPs
-	}
-	w.reg.snap.Store(next)
-
-	w.diffAndNotify(kind, path, current, next)
+	// Rebuild the kind from disk (truth is the filesystem) and publish.
+	// reloadKindLocked is the shared publish path: it refreshes the kind's
+	// load errors and emits the whole-kind diff — post-mutation settles
+	// diff against the already-published snapshot and emit nothing when
+	// nothing changed, while external edits absorbed here notify once.
+	w.reg.reloadKindLocked(kind)
 }
 
 // classify maps a filesystem path back to its registry kind.
@@ -229,32 +213,16 @@ func (w *Watcher) classify(path string) (Kind, bool) {
 	return "", false
 }
 
-// diffAndNotify compares old and new maps for one kind, emitting added and
-// removed names and marking common names changed when their file is the
-// flushed path (skills key on their directory).
-func (w *Watcher) diffAndNotify(kind Kind, flushed string, old, new *Snapshot) {
-	emit := func(c Change) { w.notify(c) }
-	switch kind {
-	case KindPrompt:
-		diffMaps(kind, flushed, old.Prompts, new.Prompts, promptPath, emit)
-	case KindAgent:
-		diffMaps(kind, flushed, old.Agents, new.Agents, func(a AgentSpec) string { return a.Path }, emit)
-	case KindSkill:
-		diffMaps(kind, flushed, old.Skills, new.Skills, func(s SkillSpec) string { return s.Path }, emit)
-	case KindHook:
-		diffMaps(kind, flushed, old.Hooks, new.Hooks, func(h HookSpec) string { return h.Path }, emit)
-	case KindMCP:
-		diffMaps(kind, flushed, old.MCPs, new.MCPs, func(m MCPSpec) string { return m.Path }, emit)
-	}
-}
-
-func promptPath(p Prompt) string { return p.Path }
-
-func diffMaps[T any](kind Kind, flushed string, old, new map[string]T, pathOf func(T) string, emit func(Change)) {
+// diffMaps compares old and new maps for one kind, emitting added and
+// removed names and changed only for real content differences
+// (reflect.DeepEqual) — an identical re-read (a mutation's own watcher
+// settle, a touch, an editor save with no diff) emits nothing.
+func diffMaps[T any](kind Kind, old, new map[string]T, emit func(Change)) {
 	for name, entry := range new {
-		if _, existed := old[name]; !existed {
+		prev, existed := old[name]
+		if !existed {
 			emit(Change{Kind: kind, Name: name, Type: ChangeAdded})
-		} else if touched(pathOf(entry), flushed) {
+		} else if !reflect.DeepEqual(prev, entry) {
 			emit(Change{Kind: kind, Name: name, Type: ChangeChanged})
 		}
 	}
@@ -262,21 +230,5 @@ func diffMaps[T any](kind Kind, flushed string, old, new map[string]T, pathOf fu
 		if _, still := new[name]; !still {
 			emit(Change{Kind: kind, Name: name, Type: ChangeRemoved})
 		}
-	}
-}
-
-// touched reports whether an entry's file is the flushed path (a skill's
-// directory covers the SKILL.md inside it).
-func touched(entryPath, flushed string) bool {
-	return entryPath == flushed || strings.HasPrefix(flushed, entryPath+string(filepath.Separator))
-}
-
-func (w *Watcher) notify(c Change) {
-	w.mu.Lock()
-	subs := make([]func(Change), len(w.subs))
-	copy(subs, w.subs)
-	w.mu.Unlock()
-	for _, fn := range subs {
-		fn(c)
 	}
 }

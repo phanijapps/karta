@@ -335,26 +335,18 @@ func TestLoadProviderBoundaries(t *testing.T) {
 	})
 }
 
-func TestServerAddressLoopbackOnly(t *testing.T) {
-	base := func(addr string) string {
-		return "engine: eino\nserver:\n    address: " + strconv.Quote(addr) + "\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\n"
-	}
-	t.Run("loopback addresses accepted", func(t *testing.T) {
-		for _, addr := range []string{"127.0.0.1:8787", "localhost:8787", "[::1]:8787", "127.42.0.9:9000"} {
-			_, paths := tempHome(t)
-			writeConfig(t, paths, base(addr))
-			if _, err := Load(paths); err != nil {
-				t.Fatalf("%s: %v", addr, err)
+func TestServerAddressBinds(t *testing.T) {
+	t.Run("loopback and wildcard addresses accepted", func(t *testing.T) {
+		for _, addr := range []string{"127.0.0.1:8787", "localhost:8787", "0.0.0.0:8787", "192.168.1.10:8787"} {
+			if err := validateBind(addr, "config.yaml"); err != nil {
+				t.Fatalf("%s: want accepted, got: %v", addr, err)
 			}
 		}
 	})
-	t.Run("non-loopback addresses rejected", func(t *testing.T) {
-		for _, addr := range []string{"0.0.0.0:8787", "192.168.1.5:8787", "example.com:8787", "8787"} {
-			_, paths := tempHome(t)
-			writeConfig(t, paths, base(addr))
-			_, err := Load(paths)
-			if err == nil || !strings.Contains(err.Error(), "loopback") || !strings.Contains(err.Error(), "config.yaml") {
-				t.Fatalf("%s: want loopback error naming file, got: %v", addr, err)
+	t.Run("malformed and non-IP hosts rejected", func(t *testing.T) {
+		for _, addr := range []string{"no-port", "not a host:8787", "http://x:8787"} {
+			if err := validateBind(addr, "config.yaml"); err == nil || !strings.Contains(err.Error(), "config.yaml") {
+				t.Fatalf("%s: want typed error naming the file, got: %v", addr, err)
 			}
 		}
 	})
@@ -390,4 +382,138 @@ func TestConfigYAMLRejectsKeyringMarker(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "api_key") {
 		t.Fatalf("want unknown-key error for api_key in config.yaml, got: %v", err)
 	}
+}
+
+func TestChittaProviderValidation(t *testing.T) {
+	base := func(chitta string) string {
+		content := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\n"
+		if chitta != "" {
+			content += chitta
+		}
+		return content
+	}
+	newPaths := func(t *testing.T) Paths {
+		t.Helper()
+		return NewPaths(filepath.Join(t.TempDir(), "zbot-home"))
+	}
+	t.Run("explicit local provider loads", func(t *testing.T) {
+		paths := newPaths(t)
+		writeConfig(t, paths, base("chitta:\n    provider: local\n"))
+		if _, err := Load(paths); err != nil {
+			t.Fatalf("local provider must load: %v", err)
+		}
+	})
+	t.Run("absent section defaults to local", func(t *testing.T) {
+		paths := newPaths(t)
+		writeConfig(t, paths, base(""))
+		if _, err := Load(paths); err != nil {
+			t.Fatalf("no chitta section must default: %v", err)
+		}
+	})
+	t.Run("unknown provider fails loudly", func(t *testing.T) {
+		paths := newPaths(t)
+		writeConfig(t, paths, base("chitta:\n    provider: wat\n"))
+		_, err := Load(paths)
+		if err == nil || !strings.Contains(err.Error(), "wat") {
+			t.Fatalf("unknown provider must fail naming it: %v", err)
+		}
+	})
+	t.Run("reserved mcps grammar fails until implemented", func(t *testing.T) {
+		paths := newPaths(t)
+		writeConfig(t, paths, base("chitta:\n    provider: mcps:memory-server\n"))
+		_, err := Load(paths)
+		if err == nil || !strings.Contains(err.Error(), "mcps:memory-server") {
+			t.Fatalf("reserved mcps provider must fail loudly: %v", err)
+		}
+	})
+}
+
+func TestChittaEmbeddingAdvancedConfig(t *testing.T) {
+	base := func(chitta string) string {
+		content := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\n"
+		if chitta != "" {
+			content += chitta
+		}
+		return content
+	}
+	newPaths := func(t *testing.T) Paths {
+		t.Helper()
+		return NewPaths(filepath.Join(t.TempDir(), "zbot-home"))
+	}
+	t.Run("defaults pin the decided model", func(t *testing.T) {
+		paths := newPaths(t)
+		writeConfig(t, paths, base("chitta:\n    provider: local\n"))
+		cfg, err := Load(paths)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Chitta.Embedding.Model != DefaultChittaEmbeddingModel || cfg.Chitta.Embedding.Dim != DefaultChittaEmbeddingDim {
+			t.Fatalf("defaults: %+v", cfg.Chitta.Embedding)
+		}
+	})
+	t.Run("replacement model with explicit dims is accepted (advanced)", func(t *testing.T) {
+		paths := newPaths(t)
+		writeConfig(t, paths, base("chitta:\n    provider: local\n    embedding:\n        model: BAAI/bge-base-en-v1.5\n        dim: 768\n"))
+		if _, err := Load(paths); err != nil {
+			t.Fatalf("replacement model must be configurable: %v", err)
+		}
+	})
+	t.Run("replacement model without explicit dims is rejected", func(t *testing.T) {
+		paths := newPaths(t)
+		writeConfig(t, paths, base("chitta:\n    provider: local\n    embedding:\n        model: BAAI/bge-base-en-v1.5\n"))
+		_, err := Load(paths)
+		if err == nil || !strings.Contains(err.Error(), "dim must be set explicitly") {
+			t.Fatalf("swap without dims must fail (no reindex yet): %v", err)
+		}
+	})
+	t.Run("out-of-range dims rejected", func(t *testing.T) {
+		paths := newPaths(t)
+		writeConfig(t, paths, base("chitta:\n    provider: local\n    embedding:\n        model: BAAI/bge-base-en-v1.5\n        dim: 9999\n"))
+		_, err := Load(paths)
+		if err == nil || !strings.Contains(err.Error(), "[2, 4096]") {
+			t.Fatalf("dim bounds: %v", err)
+		}
+	})
+}
+
+func TestChittaRecallValidation(t *testing.T) {
+	base := func(recall string) string {
+		content := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\nchitta:\n    provider: local\n"
+		if recall != "" {
+			content += recall
+		}
+		return content
+	}
+	newPaths := func(t *testing.T) Paths {
+		t.Helper()
+		return NewPaths(filepath.Join(t.TempDir(), "zbot-home"))
+	}
+	t.Run("valid full override loads", func(t *testing.T) {
+		paths := newPaths(t)
+		writeConfig(t, paths, base("    recall:\n        weights: {keyword: 0.9, vector: 1.2, graph: 0.5}\n        halflife_days: 14\n        mmr_lambda: 0.4\n        rerank: false\n"))
+		if _, err := Load(paths); err != nil {
+			t.Fatalf("valid recall config must load: %v", err)
+		}
+	})
+	t.Run("negative weight rejected", func(t *testing.T) {
+		paths := newPaths(t)
+		writeConfig(t, paths, base("    recall:\n        weights: {keyword: -1}\n"))
+		if _, err := Load(paths); err == nil || !strings.Contains(err.Error(), "weights.keyword") {
+			t.Fatalf("negative weight must fail: %v", err)
+		}
+	})
+	t.Run("mmr lambda out of range rejected", func(t *testing.T) {
+		paths := newPaths(t)
+		writeConfig(t, paths, base("    recall:\n        mmr_lambda: 5\n"))
+		if _, err := Load(paths); err == nil || !strings.Contains(err.Error(), "mmr_lambda") {
+			t.Fatalf("lambda 5 must fail: %v", err)
+		}
+	})
+	t.Run("negative rerank_top rejected", func(t *testing.T) {
+		paths := newPaths(t)
+		writeConfig(t, paths, base("    recall:\n        rerank_top: -3\n"))
+		if _, err := Load(paths); err == nil || !strings.Contains(err.Error(), "rerank_top") {
+			t.Fatalf("negative rerank_top must fail: %v", err)
+		}
+	})
 }

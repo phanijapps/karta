@@ -67,7 +67,7 @@ func (s *Server) CreateGoal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, apigen.Session{
-		Id: apigen.Id(sess), Status: apigen.Running,
+		Id: apigen.Id(sess), Status: apigen.SessionStatusRunning,
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	})
 }
@@ -99,7 +99,7 @@ func (s *Server) ListSessions(w http.ResponseWriter, r *http.Request, params api
 // GetSession returns identity and status.
 func (s *Server) GetSession(w http.ResponseWriter, r *http.Request, sessionId apigen.SessionId) {
 	writeJSON(w, http.StatusOK, apigen.Session{
-		Id: sessionId, Status: apigen.Completed,
+		Id: sessionId, Status: apigen.SessionStatusCompleted,
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	})
 }
@@ -111,7 +111,7 @@ func (s *Server) CancelSession(w http.ResponseWriter, r *http.Request, sessionId
 		return
 	}
 	writeJSON(w, http.StatusOK, apigen.Session{
-		Id: sessionId, Status: apigen.Cancelled,
+		Id: sessionId, Status: apigen.SessionStatusCancelled,
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	})
 }

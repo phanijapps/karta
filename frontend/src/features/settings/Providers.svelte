@@ -247,10 +247,10 @@
         <label class="full">Credential<input readonly value={credentialSummary(selected)} spellcheck="false" /><small class="muted">{credentialHint(selected)}</small></label>
       </div>
       <div class="actions">
-        <button class="secondary" disabled={testing} onclick={() => void testConnection(selected.name)}>{testing ? 'Testing…' : 'Test connection'}</button>
+        <button class="primary" disabled={testing} onclick={() => void testConnection(selected.name)}>{testing ? 'Testing…' : 'Test connection'}</button>
         <button class="secondary" disabled={testing} onclick={() => void refreshModels(selected.name)}>{testing ? 'Refreshing…' : 'Refresh models'}</button>
         {#if editable}<button class="secondary" onclick={() => openEdit(selected)}>Edit</button>{/if}
-        {#if editable}<button class="secondary danger" onclick={() => (confirmingDelete = selected)}>Delete</button>{/if}
+        {#if editable}<button class="danger" onclick={() => (confirmingDelete = selected)}>Delete</button>{/if}
         <button class="secondary" onclick={openCreate}>Add provider</button>
       </div>
       {#if testResult}
@@ -291,7 +291,7 @@
         {#if formError}<p class="form-error" role="alert">{mutationGuidance[formError.code]}{#if formError.code === 'invalid_provider' && formError.message} — {formError.message}{/if}</p>{/if}
         <div class="form-actions">
           <button type="button" class="secondary" onclick={() => (showForm = false)}>Cancel</button>
-          <button type="submit" class="secondary" disabled={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create provider'}</button>
+          <button type="submit" class="primary" disabled={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create provider'}</button>
         </div>
       </form>
     </div>
@@ -304,7 +304,7 @@
         <p class="muted">The provider file is removed{confirmingDelete.credential === 'keyring' ? ' and its stored API key is deleted from the OS keyring' : ''}. This cannot be undone.</p>
         <div class="form-actions">
           <button class="secondary" onclick={() => (confirmingDelete = null)}>Cancel</button>
-          <button class="secondary danger" onclick={() => void confirmDelete()}>Delete</button>
+          <button class="danger" onclick={() => void confirmDelete()}>Delete</button>
         </div>
       </div>
     </div>
@@ -314,21 +314,18 @@
 
 <style>
   .item-list { display: grid; gap: var(--ds-space-2); margin: var(--ds-space-4) 0 var(--ds-space-6); }
-  .item-list button { display: flex; align-items: center; text-align: left; gap: var(--ds-space-3); padding: var(--ds-space-3); border: 1px solid var(--ds-color-border); }
-  .item-list button.selected { background: var(--ds-color-hover); }
+  .item-list button { display: flex; align-items: center; text-align: left; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border: 1px solid var(--ds-color-border); border-radius: var(--ds-radius-control); color: var(--ds-color-muted); transition: background-color 120ms ease, border-color 120ms ease; }
+  .item-list button:hover:not(:disabled) { background: var(--ds-color-hover); }
+  .item-list button.selected { background: var(--ds-color-hover); border-color: var(--ds-color-focus); }
+  .item-list strong { color: var(--ds-color-text); }
   .item-list span:not(.badge) { flex: 1; min-width: 0; }
   .item-list strong { font-weight: 550; overflow-wrap: anywhere; }
   small { display: block; font-size: 0.75rem; color: var(--ds-color-muted); margin-top: var(--ds-space-1); }
-  .badge { font-size: 0.6875rem; border: 1px solid var(--ds-color-border); border-radius: 999px; padding: 2px var(--ds-space-2); color: var(--ds-color-muted); }
-  .badge.warn { color: var(--ds-color-muted); }
   .muted-badge { opacity: 0.8; }
   .fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--ds-space-6) var(--ds-space-4); margin: var(--ds-space-6) 0; }
   .fields .full { grid-column: 1 / -1; }
   input[readonly] { opacity: 0.9; }
   .actions { display: flex; align-items: center; gap: var(--ds-space-2); flex-wrap: wrap; margin: var(--ds-space-6) 0; }
-  .secondary { display: inline-flex; align-items: center; justify-content: center; gap: var(--ds-space-2); padding: var(--ds-space-2) var(--ds-space-3); min-height: 36px; border: 1px solid var(--ds-color-border); font-size: var(--ds-font-nav); background: var(--ds-color-background); color: var(--ds-color-text); cursor: pointer; }
-  .secondary.danger { color: #b3261e; border-color: #b3261e55; }
-  .secondary:disabled { opacity: 0.55; cursor: default; }
   .daemon-error { display: grid; gap: var(--ds-space-3); border: 1px solid var(--ds-color-border); padding: var(--ds-space-4); border-radius: var(--ds-radius-control); }
   .empty { display: grid; gap: var(--ds-space-4); }
   .test-result { border: 1px solid var(--ds-color-border); padding: var(--ds-space-4); border-radius: var(--ds-radius-control); display: grid; gap: var(--ds-space-2); margin-bottom: var(--ds-space-6); }
@@ -338,11 +335,9 @@
   .provider-form { background: var(--ds-color-background); border: 1px solid var(--ds-color-border); border-radius: var(--ds-radius-dialog); padding: var(--ds-space-6); width: min(28rem, 100%); display: grid; gap: var(--ds-space-4); max-height: 90vh; overflow-y: auto; }
   .provider-form h3 { font-size: 1rem; font-weight: 600; }
   .provider-form label { display: grid; gap: var(--ds-space-1); font-size: 0.8125rem; color: var(--ds-color-muted); }
-  .provider-form input:not([type='radio']) { background: var(--ds-color-surface); border: 1px solid var(--ds-color-border); border-radius: var(--ds-radius-control); padding: var(--ds-space-2); color: var(--ds-color-text); min-height: 36px; }
   fieldset { display: grid; gap: var(--ds-space-2); border: 1px solid var(--ds-color-border); border-radius: var(--ds-radius-control); padding: var(--ds-space-3); }
   legend { font-size: 0.75rem; color: var(--ds-color-muted); padding: 0 var(--ds-space-2); }
   .radio { display: flex; align-items: center; gap: var(--ds-space-2); }
   .radio input { width: 16px; height: 16px; }
-  .form-error { color: #b3261e; font-size: 0.8125rem; }
   .form-actions { display: flex; justify-content: flex-end; gap: var(--ds-space-2); }
 </style>

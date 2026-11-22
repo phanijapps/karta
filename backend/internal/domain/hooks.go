@@ -16,11 +16,17 @@ type HookRunner interface {
 type HookEventName string
 
 const (
-	HookPreToolUse   HookEventName = "PreToolUse"
-	HookPostToolUse  HookEventName = "PostToolUse"
-	HookPreCompact   HookEventName = "PreCompact"
+	// HookPreToolUse — HookEventName values — the lifecycle points where hooks run.
+	HookPreToolUse HookEventName = "PreToolUse"
+	// HookPostToolUse — after a tool call, with its outcome.
+	HookPostToolUse HookEventName = "PostToolUse"
+	// HookPreCompact — one of the HookEventName values.
+	HookPreCompact HookEventName = "PreCompact"
+	// HookSessionStart — one of the HookEventName values.
 	HookSessionStart HookEventName = "SessionStart"
-	HookSessionEnd   HookEventName = "SessionEnd"
+	// HookSessionEnd — one of the HookEventName values.
+	HookSessionEnd HookEventName = "SessionEnd"
+	// HookSubagentStop — one of the HookEventName values.
 	HookSubagentStop HookEventName = "SubagentStop"
 )
 
@@ -40,12 +46,12 @@ type HookEvent struct {
 type HookAction string
 
 const (
-	// HookAllow: proceed (hook exit 0). Context may carry injected context.
+	// HookAllow — proceed (hook exit 0). Context may carry injected context.
 	HookAllow HookAction = "allow"
-	// HookBlock: stop the action; Reason is surfaced to the agent as a
+	// HookBlock — stop the action; Reason is surfaced to the agent as a
 	// recoverable error (hook exit 2, from stderr).
 	HookBlock HookAction = "block"
-	// HookWarn: log a warning event and continue (other non-zero exit).
+	// HookWarn — log a warning event and continue (other non-zero exit).
 	HookWarn HookAction = "warn"
 )
 

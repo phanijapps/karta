@@ -11,8 +11,9 @@ Karta is a **local-first, autonomous, goal-oriented multi-agent desktop system**
 A single Go daemon (`zbotd`) runs autonomous agent work toward user goals, and
 multiple lightweight clients — a Svelte 5 web UI, a Wails v3 native desktop
 shell, and a Bubbletea TUI — observe and steer that work over a local HTTP/SSE
-API. Everything persistent stays on the user's machine: one SQLite database,
-one filesystem control plane, zero cloud dependency.
+API. Everything persistent stays on the user's machine: one SQLite database
+for conversations and the Timeline, one LadybugDB (chitta) for memory and
+knowledge, one filesystem control plane, zero cloud dependency.
 
 The product promise: an agent system you *own* — goals in, observable autonomous
 work out, all state inspectable and local.
@@ -51,9 +52,14 @@ work out, all state inspectable and local.
   `PreCompact`, `SessionStart`, `SessionEnd`, `SubagentStop`) with exit-code
   semantics (0 allow, 2 block, other non-zero warn-and-continue) that let the
   user guard and steer agent behavior.
-- **Local-first memory & learning** — SQLite + sqlite-vec + FTS5 + local ONNX
-  embeddings: hybrid semantic/keyword recall and a knowledge graph, distilled
-  from sessions asynchronously after they end. No external embedding API.
+- **Chitta — local-first memory & learning** — Chitta (चित्त, the
+  mind-field) is the core the harness uses to continuously evolve: one
+  LadybugDB (graph + full-text + vector) holds durable memory and the
+  knowledge graph of the user's world in `~/.zbot/data/chitta/`, with
+  hybrid recall; conversations are distilled into it asynchronously by
+  a backend job (never written directly). Local fastembed BGE embeddings
+  (bge-small-en-v1.5, 384-dim); no external embedding API;
+  `zbot.db` stays SQLite for sessions and the Timeline Tree.
 
 ## Non-Goals
 
@@ -76,7 +82,7 @@ The Svelte SPA now provides an Open WebUI-style desktop shell: collapsible left 
 
 **Providers is live and manageable**: the section reads the daemon's providers over the HTTP contract and can add, edit, and delete them — daemon-managed files under `~/.zbot/config/providers/`, applied immediately without a restart. API keys entered in the form are stored once in the OS keyring (Linux Secret Service, macOS Keychain, Windows Credential Manager) and never shown again; an unavailable keyring fails with typed guidance (verified end-to-end against a local ollama and a real keyring, including rename re-key and delete cleanup). Providers declared in `~/.zbot/config.yaml` stay read-only with a config.yaml badge and restart-applied semantics. Without a daemon the section shows an explicit connection state, never fixtures.
 
-The header model picker is now live: it reads the daemon's in-memory model catalog (`GET /api/models`) — grouped by provider, refreshed manually (Settings → Providers Test/Refresh; nothing polls), selection labeled simulated. The rest remains **shell-only**: replies are fixtures; Settings drafts (MCP, Skills, Logging, Advanced) are discarded on close. Logging previews proposed fields, not supported daemon configuration. MCP/Skills previews do not reflect the installed registry. No engine run, chat completion, filesystem, or SSE connection is made; no browser state is persisted. The Wails desktop wrapper and live session integration remain future work, as does using configured providers inside agent runs (the engine adapter consumes them later). See [frontend setup](../../frontend/README.md), [shell architecture](../architecture/frontend-shell.md), and the provider-slice verification in `openspec/changes/add-openai-compatible-providers/evidence.md`.
+The header model picker is live: it reads the daemon's in-memory model catalog (`GET /api/models`) — grouped by provider, refreshed manually (Settings → Providers Test/Refresh; nothing polls), selection labeled simulated. Settings → MCP and Skills are live managed views of the daemon's registry: MCP servers (stdio command/args/env and/or HTTP url — both transports on one entry is valid) add/edit/rename/delete with immediate effect and a server-side connection probe per declared transport (discovered tools, or typed spawn/connect/timeout/protocol failures); skills add/edit/rename/delete as `SKILL.md` directories (body round-trips, bundles preserved, deletion confirms the bundle). Env values are manifest file content — the keyring stays the only secret store; the daemon validates a trusted loopback Host on every request. Broken hand-edited files surface as per-file load errors. Logging and Advanced remain **shell-only** previews: drafts discarded on close. No engine run consumes MCP tools or skills yet (the tools seam reserves them); no SSE connection is made; no browser state is persisted. The Wails desktop wrapper and live session integration remain future work, as does using configured providers inside agent runs (the engine adapter consumes them later). See [frontend setup](../../frontend/README.md), [shell architecture](../architecture/frontend-shell.md), and the provider-slice verification in `openspec/changes/add-openai-compatible-providers/evidence.md`.
 
 ## Maintenance
 

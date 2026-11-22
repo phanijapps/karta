@@ -20,6 +20,9 @@ in the dependency graph (nothing here imports registry/eventbus/engine).
   valid in this file (files under `config/providers/` are the managed
   source; see internal/providers). Invalid entries fail startup naming
   the file and entry.
-- `server.address` must be loopback (127.0.0.0/8, ::1, localhost) — the
-  daemon is unauthenticated; non-loopback binds are a hard startup error.
+- `server.address` must be host:port. Loopback is the default and
+  recommended bind (the daemon is unauthenticated); a wildcard (0.0.0.0/::)
+  or LAN address is an explicit operator choice that exposes the
+  unauthenticated API to the network — the request guard adapts (see
+  internal/server) and the operator owns that trust decision.
 - Key entrypoints: `ResolveHome`, `NewPaths`, `Bootstrap`, `Load`, `Default`.

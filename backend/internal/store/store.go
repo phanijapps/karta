@@ -192,6 +192,30 @@ func (s *Store) Append(m Message) (Message, error) {
 	return m, nil
 }
 
+// SessionInfo is one session row (for consumers like the distiller).
+type SessionInfo struct {
+	ID        string
+	CreatedAt string
+}
+
+// ListSessions returns up to limit sessions, newest first.
+func (s *Store) ListSessions(limit int) ([]SessionInfo, error) {
+	rows, err := s.db.Query(`SELECT id, created_at FROM sessions ORDER BY created_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []SessionInfo
+	for rows.Next() {
+		var info SessionInfo
+		if err := rows.Scan(&info.ID, &info.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, info)
+	}
+	return out, rows.Err()
+}
+
 // Replay returns rows with seq > afterSeq in order, bounded by limit.
 func (s *Store) Replay(sessionID string, afterSeq int64, limit int) ([]Message, error) {
 	rows, err := s.db.Query(`SELECT id, session_id, execution_id, seq, role, content,

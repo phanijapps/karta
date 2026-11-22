@@ -11,8 +11,11 @@ servers:
   - url: http://127.0.0.1:8787
     description: Local daemon (loopback only)
 
-# z-Bot is local-first: the daemon binds loopback only and requires no
-# authentication. Declared explicitly so tooling sees the decision.
+# z-Bot is local-first: the daemon binds loopback by default and
+# requires no authentication. An operator may expose a wildcard/LAN bind
+# (config server.address) — an explicit trust decision that puts the
+# unauthenticated API on the network and adapts the request guard
+# accordingly (see backend/internal/server/guard.go).
 security: []
 
 paths:
@@ -181,6 +184,521 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ModelCatalog'
+
+  /api/mcps:
+    get:
+      operationId: listMcps
+      summary: List registered MCP servers
+      description: |
+        Every registered MCP server from the registry snapshot, with each
+        server's declared transports (stdio command/args/env and/or
+        streamable-http url) and its manifest file. `load_errors` carries
+        per-file registry failures (broken hand edits) naming their paths;
+        entries whose files do not load are absent from `servers`. Lists are
+        complete within the per-kind capacity; hand-edited overflow surfaces
+        as load errors. Env values are the file content the user authored —
+        the daemon adds no secrets.
+      responses:
+        '200':
+          description: The registered servers (empty list when none).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpList'
+    post:
+      operationId: createMcp
+      summary: Create an MCP server (managed manifest file)
+      description: |
+        Writes `config/mcps/<name>.yaml`. The body is the complete
+        manifest: stdio (`command` + optional `args`/`env`) and/or
+        streamable-http (`url`); at least one transport is required.
+        Managed names only (`^[a-z0-9][a-z0-9-]{0,63}$`, no
+        Windows-reserved). Applies immediately via the registry — no
+        restart. No-clobber: a target path occupied on disk (valid,
+        invalid, or in the watcher window) fails with `duplicate_name`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpCreate'
+      responses:
+        '201':
+          description: Created; the server is listed now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mcp'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Duplicate name or occupied target path
+            (`duplicate_name`), or the per-kind capacity is full
+            (`mcp_limit`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/skills/marketplace/search:
+    get:
+      operationId: searchSkillMarketplace
+      summary: Search the open skills.sh directory (daemon-proxied)
+      description: |
+        Proxies the pinned skills.sh index at the user's explicit
+        action. Results carry each skill's slug (`owner/repo/skill`),
+        source repo, name, and install count. Five-minute cache:
+        fresh cache serves, expired re-queries synchronously, no
+        background refresh. Typed index-unreachable failure; never
+        fabricated results.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        '200':
+          description: Search results (possibly empty).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillMarketSearchResult'
+        '502':
+          description: The skills.sh index is unreachable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/skills/marketplace/preview:
+    post:
+      operationId: previewSkillSource
+      summary: Preview skills in a GitHub repository (byte-binding)
+      description: |
+        Resolves the repository's default branch to an IMMUTABLE commit,
+        fetches the tarball at that commit under the shared safety
+        envelope, detects skill folders (skills/*/, .agents/skills/*/,
+        root SKILL.md, single-directory), and returns each skill's
+        parsed SKILL.md, complete file list with sizes, license when
+        present, the pinned commit, and an opaque preview CAPABILITY
+        binding repo + commit + skill paths + per-file digests.
+        Installs consume the capability; there is no install without a
+        preview. A pasted source parses to a canonical GitHub
+        owner/repo identity — never an arbitrary fetch destination.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkillSourceInput'
+      responses:
+        '200':
+          description: Repository preview with per-skill payloads and
+            the install capability.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillRepoPreview'
+        '400':
+          description: Malformed source identity or archive/skill
+            validation failure naming the violation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Repository not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: GitHub unreachable or rate-limited (retry
+            guidance in the message), or no valid skills found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/skills/marketplace/install:
+    post:
+      operationId: installSkillCapability
+      summary: Install previewed skills by capability
+      description: |
+        Consumes a preview capability for the chosen skill subset —
+        never arbitrary source/ref inputs. On capability cache expiry
+        the daemon re-fetches the PINNED commit and verifies per-file
+        digests; any mismatch is a typed changed-upstream failure. One
+        outcome per chosen skill (created / skipped-duplicate /
+        failed), processed independently like the MCP import. Nothing
+        executes at install.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkillInstallRequest'
+      responses:
+        '200':
+          description: One outcome per chosen skill, in request order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillInstallResult'
+        '400':
+          description: Unknown/malformed capability or empty subset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Expired or already-consumed capability.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: Upstream fetch failed, rate-limited, or content
+            changed upstream (re-preview guidance in the message).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/skills/import/preview:
+    post:
+      operationId: previewSkillArchive
+      summary: Preview and stage a .skill/.zip archive (multipart)
+      description: |
+        The ONLY endpoint exempt from the JSON-mutation rule: accepts
+        multipart/form-data with EXACTLY one file part named `archive`
+        (no other parts; body ≤ 10 MiB enforced before parsing),
+        protected by trusted-Host plus Origin enforcement. Parses under
+        the shared safety envelope (50 MiB uncompressed, 512 entries,
+        streaming re-enforcement, regular files/dirs only, path
+        validator; SKILL.md at root or exactly one top-level
+        directory; the reserved `.karta/provenance.yaml` path rejects).
+        Stages server-side and returns the staging id with the same
+        preview payload. Violations are typed 400s naming the reason.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [archive]
+              properties:
+                archive:
+                  type: string
+                  format: binary
+                  description: The .skill or .zip file (≤10 MiB).
+      responses:
+        '200':
+          description: Staged preview (commit by staging id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillArchivePreview'
+        '400':
+          description: Archive violation naming the reason (traversal,
+            symlink, caps, corrupt, no SKILL.md, extra parts, reserved
+            path) or the busy bound exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Body over the pre-parse size bound.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/skills/import/commit:
+    post:
+      operationId: commitSkillArchive
+      summary: Install a staged archive by its capability
+      description: |
+        Commits a staged preview by its opaque one-shot bearer id.
+        Expiry is checked synchronously; replays and unknown ids 404;
+        the skill installs with origin `import` and provenance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkillImportCommitRequest'
+      responses:
+        '200':
+          description: The installed skill detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillInstallOutcome'
+        '404':
+          description: Unknown, expired, or already-consumed staging id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/mcps/import:
+    post:
+      operationId: importMcps
+      summary: Import MCP servers from standard JSON (raw paste)
+      description: |
+        Imports standard `mcpServers` JSON (modelcontextprotocol.io
+        quickstart shape; `servers` alias, bare map, and single-object
+        pastes accepted). The paste travels as RAW TEXT in `document` —
+        the daemon is the only parser: entries process in paste order,
+        numeric env literals coerce from their exact source text, and
+        duplicate keys (Unicode-escaped equivalents included) reject
+        the whole document before any write. Every entry gets one
+        outcome row; entry failures never fail the request. Duplicate
+        detection (existing manifest, occupied target path, or an
+        earlier entry of the same paste) outranks capacity; a write
+        failure (`io_error`) on one entry never aborts the rest.
+        Document-level rejections (400, nothing created): malformed
+        JSON, duplicate keys, trailing content, BOM or non-UTF-8 text,
+        JSON non-object, unclassifiable shape, no recognizable servers,
+        single-object paste without `name`, over 256 KiB, over 32
+        entries. `replaceName` is edit-as-JSON: the document must hold
+        exactly one entry whose transports replace that server's
+        manifest wholesale (name unchanged); a multi-entry document, an
+        entry that would skip or fail, or an unknown target rejects
+        with the target untouched.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpImportRequest'
+      responses:
+        '200':
+          description: One outcome per entry, in paste order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpImportResult'
+        '400':
+          description: Document-level rejection (nothing was created)
+            or an invalid replace-mode document.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Replace mode with an unknown target (the
+            document was valid; nothing was changed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/mcps/{name}:
+    parameters:
+      - $ref: '#/components/parameters/McpName'
+    patch:
+      operationId: updateMcp
+      summary: Edit an MCP server (full replace; rename supported)
+      description: |
+        Replaces the named server's manifest wholesale (PUT semantics over
+        PATCH). An included `name` renames: the new manifest is written
+        (no-clobber), published, and the old file removed; a failed old-file
+        removal surfaces both files as a duplicate load error and the retry
+        is idempotent. Clearing both transports is a 400 — at least one is
+        required. Legacy broader-named files are editable in place via
+        their loaded source path; renames normalize to managed names.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpUpdate'
+      responses:
+        '200':
+          description: The updated server as now registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mcp'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Duplicate target name or occupied target path
+            (`duplicate_name`), or capacity (`mcp_limit`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      operationId: deleteMcp
+      summary: Delete an MCP server
+      description: |
+        Removes the server's manifest file and unregisters it. After a
+        failed filesystem commit the published registry state matches disk.
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/mcps/{name}/test:
+    parameters:
+      - $ref: '#/components/parameters/McpName'
+    post:
+      operationId: testMcp
+      summary: Probe an MCP server's declared transports
+      description: |
+        Runs a real MCP client per declared transport (spawn the stdio
+        command with its env; connect the HTTP url) — initialize,
+        tools/list, shutdown — concurrently under one shared deadline.
+        Returns one result per transport: discovered tools (capped, with
+        `truncated` set) or a typed failure. Probe failures are 200 bodies:
+        a broken configuration is expected data, not a server error. The
+        probe executes no tool and mutates nothing.
+      responses:
+        '200':
+          description: One result per declared transport.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpTestResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/skills:
+    get:
+      operationId: listSkills
+      summary: List registered skills
+      description: |
+        Every registered skill from the registry snapshot with name,
+        description, and directory. `load_errors` carries per-file registry
+        failures naming their paths; skills whose SKILL.md does not load
+        are absent from `skills`.
+      responses:
+        '200':
+          description: The registered skills (empty list when none).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillList'
+    post:
+      operationId: createSkill
+      summary: Create a skill (managed directory)
+      description: |
+        Writes `config/skills/<slug>/SKILL.md` (slug derived from the
+        name, managed-name form). No-clobber: an occupied directory
+        fails with `duplicate_name` whatever occupies it. Applies
+        immediately — no restart.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkillCreate'
+      responses:
+        '201':
+          description: Created; the skill is listed now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Skill'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Duplicate skill name or occupied target directory
+            (`duplicate_name`), or the per-kind capacity is full
+            (`skill_limit`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/skills/{name}:
+    parameters:
+      - $ref: '#/components/parameters/SkillName'
+    get:
+      operationId: getSkill
+      summary: Read one skill's detail (frontmatter + body)
+      description: |
+        The skill's name, description, directory, and full SKILL.md body
+        as currently loaded. Reading alters nothing.
+      responses:
+        '200':
+          description: The skill detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateSkill
+      summary: Edit a skill (full replace; rename supported)
+      description: |
+        Replaces the skill's SKILL.md wholesale (PUT semantics over
+        PATCH). An included `name` renames: the directory moves to the
+        new slug (no-clobber) and the frontmatter updates; a failed
+        rename rolls back, and if rollback itself fails the published
+        state matches disk and the retry is idempotent. Bundled files are
+        preserved verbatim by every operation that keeps the skill.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkillUpdate'
+      responses:
+        '200':
+          description: The updated skill detail as now registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Duplicate target name or occupied target directory
+            (`duplicate_name`), or capacity (`skill_limit`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      operationId: deleteSkill
+      summary: Delete a skill (directory including its bundle)
+      description: |
+        Removes the skill's whole directory, bundled files included. A
+        partially failed removal publishes the on-disk state and reports
+        the residual as a load error or an assets-only directory.
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /api/providers/{name}/models/refresh:
     post:
@@ -392,6 +910,40 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/distillation:
+    get:
+      operationId: getDistillation
+      summary: Current distillation settings (provider, model, prompt)
+      responses:
+        "200":
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistillationSettings'
+    put:
+      operationId: putDistillation
+      summary: Update distillation settings (applied without restart)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DistillationSettings'
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistillationSettings'
+        "400":
+          description: Unknown provider or empty model
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   parameters:
     SessionId:
@@ -406,6 +958,24 @@ components:
       in: path
       required: true
       description: The configured provider's name.
+      schema:
+        $ref: '#/components/schemas/Id'
+
+    McpName:
+      name: name
+      in: path
+      required: true
+      description: |
+        The MCP server's registered name (file stem). Legacy entries may
+        carry broader stems than managed names allow.
+      schema:
+        $ref: '#/components/schemas/Id'
+
+    SkillName:
+      name: name
+      in: path
+      required: true
+      description: The skill's frontmatter name.
       schema:
         $ref: '#/components/schemas/Id'
 
@@ -431,6 +1001,14 @@ components:
             $ref: '#/components/schemas/ProviderError'
     Conflict:
       description: The session is not in a resumable (waiting) state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InternalError:
+      description: The filesystem commit failed after validation
+        (`io_error`); the published registry state matches disk.
       content:
         application/json:
           schema:
@@ -880,10 +1458,24 @@ components:
           minLength: 1
           maxLength: 65536
 
+    DistillationSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        provider:
+          type: string
+          maxLength: 128
+        model:
+          type: string
+          maxLength: 256
+        prompt:
+          type: string
+          maxLength: 65536
+
     TimelineEventKind:
       type: string
       description: Mirrors the domain TimelineEventKind set.
-      enum: [session, agent_step, delegation, tool_call, hook_decision, compaction_triggered]
+      enum: [session, agent_step, delegation, tool_call, hook_decision, compaction_triggered, chitta_tool_invoked]
 
     TimelineEvent:
       type: object
@@ -915,6 +1507,46 @@ components:
           $ref: '#/components/schemas/HookDecision'
         compaction:
           $ref: '#/components/schemas/CompactionStats'
+        chitta_tool_invoked:
+          $ref: '#/components/schemas/ChittaToolInvokedPayload'
+
+    ChittaToolInvokedPayload:
+      type: object
+      description: One chitta tool invocation (memory_* / knowledge_* tools) —
+        the observable heartbeat of the chitta capability.
+      additionalProperties: false
+      required: [tool, outcome, affected_ids]
+      properties:
+        tool:
+          type: string
+          minLength: 1
+          maxLength: 64
+        outcome:
+          type: string
+          enum: [success, error]
+        error_code:
+          type: string
+          enum: [invalid_input, not_found, conflict, unavailable]
+        affected_ids:
+          type: array
+          items:
+            type: string
+            maxLength: 64
+        provenance:
+          type: object
+          additionalProperties: false
+          properties:
+            source:
+              type: string
+              enum: [agent, user, distiller]
+            session_id:
+              type: string
+            execution_id:
+              type: string
+            agent_id:
+              type: string
+            message_seq:
+              type: integer
 
     ToolCallPayload:
       type: object
@@ -994,6 +1626,606 @@ components:
         messages_after:
           type: integer
           minimum: 0
+
+    # ---- MCP management -------------------------------------------------
+
+    McpManagedName:
+      type: string
+      description: Name for API-created and API-renamed MCP servers
+        (the manifest file stem). Existing hand-authored entries may
+        carry broader stems.
+      minLength: 1
+      maxLength: 64
+      pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
+
+    McpStdio:
+      type: object
+      additionalProperties: false
+      required: [command]
+      properties:
+        command:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        args:
+          type: array
+          maxItems: 256
+          items:
+            type: string
+            maxLength: 1024
+        env:
+          type: object
+          maxProperties: 32
+          additionalProperties:
+            type: string
+            maxLength: 4096
+
+    McpHttp:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          minLength: 8
+          maxLength: 2048
+          pattern: '^https?://'
+
+    McpCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          $ref: '#/components/schemas/McpManagedName'
+        stdio:
+          $ref: '#/components/schemas/McpStdio'
+        http:
+          $ref: '#/components/schemas/McpHttp'
+        enabled:
+          type: boolean
+          description: Absent means enabled.
+      description: |
+        The complete manifest. At least one of `stdio` or `http` is
+        required (both is valid — one entry, two transports).
+
+    McpUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          $ref: '#/components/schemas/McpManagedName'
+        stdio:
+          $ref: '#/components/schemas/McpStdio'
+        http:
+          $ref: '#/components/schemas/McpHttp'
+        enabled:
+          type: boolean
+          description: Absent means enabled — full replace, so omitting
+            the field re-enables the server.
+      description: |
+        Full replace of the manifest (PUT semantics). Absent `stdio` and
+        `http` together is a 400. Present `name` renames.
+
+    Mcp:
+      type: object
+      additionalProperties: false
+      required: [name, file, transports, enabled]
+      properties:
+        name:
+          $ref: '#/components/schemas/Id'
+        file:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: The manifest's absolute path on disk.
+        enabled:
+          type: boolean
+          description: False when the manifest is disabled (an absent
+            field means enabled). Disabled servers stay listed,
+            toggleable, and probeable; future runtime wiring skips them.
+        transports:
+          type: array
+          minItems: 1
+          maxItems: 2
+          description: The declared transports — stdio and/or http,
+            discriminated by `kind`.
+          items:
+            type: object
+            additionalProperties: false
+            required: [kind]
+            properties:
+              kind:
+                type: string
+                enum: [stdio, http]
+              command:
+                type: string
+                maxLength: 1024
+                description: Present when kind is stdio.
+              args:
+                type: array
+                maxItems: 256
+                items:
+                  type: string
+                  maxLength: 1024
+              env:
+                type: object
+                maxProperties: 32
+                additionalProperties:
+                  type: string
+                  maxLength: 4096
+              url:
+                type: string
+                maxLength: 2048
+                description: Present when kind is http.
+
+    RegistryLoadError:
+      type: object
+      additionalProperties: false
+      required: [path, kind, message]
+      properties:
+        path:
+          type: string
+          maxLength: 1024
+        kind:
+          type: string
+          enum: [mcp, skill]
+        message:
+          type: string
+          maxLength: 1024
+
+    McpList:
+      type: object
+      additionalProperties: false
+      required: [servers]
+      properties:
+        servers:
+          type: array
+          maxItems: 128
+          items:
+            $ref: '#/components/schemas/Mcp'
+        load_errors:
+          type: array
+          maxItems: 64
+          items:
+            $ref: '#/components/schemas/RegistryLoadError'
+
+    McpTool:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1024
+
+    McpTransportTest:
+      type: object
+      additionalProperties: false
+      required: [transport, status]
+      properties:
+        transport:
+          type: string
+          enum: [stdio, http]
+        status:
+          type: string
+          enum: [ok, failed]
+        failure:
+          type: object
+          additionalProperties: false
+          required: [reason, message]
+          properties:
+            reason:
+              type: string
+              enum: [spawn_failed, connect_failed, timeout, protocol_error]
+            message:
+              type: string
+              maxLength: 1024
+        tools:
+          type: array
+          maxItems: 256
+          items:
+            $ref: '#/components/schemas/McpTool'
+        truncated:
+          type: boolean
+
+    McpTestResult:
+      type: object
+      additionalProperties: false
+      required: [results]
+      properties:
+        results:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/McpTransportTest'
+
+    # ---- Skill marketplace ---------------------------------------------
+
+    SkillMarketSkill:
+      type: object
+      additionalProperties: false
+      required: [id, source, name]
+      properties:
+        id:
+          type: string
+          maxLength: 256
+          description: owner/repo/skill slug from the index.
+        source:
+          type: string
+          maxLength: 200
+          description: owner/repo.
+        name:
+          type: string
+          maxLength: 128
+        installs:
+          type: integer
+          format: int64
+
+    SkillMarketSearchResult:
+      type: object
+      additionalProperties: false
+      required: [skills]
+      properties:
+        skills:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/SkillMarketSkill'
+
+    SkillSourceInput:
+      type: object
+      additionalProperties: false
+      required: [source]
+      properties:
+        source:
+          type: string
+          minLength: 3
+          maxLength: 256
+          description: A GitHub owner/repo, or a github.com URL form.
+
+    SkillFileEntry:
+      type: object
+      additionalProperties: false
+      required: [path, size]
+      properties:
+        path:
+          type: string
+          maxLength: 512
+        size:
+          type: integer
+          format: int64
+        sha256:
+          type: string
+          maxLength: 64
+          description: Per-file content digest recorded in the preview
+            capability (byte binding).
+        executable:
+          type: boolean
+
+    SkillPreviewPayload:
+      type: object
+      additionalProperties: false
+      required: [name, description, body, files]
+      properties:
+        name:
+          type: string
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 512
+        body:
+          type: string
+          maxLength: 262144
+        files:
+          type: array
+          maxItems: 512
+          items:
+            $ref: '#/components/schemas/SkillFileEntry'
+        license:
+          type: string
+          maxLength: 64
+
+    SkillRepoPreview:
+      type: object
+      additionalProperties: false
+      required: [source, commit, capability, skills]
+      properties:
+        source:
+          type: string
+          maxLength: 200
+        commit:
+          type: string
+          maxLength: 64
+          description: The immutable commit the preview pinned.
+        capability:
+          type: string
+          maxLength: 512
+          description: Opaque install capability; expires with the
+            preview cache (15 minutes).
+        skills:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items:
+            $ref: '#/components/schemas/SkillPreviewPayload'
+
+    SkillInstallRequest:
+      type: object
+      additionalProperties: false
+      required: [capability, skills]
+      properties:
+        capability:
+          type: string
+          minLength: 16
+          maxLength: 512
+        skills:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items:
+            type: string
+            maxLength: 128
+          description: The chosen skill names from the preview.
+
+    SkillInstallStatus:
+      type: string
+      enum: [created, skipped, failed]
+
+    SkillInstallOutcome:
+      type: object
+      additionalProperties: false
+      required: [name, status]
+      properties:
+        name:
+          type: string
+          maxLength: 128
+        slug:
+          type: string
+          maxLength: 128
+          description: The stored directory name when created.
+        status:
+          $ref: '#/components/schemas/SkillInstallStatus'
+        reason:
+          type: string
+          enum: [duplicate, invalid_skill, capacity, io_error]
+        message:
+          type: string
+          maxLength: 1024
+        origin:
+          type: string
+          enum: [marketplace, import, local]
+
+    SkillInstallResult:
+      type: object
+      additionalProperties: false
+      required: [results]
+      properties:
+        results:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items:
+            $ref: '#/components/schemas/SkillInstallOutcome'
+
+    SkillArchivePreview:
+      type: object
+      additionalProperties: false
+      required: [stagingId, skill]
+      properties:
+        stagingId:
+          type: string
+          minLength: 32
+          maxLength: 128
+          description: Opaque one-shot bearer capability for commit.
+        skill:
+          $ref: '#/components/schemas/SkillPreviewPayload'
+
+    SkillImportCommitRequest:
+      type: object
+      additionalProperties: false
+      required: [stagingId]
+      properties:
+        stagingId:
+          type: string
+          minLength: 32
+          maxLength: 128
+
+    # ---- MCP import --------------------------------------------------
+
+    McpImportRequest:
+      type: object
+      additionalProperties: false
+      required: [document]
+      properties:
+        document:
+          type: string
+          maxLength: 262144
+          description: The pasted configuration as raw text. The daemon
+            is the only parser — never send pre-parsed JSON objects
+            (they lose key order, duplicate keys, and number fidelity).
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Name for single-object pastes (the object itself
+            carries no key).
+        replaceName:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Edit-as-JSON — replace this existing server's
+            transports with the document's exactly-one entry (name
+            unchanged).
+
+    McpImportOutcomeReason:
+      type: string
+      description: Why an entry skipped or failed. Skips — duplicate,
+        disabled, other_os. Failures — shape, field, name, capacity,
+        io_error.
+      enum: [duplicate, disabled, other_os, shape, field, name, capacity, io_error]
+
+    McpImportOutcome:
+      type: object
+      additionalProperties: false
+      required: [source_key, status]
+      properties:
+        source_key:
+          type: string
+          maxLength: 256
+          description: The original JSON key the entry came from.
+        name:
+          type: string
+          maxLength: 128
+          description: The stored name, when the entry was created (or
+            replaced); includes slug normalization from the key.
+        status:
+          type: string
+          enum: [created, skipped, failed]
+        reason:
+          $ref: '#/components/schemas/McpImportOutcomeReason'
+        message:
+          type: string
+          maxLength: 1024
+        warnings:
+          type: array
+          maxItems: 32
+          description: Tolerance report — ignored foreign keys (named,
+            values never echoed), coercions, deprecations.
+          items:
+            type: string
+            maxLength: 1024
+
+    McpImportResult:
+      type: object
+      additionalProperties: false
+      required: [results]
+      properties:
+        results:
+          type: array
+          minItems: 1
+          maxItems: 32
+          description: One outcome per entry, in paste order.
+          items:
+            $ref: '#/components/schemas/McpImportOutcome'
+
+    # ---- Skill management ------------------------------------------------
+
+    Skill:
+      type: object
+      additionalProperties: false
+      required: [name, description, directory, origin]
+      properties:
+        name:
+          $ref: '#/components/schemas/Id'
+        description:
+          type: string
+          minLength: 1
+          maxLength: 512
+        directory:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: The skill directory's absolute path on disk.
+        origin:
+          type: string
+          enum: [local, marketplace, import]
+        source:
+          type: string
+          maxLength: 200
+          description: owner/repo for marketplace skills when recorded.
+        ref:
+          type: string
+          maxLength: 200
+          description: The recorded branch/ref for marketplace skills.
+
+    SkillDetail:
+      type: object
+      additionalProperties: false
+      required: [name, description, directory, body, origin]
+      properties:
+        name:
+          $ref: '#/components/schemas/Id'
+        description:
+          type: string
+          minLength: 1
+          maxLength: 512
+        directory:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        body:
+          type: string
+          maxLength: 262144
+        origin:
+          type: string
+          enum: [local, marketplace, import]
+        source:
+          type: string
+          maxLength: 200
+          description: owner/repo for marketplace skills when recorded.
+
+    SkillCreate:
+      type: object
+      additionalProperties: false
+      required: [name, description]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The skill name; the directory slug is derived from
+            it (lowercase, `[a-z0-9-]`).
+        description:
+          type: string
+          minLength: 1
+          maxLength: 512
+        body:
+          type: string
+          maxLength: 262144
+          default: ''
+
+    SkillUpdate:
+      type: object
+      additionalProperties: false
+      required: [description, body]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Present to rename (the directory moves to the new
+            slug and the frontmatter updates).
+        description:
+          type: string
+          minLength: 1
+          maxLength: 512
+        body:
+          type: string
+          maxLength: 262144
+          description: The complete replacement body (PUT semantics —
+            send the current body for a frontmatter-only edit).
+
+    SkillList:
+      type: object
+      additionalProperties: false
+      required: [skills]
+      properties:
+        skills:
+          type: array
+          maxItems: 256
+          items:
+            $ref: '#/components/schemas/Skill'
+        load_errors:
+          type: array
+          maxItems: 64
+          items:
+            $ref: '#/components/schemas/RegistryLoadError'
 
     Error:
       type: object

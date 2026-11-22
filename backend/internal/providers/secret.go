@@ -16,9 +16,13 @@ import (
 type CredentialStatus string
 
 const (
-	CredentialUnset       CredentialStatus = "unset"       // no reference
-	CredentialReady       CredentialStatus = "ready"       // value resolvable now
-	CredentialMissing     CredentialStatus = "missing"     // referenced, unset or absent
+	// CredentialUnset — CredentialStatus values — credential resolution states.
+	CredentialUnset CredentialStatus = "unset" // no reference
+	// CredentialReady — one of the CredentialStatus values.
+	CredentialReady CredentialStatus = "ready" // value resolvable now
+	// CredentialMissing — one of the CredentialStatus values.
+	CredentialMissing CredentialStatus = "missing" // referenced, unset or absent
+	// CredentialUnavailable — one of the CredentialStatus values.
 	CredentialUnavailable CredentialStatus = "unavailable" // keyring unreachable within its deadline
 )
 
@@ -146,7 +150,7 @@ func mapKeyringErr(err error) error {
 	if errors.Is(err, keyring.ErrNotFound) {
 		return ErrSecretNotFound
 	}
-	return fmt.Errorf("%w: %v", ErrKeyringUnavailable, err)
+	return fmt.Errorf("%w: %w", ErrKeyringUnavailable, err)
 }
 
 // ResolveCredential resolves a provider's credential to a bearer token

@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -48,7 +49,7 @@ func (s *Store) HistoryWindow(sessionID, executionID string, bound int) (History
 			return hw, err
 		}
 		hw.Summary = &sum
-	} else if err != sql.ErrNoRows {
+	} else if !errors.Is(err, sql.ErrNoRows) {
 		return hw, fmt.Errorf("store: marker lookup: %w", err)
 	}
 

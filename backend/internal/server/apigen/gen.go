@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for ChatMessageRole.
@@ -40,6 +41,69 @@ func (e ChatMessageRole) Valid() bool {
 	}
 }
 
+// Defines values for ChittaToolInvokedPayloadErrorCode.
+const (
+	ChittaToolInvokedPayloadErrorCodeConflict     ChittaToolInvokedPayloadErrorCode = "conflict"
+	ChittaToolInvokedPayloadErrorCodeInvalidInput ChittaToolInvokedPayloadErrorCode = "invalid_input"
+	ChittaToolInvokedPayloadErrorCodeNotFound     ChittaToolInvokedPayloadErrorCode = "not_found"
+	ChittaToolInvokedPayloadErrorCodeUnavailable  ChittaToolInvokedPayloadErrorCode = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the ChittaToolInvokedPayloadErrorCode enum.
+func (e ChittaToolInvokedPayloadErrorCode) Valid() bool {
+	switch e {
+	case ChittaToolInvokedPayloadErrorCodeConflict:
+		return true
+	case ChittaToolInvokedPayloadErrorCodeInvalidInput:
+		return true
+	case ChittaToolInvokedPayloadErrorCodeNotFound:
+		return true
+	case ChittaToolInvokedPayloadErrorCodeUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChittaToolInvokedPayloadOutcome.
+const (
+	ChittaToolInvokedPayloadOutcomeError   ChittaToolInvokedPayloadOutcome = "error"
+	ChittaToolInvokedPayloadOutcomeSuccess ChittaToolInvokedPayloadOutcome = "success"
+)
+
+// Valid indicates whether the value is a known member of the ChittaToolInvokedPayloadOutcome enum.
+func (e ChittaToolInvokedPayloadOutcome) Valid() bool {
+	switch e {
+	case ChittaToolInvokedPayloadOutcomeError:
+		return true
+	case ChittaToolInvokedPayloadOutcomeSuccess:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChittaToolInvokedPayloadProvenanceSource.
+const (
+	ChittaToolInvokedPayloadProvenanceSourceAgent     ChittaToolInvokedPayloadProvenanceSource = "agent"
+	ChittaToolInvokedPayloadProvenanceSourceDistiller ChittaToolInvokedPayloadProvenanceSource = "distiller"
+	ChittaToolInvokedPayloadProvenanceSourceUser      ChittaToolInvokedPayloadProvenanceSource = "user"
+)
+
+// Valid indicates whether the value is a known member of the ChittaToolInvokedPayloadProvenanceSource enum.
+func (e ChittaToolInvokedPayloadProvenanceSource) Valid() bool {
+	switch e {
+	case ChittaToolInvokedPayloadProvenanceSourceAgent:
+		return true
+	case ChittaToolInvokedPayloadProvenanceSourceDistiller:
+		return true
+	case ChittaToolInvokedPayloadProvenanceSourceUser:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CredentialKind.
 const (
 	CredentialKindEnv     CredentialKind = "env"
@@ -63,22 +127,22 @@ func (e CredentialKind) Valid() bool {
 
 // Defines values for CredentialStatus.
 const (
-	Missing     CredentialStatus = "missing"
-	Ready       CredentialStatus = "ready"
-	Unavailable CredentialStatus = "unavailable"
-	Unset       CredentialStatus = "unset"
+	CredentialStatusMissing     CredentialStatus = "missing"
+	CredentialStatusReady       CredentialStatus = "ready"
+	CredentialStatusUnavailable CredentialStatus = "unavailable"
+	CredentialStatusUnset       CredentialStatus = "unset"
 )
 
 // Valid indicates whether the value is a known member of the CredentialStatus enum.
 func (e CredentialStatus) Valid() bool {
 	switch e {
-	case Missing:
+	case CredentialStatusMissing:
 		return true
-	case Ready:
+	case CredentialStatusReady:
 		return true
-	case Unavailable:
+	case CredentialStatusUnavailable:
 		return true
-	case Unset:
+	case CredentialStatusUnset:
 		return true
 	default:
 		return false
@@ -102,13 +166,13 @@ func (e HealthService) Valid() bool {
 
 // Defines values for HealthStatus.
 const (
-	Ok HealthStatus = "ok"
+	HealthStatusOk HealthStatus = "ok"
 )
 
 // Valid indicates whether the value is a known member of the HealthStatus enum.
 func (e HealthStatus) Valid() bool {
 	switch e {
-	case Ok:
+	case HealthStatusOk:
 		return true
 	default:
 		return false
@@ -130,6 +194,141 @@ func (e HookAction) Valid() bool {
 	case Block:
 		return true
 	case Warn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for McpTransportsKind.
+const (
+	McpTransportsKindHttp  McpTransportsKind = "http"
+	McpTransportsKindStdio McpTransportsKind = "stdio"
+)
+
+// Valid indicates whether the value is a known member of the McpTransportsKind enum.
+func (e McpTransportsKind) Valid() bool {
+	switch e {
+	case McpTransportsKindHttp:
+		return true
+	case McpTransportsKindStdio:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for McpImportOutcomeStatus.
+const (
+	McpImportOutcomeStatusCreated McpImportOutcomeStatus = "created"
+	McpImportOutcomeStatusFailed  McpImportOutcomeStatus = "failed"
+	McpImportOutcomeStatusSkipped McpImportOutcomeStatus = "skipped"
+)
+
+// Valid indicates whether the value is a known member of the McpImportOutcomeStatus enum.
+func (e McpImportOutcomeStatus) Valid() bool {
+	switch e {
+	case McpImportOutcomeStatusCreated:
+		return true
+	case McpImportOutcomeStatusFailed:
+		return true
+	case McpImportOutcomeStatusSkipped:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for McpImportOutcomeReason.
+const (
+	McpImportOutcomeReasonCapacity  McpImportOutcomeReason = "capacity"
+	McpImportOutcomeReasonDisabled  McpImportOutcomeReason = "disabled"
+	McpImportOutcomeReasonDuplicate McpImportOutcomeReason = "duplicate"
+	McpImportOutcomeReasonField     McpImportOutcomeReason = "field"
+	McpImportOutcomeReasonIoError   McpImportOutcomeReason = "io_error"
+	McpImportOutcomeReasonName      McpImportOutcomeReason = "name"
+	McpImportOutcomeReasonOtherOs   McpImportOutcomeReason = "other_os"
+	McpImportOutcomeReasonShape     McpImportOutcomeReason = "shape"
+)
+
+// Valid indicates whether the value is a known member of the McpImportOutcomeReason enum.
+func (e McpImportOutcomeReason) Valid() bool {
+	switch e {
+	case McpImportOutcomeReasonCapacity:
+		return true
+	case McpImportOutcomeReasonDisabled:
+		return true
+	case McpImportOutcomeReasonDuplicate:
+		return true
+	case McpImportOutcomeReasonField:
+		return true
+	case McpImportOutcomeReasonIoError:
+		return true
+	case McpImportOutcomeReasonName:
+		return true
+	case McpImportOutcomeReasonOtherOs:
+		return true
+	case McpImportOutcomeReasonShape:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for McpTransportTestFailureReason.
+const (
+	ConnectFailed McpTransportTestFailureReason = "connect_failed"
+	ProtocolError McpTransportTestFailureReason = "protocol_error"
+	SpawnFailed   McpTransportTestFailureReason = "spawn_failed"
+	Timeout       McpTransportTestFailureReason = "timeout"
+)
+
+// Valid indicates whether the value is a known member of the McpTransportTestFailureReason enum.
+func (e McpTransportTestFailureReason) Valid() bool {
+	switch e {
+	case ConnectFailed:
+		return true
+	case ProtocolError:
+		return true
+	case SpawnFailed:
+		return true
+	case Timeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for McpTransportTestStatus.
+const (
+	McpTransportTestStatusFailed McpTransportTestStatus = "failed"
+	McpTransportTestStatusOk     McpTransportTestStatus = "ok"
+)
+
+// Valid indicates whether the value is a known member of the McpTransportTestStatus enum.
+func (e McpTransportTestStatus) Valid() bool {
+	switch e {
+	case McpTransportTestStatusFailed:
+		return true
+	case McpTransportTestStatusOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for McpTransportTestTransport.
+const (
+	McpTransportTestTransportHttp  McpTransportTestTransport = "http"
+	McpTransportTestTransportStdio McpTransportTestTransport = "stdio"
+)
+
+// Valid indicates whether the value is a known member of the McpTransportTestTransport enum.
+func (e McpTransportTestTransport) Valid() bool {
+	switch e {
+	case McpTransportTestTransportHttp:
+		return true
+	case McpTransportTestTransportStdio:
 		return true
 	default:
 		return false
@@ -238,30 +437,156 @@ func (e ProviderType) Valid() bool {
 	}
 }
 
+// Defines values for RegistryLoadErrorKind.
+const (
+	RegistryLoadErrorKindMcp   RegistryLoadErrorKind = "mcp"
+	RegistryLoadErrorKindSkill RegistryLoadErrorKind = "skill"
+)
+
+// Valid indicates whether the value is a known member of the RegistryLoadErrorKind enum.
+func (e RegistryLoadErrorKind) Valid() bool {
+	switch e {
+	case RegistryLoadErrorKindMcp:
+		return true
+	case RegistryLoadErrorKindSkill:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SessionStatus.
 const (
-	Cancelled SessionStatus = "cancelled"
-	Completed SessionStatus = "completed"
-	Created   SessionStatus = "created"
-	Failed    SessionStatus = "failed"
-	Running   SessionStatus = "running"
-	Waiting   SessionStatus = "waiting"
+	SessionStatusCancelled SessionStatus = "cancelled"
+	SessionStatusCompleted SessionStatus = "completed"
+	SessionStatusCreated   SessionStatus = "created"
+	SessionStatusFailed    SessionStatus = "failed"
+	SessionStatusRunning   SessionStatus = "running"
+	SessionStatusWaiting   SessionStatus = "waiting"
 )
 
 // Valid indicates whether the value is a known member of the SessionStatus enum.
 func (e SessionStatus) Valid() bool {
 	switch e {
-	case Cancelled:
+	case SessionStatusCancelled:
 		return true
-	case Completed:
+	case SessionStatusCompleted:
 		return true
-	case Created:
+	case SessionStatusCreated:
 		return true
-	case Failed:
+	case SessionStatusFailed:
 		return true
-	case Running:
+	case SessionStatusRunning:
 		return true
-	case Waiting:
+	case SessionStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SkillOrigin.
+const (
+	SkillOriginImport      SkillOrigin = "import"
+	SkillOriginLocal       SkillOrigin = "local"
+	SkillOriginMarketplace SkillOrigin = "marketplace"
+)
+
+// Valid indicates whether the value is a known member of the SkillOrigin enum.
+func (e SkillOrigin) Valid() bool {
+	switch e {
+	case SkillOriginImport:
+		return true
+	case SkillOriginLocal:
+		return true
+	case SkillOriginMarketplace:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SkillDetailOrigin.
+const (
+	SkillDetailOriginImport      SkillDetailOrigin = "import"
+	SkillDetailOriginLocal       SkillDetailOrigin = "local"
+	SkillDetailOriginMarketplace SkillDetailOrigin = "marketplace"
+)
+
+// Valid indicates whether the value is a known member of the SkillDetailOrigin enum.
+func (e SkillDetailOrigin) Valid() bool {
+	switch e {
+	case SkillDetailOriginImport:
+		return true
+	case SkillDetailOriginLocal:
+		return true
+	case SkillDetailOriginMarketplace:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SkillInstallOutcomeOrigin.
+const (
+	SkillInstallOutcomeOriginImport      SkillInstallOutcomeOrigin = "import"
+	SkillInstallOutcomeOriginLocal       SkillInstallOutcomeOrigin = "local"
+	SkillInstallOutcomeOriginMarketplace SkillInstallOutcomeOrigin = "marketplace"
+)
+
+// Valid indicates whether the value is a known member of the SkillInstallOutcomeOrigin enum.
+func (e SkillInstallOutcomeOrigin) Valid() bool {
+	switch e {
+	case SkillInstallOutcomeOriginImport:
+		return true
+	case SkillInstallOutcomeOriginLocal:
+		return true
+	case SkillInstallOutcomeOriginMarketplace:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SkillInstallOutcomeReason.
+const (
+	SkillInstallOutcomeReasonCapacity     SkillInstallOutcomeReason = "capacity"
+	SkillInstallOutcomeReasonDuplicate    SkillInstallOutcomeReason = "duplicate"
+	SkillInstallOutcomeReasonInvalidSkill SkillInstallOutcomeReason = "invalid_skill"
+	SkillInstallOutcomeReasonIoError      SkillInstallOutcomeReason = "io_error"
+)
+
+// Valid indicates whether the value is a known member of the SkillInstallOutcomeReason enum.
+func (e SkillInstallOutcomeReason) Valid() bool {
+	switch e {
+	case SkillInstallOutcomeReasonCapacity:
+		return true
+	case SkillInstallOutcomeReasonDuplicate:
+		return true
+	case SkillInstallOutcomeReasonInvalidSkill:
+		return true
+	case SkillInstallOutcomeReasonIoError:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SkillInstallStatus.
+const (
+	SkillInstallStatusCreated SkillInstallStatus = "created"
+	SkillInstallStatusFailed  SkillInstallStatus = "failed"
+	SkillInstallStatusSkipped SkillInstallStatus = "skipped"
+)
+
+// Valid indicates whether the value is a known member of the SkillInstallStatus enum.
+func (e SkillInstallStatus) Valid() bool {
+	switch e {
+	case SkillInstallStatusCreated:
+		return true
+	case SkillInstallStatusFailed:
+		return true
+	case SkillInstallStatusSkipped:
 		return true
 	default:
 		return false
@@ -271,6 +596,7 @@ func (e SessionStatus) Valid() bool {
 // Defines values for TimelineEventKind.
 const (
 	TimelineEventKindAgentStep           TimelineEventKind = "agent_step"
+	TimelineEventKindChittaToolInvoked   TimelineEventKind = "chitta_tool_invoked"
 	TimelineEventKindCompactionTriggered TimelineEventKind = "compaction_triggered"
 	TimelineEventKindDelegation          TimelineEventKind = "delegation"
 	TimelineEventKindHookDecision        TimelineEventKind = "hook_decision"
@@ -282,6 +608,8 @@ const (
 func (e TimelineEventKind) Valid() bool {
 	switch e {
 	case TimelineEventKindAgentStep:
+		return true
+	case TimelineEventKindChittaToolInvoked:
 		return true
 	case TimelineEventKindCompactionTriggered:
 		return true
@@ -350,6 +678,30 @@ type ChatSync struct {
 	Truncated  bool `json:"truncated"`
 }
 
+// ChittaToolInvokedPayload One chitta tool invocation (memory_* / knowledge_* tools) — the observable heartbeat of the chitta capability.
+type ChittaToolInvokedPayload struct {
+	AffectedIds []string                           `json:"affected_ids"`
+	ErrorCode   *ChittaToolInvokedPayloadErrorCode `json:"error_code,omitempty"`
+	Outcome     ChittaToolInvokedPayloadOutcome    `json:"outcome"`
+	Provenance  *struct {
+		AgentId     *string                                   `json:"agent_id,omitempty"`
+		ExecutionId *string                                   `json:"execution_id,omitempty"`
+		MessageSeq  *int                                      `json:"message_seq,omitempty"`
+		SessionId   *string                                   `json:"session_id,omitempty"`
+		Source      *ChittaToolInvokedPayloadProvenanceSource `json:"source,omitempty"`
+	} `json:"provenance,omitempty"`
+	Tool string `json:"tool"`
+}
+
+// ChittaToolInvokedPayloadErrorCode defines model for ChittaToolInvokedPayload.ErrorCode.
+type ChittaToolInvokedPayloadErrorCode string
+
+// ChittaToolInvokedPayloadOutcome defines model for ChittaToolInvokedPayload.Outcome.
+type ChittaToolInvokedPayloadOutcome string
+
+// ChittaToolInvokedPayloadProvenanceSource defines model for ChittaToolInvokedPayload.Provenance.Source.
+type ChittaToolInvokedPayloadProvenanceSource string
+
 // CompactionStats defines model for CompactionStats.
 type CompactionStats struct {
 	MessagesAfter  int    `json:"messages_after"`
@@ -377,6 +729,13 @@ type DelegationPayload struct {
 	ChildAgent     string  `json:"child_agent"`
 	ChildSessionId *string `json:"child_session_id,omitempty"`
 	Task           string  `json:"task"`
+}
+
+// DistillationSettings defines model for DistillationSettings.
+type DistillationSettings struct {
+	Model    *string `json:"model,omitempty"`
+	Prompt   *string `json:"prompt,omitempty"`
+	Provider *string `json:"provider,omitempty"`
 }
 
 // Error defines model for Error.
@@ -424,6 +783,151 @@ type HookDecision struct {
 
 // Id defines model for Id.
 type Id = string
+
+// Mcp defines model for Mcp.
+type Mcp struct {
+	// Enabled False when the manifest is disabled (an absent field means enabled). Disabled servers stay listed, toggleable, and probeable; future runtime wiring skips them.
+	Enabled bool `json:"enabled"`
+
+	// File The manifest's absolute path on disk.
+	File string `json:"file"`
+	Name Id     `json:"name"`
+
+	// Transports The declared transports — stdio and/or http, discriminated by `kind`.
+	Transports []struct {
+		Args *[]string `json:"args,omitempty"`
+
+		// Command Present when kind is stdio.
+		Command *string            `json:"command,omitempty"`
+		Env     *map[string]string `json:"env,omitempty"`
+		Kind    McpTransportsKind  `json:"kind"`
+
+		// Url Present when kind is http.
+		Url *string `json:"url,omitempty"`
+	} `json:"transports"`
+}
+
+// McpTransportsKind defines model for Mcp.Transports.Kind.
+type McpTransportsKind string
+
+// McpCreate The complete manifest. At least one of `stdio` or `http` is
+// required (both is valid — one entry, two transports).
+type McpCreate struct {
+	// Enabled Absent means enabled.
+	Enabled *bool    `json:"enabled,omitempty"`
+	Http    *McpHttp `json:"http,omitempty"`
+
+	// Name Name for API-created and API-renamed MCP servers (the manifest file stem). Existing hand-authored entries may carry broader stems.
+	Name  McpManagedName `json:"name"`
+	Stdio *McpStdio      `json:"stdio,omitempty"`
+}
+
+// McpHttp defines model for McpHttp.
+type McpHttp struct {
+	Url string `json:"url"`
+}
+
+// McpImportOutcome defines model for McpImportOutcome.
+type McpImportOutcome struct {
+	Message *string `json:"message,omitempty"`
+
+	// Name The stored name, when the entry was created (or replaced); includes slug normalization from the key.
+	Name *string `json:"name,omitempty"`
+
+	// Reason Why an entry skipped or failed. Skips — duplicate, disabled, other_os. Failures — shape, field, name, capacity, io_error.
+	Reason *McpImportOutcomeReason `json:"reason,omitempty"`
+
+	// SourceKey The original JSON key the entry came from.
+	SourceKey string                 `json:"source_key"`
+	Status    McpImportOutcomeStatus `json:"status"`
+
+	// Warnings Tolerance report — ignored foreign keys (named, values never echoed), coercions, deprecations.
+	Warnings *[]string `json:"warnings,omitempty"`
+}
+
+// McpImportOutcomeStatus defines model for McpImportOutcome.Status.
+type McpImportOutcomeStatus string
+
+// McpImportOutcomeReason Why an entry skipped or failed. Skips — duplicate, disabled, other_os. Failures — shape, field, name, capacity, io_error.
+type McpImportOutcomeReason string
+
+// McpImportRequest defines model for McpImportRequest.
+type McpImportRequest struct {
+	// Document The pasted configuration as raw text. The daemon is the only parser — never send pre-parsed JSON objects (they lose key order, duplicate keys, and number fidelity).
+	Document string `json:"document"`
+
+	// Name Name for single-object pastes (the object itself carries no key).
+	Name *string `json:"name,omitempty"`
+
+	// ReplaceName Edit-as-JSON — replace this existing server's transports with the document's exactly-one entry (name unchanged).
+	ReplaceName *string `json:"replaceName,omitempty"`
+}
+
+// McpImportResult defines model for McpImportResult.
+type McpImportResult struct {
+	// Results One outcome per entry, in paste order.
+	Results []McpImportOutcome `json:"results"`
+}
+
+// McpList defines model for McpList.
+type McpList struct {
+	LoadErrors *[]RegistryLoadError `json:"load_errors,omitempty"`
+	Servers    []Mcp                `json:"servers"`
+}
+
+// McpManagedName Name for API-created and API-renamed MCP servers (the manifest file stem). Existing hand-authored entries may carry broader stems.
+type McpManagedName = string
+
+// McpStdio defines model for McpStdio.
+type McpStdio struct {
+	Args    *[]string          `json:"args,omitempty"`
+	Command string             `json:"command"`
+	Env     *map[string]string `json:"env,omitempty"`
+}
+
+// McpTestResult defines model for McpTestResult.
+type McpTestResult struct {
+	Results []McpTransportTest `json:"results"`
+}
+
+// McpTool defines model for McpTool.
+type McpTool struct {
+	Description *string `json:"description,omitempty"`
+	Name        string  `json:"name"`
+}
+
+// McpTransportTest defines model for McpTransportTest.
+type McpTransportTest struct {
+	Failure *struct {
+		Message string                        `json:"message"`
+		Reason  McpTransportTestFailureReason `json:"reason"`
+	} `json:"failure,omitempty"`
+	Status    McpTransportTestStatus    `json:"status"`
+	Tools     *[]McpTool                `json:"tools,omitempty"`
+	Transport McpTransportTestTransport `json:"transport"`
+	Truncated *bool                     `json:"truncated,omitempty"`
+}
+
+// McpTransportTestFailureReason defines model for McpTransportTest.Failure.Reason.
+type McpTransportTestFailureReason string
+
+// McpTransportTestStatus defines model for McpTransportTest.Status.
+type McpTransportTestStatus string
+
+// McpTransportTestTransport defines model for McpTransportTest.Transport.
+type McpTransportTestTransport string
+
+// McpUpdate Full replace of the manifest (PUT semantics). Absent `stdio` and
+// `http` together is a 400. Present `name` renames.
+type McpUpdate struct {
+	// Enabled Absent means enabled — full replace, so omitting the field re-enables the server.
+	Enabled *bool    `json:"enabled,omitempty"`
+	Http    *McpHttp `json:"http,omitempty"`
+
+	// Name Name for API-created and API-renamed MCP servers (the manifest file stem). Existing hand-authored entries may carry broader stems.
+	Name  *McpManagedName `json:"name,omitempty"`
+	Stdio *McpStdio       `json:"stdio,omitempty"`
+}
 
 // Message defines model for Message.
 type Message struct {
@@ -534,6 +1038,16 @@ type ProviderUpdate struct {
 	Name       *string          `json:"name,omitempty"`
 }
 
+// RegistryLoadError defines model for RegistryLoadError.
+type RegistryLoadError struct {
+	Kind    RegistryLoadErrorKind `json:"kind"`
+	Message string                `json:"message"`
+	Path    string                `json:"path"`
+}
+
+// RegistryLoadErrorKind defines model for RegistryLoadError.Kind.
+type RegistryLoadErrorKind string
+
 // Session defines model for Session.
 type Session struct {
 	Agent     *string       `json:"agent,omitempty"`
@@ -563,13 +1077,174 @@ type SessionSummary struct {
 	UpdatedAt time.Time     `json:"updated_at"`
 }
 
+// Skill defines model for Skill.
+type Skill struct {
+	Description string `json:"description"`
+
+	// Directory The skill directory's absolute path on disk.
+	Directory string      `json:"directory"`
+	Name      Id          `json:"name"`
+	Origin    SkillOrigin `json:"origin"`
+
+	// Ref The recorded branch/ref for marketplace skills.
+	Ref *string `json:"ref,omitempty"`
+
+	// Source owner/repo for marketplace skills when recorded.
+	Source *string `json:"source,omitempty"`
+}
+
+// SkillOrigin defines model for Skill.Origin.
+type SkillOrigin string
+
+// SkillArchivePreview defines model for SkillArchivePreview.
+type SkillArchivePreview struct {
+	Skill SkillPreviewPayload `json:"skill"`
+
+	// StagingId Opaque one-shot bearer capability for commit.
+	StagingId string `json:"stagingId"`
+}
+
+// SkillCreate defines model for SkillCreate.
+type SkillCreate struct {
+	Body        *string `json:"body,omitempty"`
+	Description string  `json:"description"`
+
+	// Name The skill name; the directory slug is derived from it (lowercase, `[a-z0-9-]`).
+	Name string `json:"name"`
+}
+
+// SkillDetail defines model for SkillDetail.
+type SkillDetail struct {
+	Body        string            `json:"body"`
+	Description string            `json:"description"`
+	Directory   string            `json:"directory"`
+	Name        Id                `json:"name"`
+	Origin      SkillDetailOrigin `json:"origin"`
+
+	// Source owner/repo for marketplace skills when recorded.
+	Source *string `json:"source,omitempty"`
+}
+
+// SkillDetailOrigin defines model for SkillDetail.Origin.
+type SkillDetailOrigin string
+
+// SkillFileEntry defines model for SkillFileEntry.
+type SkillFileEntry struct {
+	Executable *bool  `json:"executable,omitempty"`
+	Path       string `json:"path"`
+
+	// Sha256 Per-file content digest recorded in the preview capability (byte binding).
+	Sha256 *string `json:"sha256,omitempty"`
+	Size   int64   `json:"size"`
+}
+
+// SkillImportCommitRequest defines model for SkillImportCommitRequest.
+type SkillImportCommitRequest struct {
+	StagingId string `json:"stagingId"`
+}
+
+// SkillInstallOutcome defines model for SkillInstallOutcome.
+type SkillInstallOutcome struct {
+	Message *string                    `json:"message,omitempty"`
+	Name    string                     `json:"name"`
+	Origin  *SkillInstallOutcomeOrigin `json:"origin,omitempty"`
+	Reason  *SkillInstallOutcomeReason `json:"reason,omitempty"`
+
+	// Slug The stored directory name when created.
+	Slug   *string            `json:"slug,omitempty"`
+	Status SkillInstallStatus `json:"status"`
+}
+
+// SkillInstallOutcomeOrigin defines model for SkillInstallOutcome.Origin.
+type SkillInstallOutcomeOrigin string
+
+// SkillInstallOutcomeReason defines model for SkillInstallOutcome.Reason.
+type SkillInstallOutcomeReason string
+
+// SkillInstallRequest defines model for SkillInstallRequest.
+type SkillInstallRequest struct {
+	Capability string `json:"capability"`
+
+	// Skills The chosen skill names from the preview.
+	Skills []string `json:"skills"`
+}
+
+// SkillInstallResult defines model for SkillInstallResult.
+type SkillInstallResult struct {
+	Results []SkillInstallOutcome `json:"results"`
+}
+
+// SkillInstallStatus defines model for SkillInstallStatus.
+type SkillInstallStatus string
+
+// SkillList defines model for SkillList.
+type SkillList struct {
+	LoadErrors *[]RegistryLoadError `json:"load_errors,omitempty"`
+	Skills     []Skill              `json:"skills"`
+}
+
+// SkillMarketSearchResult defines model for SkillMarketSearchResult.
+type SkillMarketSearchResult struct {
+	Skills []SkillMarketSkill `json:"skills"`
+}
+
+// SkillMarketSkill defines model for SkillMarketSkill.
+type SkillMarketSkill struct {
+	// Id owner/repo/skill slug from the index.
+	Id       string `json:"id"`
+	Installs *int64 `json:"installs,omitempty"`
+	Name     string `json:"name"`
+
+	// Source owner/repo.
+	Source string `json:"source"`
+}
+
+// SkillPreviewPayload defines model for SkillPreviewPayload.
+type SkillPreviewPayload struct {
+	Body        string           `json:"body"`
+	Description string           `json:"description"`
+	Files       []SkillFileEntry `json:"files"`
+	License     *string          `json:"license,omitempty"`
+	Name        string           `json:"name"`
+}
+
+// SkillRepoPreview defines model for SkillRepoPreview.
+type SkillRepoPreview struct {
+	// Capability Opaque install capability; expires with the preview cache (15 minutes).
+	Capability string `json:"capability"`
+
+	// Commit The immutable commit the preview pinned.
+	Commit string                `json:"commit"`
+	Skills []SkillPreviewPayload `json:"skills"`
+	Source string                `json:"source"`
+}
+
+// SkillSourceInput defines model for SkillSourceInput.
+type SkillSourceInput struct {
+	// Source A GitHub owner/repo, or a github.com URL form.
+	Source string `json:"source"`
+}
+
+// SkillUpdate defines model for SkillUpdate.
+type SkillUpdate struct {
+	// Body The complete replacement body (PUT semantics — send the current body for a frontmatter-only edit).
+	Body        string `json:"body"`
+	Description string `json:"description"`
+
+	// Name Present to rename (the directory moves to the new slug and the frontmatter updates).
+	Name *string `json:"name,omitempty"`
+}
+
 // TimelineEvent defines model for TimelineEvent.
 type TimelineEvent struct {
-	Agent      *string            `json:"agent,omitempty"`
-	Compaction *CompactionStats   `json:"compaction,omitempty"`
-	Delegation *DelegationPayload `json:"delegation,omitempty"`
-	Hook       *HookDecision      `json:"hook,omitempty"`
-	Id         Id                 `json:"id"`
+	Agent *string `json:"agent,omitempty"`
+
+	// ChittaToolInvoked One chitta tool invocation (memory_* / knowledge_* tools) — the observable heartbeat of the chitta capability.
+	ChittaToolInvoked *ChittaToolInvokedPayload `json:"chitta_tool_invoked,omitempty"`
+	Compaction        *CompactionStats          `json:"compaction,omitempty"`
+	Delegation        *DelegationPayload        `json:"delegation,omitempty"`
+	Hook              *HookDecision             `json:"hook,omitempty"`
+	Id                Id                        `json:"id"`
 
 	// Kind Mirrors the domain TimelineEventKind set.
 	Kind      TimelineEventKind `json:"kind"`
@@ -597,17 +1272,26 @@ type UserInput struct {
 	Text string `json:"text"`
 }
 
+// McpName defines model for McpName.
+type McpName = Id
+
 // ProviderName defines model for ProviderName.
 type ProviderName = Id
 
 // SessionId defines model for SessionId.
 type SessionId = Id
 
+// SkillName defines model for SkillName.
+type SkillName = Id
+
 // BadRequest defines model for BadRequest.
 type BadRequest = Error
 
 // Conflict defines model for Conflict.
 type Conflict = Error
+
+// InternalError defines model for InternalError.
+type InternalError = Error
 
 // NotFound defines model for NotFound.
 type NotFound = Error
@@ -633,11 +1317,34 @@ type ListSessionsParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// PreviewSkillArchiveMultipartBody defines parameters for PreviewSkillArchive.
+type PreviewSkillArchiveMultipartBody struct {
+	// Archive The .skill or .zip file (≤10 MiB).
+	Archive openapi_types.File `json:"archive"`
+}
+
+// SearchSkillMarketplaceParams defines parameters for SearchSkillMarketplace.
+type SearchSkillMarketplaceParams struct {
+	Q string `form:"q" json:"q"`
+}
+
 // SendChatMessageJSONRequestBody defines body for SendChatMessage for application/json ContentType.
 type SendChatMessageJSONRequestBody = ChatSend
 
+// PutDistillationJSONRequestBody defines body for PutDistillation for application/json ContentType.
+type PutDistillationJSONRequestBody = DistillationSettings
+
 // CreateGoalJSONRequestBody defines body for CreateGoal for application/json ContentType.
 type CreateGoalJSONRequestBody = GoalRequest
+
+// CreateMcpJSONRequestBody defines body for CreateMcp for application/json ContentType.
+type CreateMcpJSONRequestBody = McpCreate
+
+// ImportMcpsJSONRequestBody defines body for ImportMcps for application/json ContentType.
+type ImportMcpsJSONRequestBody = McpImportRequest
+
+// UpdateMcpJSONRequestBody defines body for UpdateMcp for application/json ContentType.
+type UpdateMcpJSONRequestBody = McpUpdate
 
 // CreateProviderJSONRequestBody defines body for CreateProvider for application/json ContentType.
 type CreateProviderJSONRequestBody = ProviderCreate
@@ -648,6 +1355,24 @@ type UpdateProviderJSONRequestBody = ProviderUpdate
 // ResumeSessionJSONRequestBody defines body for ResumeSession for application/json ContentType.
 type ResumeSessionJSONRequestBody = UserInput
 
+// CreateSkillJSONRequestBody defines body for CreateSkill for application/json ContentType.
+type CreateSkillJSONRequestBody = SkillCreate
+
+// CommitSkillArchiveJSONRequestBody defines body for CommitSkillArchive for application/json ContentType.
+type CommitSkillArchiveJSONRequestBody = SkillImportCommitRequest
+
+// PreviewSkillArchiveMultipartRequestBody defines body for PreviewSkillArchive for multipart/form-data ContentType.
+type PreviewSkillArchiveMultipartRequestBody PreviewSkillArchiveMultipartBody
+
+// InstallSkillCapabilityJSONRequestBody defines body for InstallSkillCapability for application/json ContentType.
+type InstallSkillCapabilityJSONRequestBody = SkillInstallRequest
+
+// PreviewSkillSourceJSONRequestBody defines body for PreviewSkillSource for application/json ContentType.
+type PreviewSkillSourceJSONRequestBody = SkillSourceInput
+
+// UpdateSkillJSONRequestBody defines body for UpdateSkill for application/json ContentType.
+type UpdateSkillJSONRequestBody = SkillUpdate
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// SyncChatMessages Sync the chat transcript (cursor-paginated)
@@ -656,9 +1381,33 @@ type ServerInterface interface {
 	// SendChatMessage Send a message and get the assistant's reply
 	// (POST /api/chat/messages)
 	SendChatMessage(w http.ResponseWriter, r *http.Request)
+	// GetDistillation Current distillation settings (provider, model, prompt)
+	// (GET /api/distillation)
+	GetDistillation(w http.ResponseWriter, r *http.Request)
+	// PutDistillation Update distillation settings (applied without restart)
+	// (PUT /api/distillation)
+	PutDistillation(w http.ResponseWriter, r *http.Request)
 	// CreateGoal Start an autonomous goal run
 	// (POST /api/goals)
 	CreateGoal(w http.ResponseWriter, r *http.Request)
+	// ListMcps List registered MCP servers
+	// (GET /api/mcps)
+	ListMcps(w http.ResponseWriter, r *http.Request)
+	// CreateMcp Create an MCP server (managed manifest file)
+	// (POST /api/mcps)
+	CreateMcp(w http.ResponseWriter, r *http.Request)
+	// ImportMcps Import MCP servers from standard JSON (raw paste)
+	// (POST /api/mcps/import)
+	ImportMcps(w http.ResponseWriter, r *http.Request)
+	// DeleteMcp Delete an MCP server
+	// (DELETE /api/mcps/{name})
+	DeleteMcp(w http.ResponseWriter, r *http.Request, name McpName)
+	// UpdateMcp Edit an MCP server (full replace; rename supported)
+	// (PATCH /api/mcps/{name})
+	UpdateMcp(w http.ResponseWriter, r *http.Request, name McpName)
+	// TestMcp Probe an MCP server's declared transports
+	// (POST /api/mcps/{name}/test)
+	TestMcp(w http.ResponseWriter, r *http.Request, name McpName)
 	// ListModels Read the daemon's model catalog
 	// (GET /api/models)
 	ListModels(w http.ResponseWriter, r *http.Request)
@@ -695,6 +1444,36 @@ type ServerInterface interface {
 	// ResumeSession Resume a waiting session with user input
 	// (POST /api/sessions/{sessionId}/resume)
 	ResumeSession(w http.ResponseWriter, r *http.Request, sessionId SessionId)
+	// ListSkills List registered skills
+	// (GET /api/skills)
+	ListSkills(w http.ResponseWriter, r *http.Request)
+	// CreateSkill Create a skill (managed directory)
+	// (POST /api/skills)
+	CreateSkill(w http.ResponseWriter, r *http.Request)
+	// CommitSkillArchive Install a staged archive by its capability
+	// (POST /api/skills/import/commit)
+	CommitSkillArchive(w http.ResponseWriter, r *http.Request)
+	// PreviewSkillArchive Preview and stage a .skill/.zip archive (multipart)
+	// (POST /api/skills/import/preview)
+	PreviewSkillArchive(w http.ResponseWriter, r *http.Request)
+	// InstallSkillCapability Install previewed skills by capability
+	// (POST /api/skills/marketplace/install)
+	InstallSkillCapability(w http.ResponseWriter, r *http.Request)
+	// PreviewSkillSource Preview skills in a GitHub repository (byte-binding)
+	// (POST /api/skills/marketplace/preview)
+	PreviewSkillSource(w http.ResponseWriter, r *http.Request)
+	// SearchSkillMarketplace Search the open skills.sh directory (daemon-proxied)
+	// (GET /api/skills/marketplace/search)
+	SearchSkillMarketplace(w http.ResponseWriter, r *http.Request, params SearchSkillMarketplaceParams)
+	// DeleteSkill Delete a skill (directory including its bundle)
+	// (DELETE /api/skills/{name})
+	DeleteSkill(w http.ResponseWriter, r *http.Request, name SkillName)
+	// GetSkill Read one skill's detail (frontmatter + body)
+	// (GET /api/skills/{name})
+	GetSkill(w http.ResponseWriter, r *http.Request, name SkillName)
+	// UpdateSkill Edit a skill (full replace; rename supported)
+	// (PATCH /api/skills/{name})
+	UpdateSkill(w http.ResponseWriter, r *http.Request, name SkillName)
 	// GetHealth Liveness probe
 	// (GET /healthz)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -716,9 +1495,57 @@ func (_ Unimplemented) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// GetDistillation Current distillation settings (provider, model, prompt)
+// (GET /api/distillation)
+func (_ Unimplemented) GetDistillation(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PutDistillation Update distillation settings (applied without restart)
+// (PUT /api/distillation)
+func (_ Unimplemented) PutDistillation(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // CreateGoal Start an autonomous goal run
 // (POST /api/goals)
 func (_ Unimplemented) CreateGoal(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListMcps List registered MCP servers
+// (GET /api/mcps)
+func (_ Unimplemented) ListMcps(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateMcp Create an MCP server (managed manifest file)
+// (POST /api/mcps)
+func (_ Unimplemented) CreateMcp(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ImportMcps Import MCP servers from standard JSON (raw paste)
+// (POST /api/mcps/import)
+func (_ Unimplemented) ImportMcps(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteMcp Delete an MCP server
+// (DELETE /api/mcps/{name})
+func (_ Unimplemented) DeleteMcp(w http.ResponseWriter, r *http.Request, name McpName) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdateMcp Edit an MCP server (full replace; rename supported)
+// (PATCH /api/mcps/{name})
+func (_ Unimplemented) UpdateMcp(w http.ResponseWriter, r *http.Request, name McpName) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// TestMcp Probe an MCP server's declared transports
+// (POST /api/mcps/{name}/test)
+func (_ Unimplemented) TestMcp(w http.ResponseWriter, r *http.Request, name McpName) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -791,6 +1618,66 @@ func (_ Unimplemented) StreamSessionEvents(w http.ResponseWriter, r *http.Reques
 // ResumeSession Resume a waiting session with user input
 // (POST /api/sessions/{sessionId}/resume)
 func (_ Unimplemented) ResumeSession(w http.ResponseWriter, r *http.Request, sessionId SessionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListSkills List registered skills
+// (GET /api/skills)
+func (_ Unimplemented) ListSkills(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateSkill Create a skill (managed directory)
+// (POST /api/skills)
+func (_ Unimplemented) CreateSkill(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CommitSkillArchive Install a staged archive by its capability
+// (POST /api/skills/import/commit)
+func (_ Unimplemented) CommitSkillArchive(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PreviewSkillArchive Preview and stage a .skill/.zip archive (multipart)
+// (POST /api/skills/import/preview)
+func (_ Unimplemented) PreviewSkillArchive(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// InstallSkillCapability Install previewed skills by capability
+// (POST /api/skills/marketplace/install)
+func (_ Unimplemented) InstallSkillCapability(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PreviewSkillSource Preview skills in a GitHub repository (byte-binding)
+// (POST /api/skills/marketplace/preview)
+func (_ Unimplemented) PreviewSkillSource(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SearchSkillMarketplace Search the open skills.sh directory (daemon-proxied)
+// (GET /api/skills/marketplace/search)
+func (_ Unimplemented) SearchSkillMarketplace(w http.ResponseWriter, r *http.Request, params SearchSkillMarketplaceParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteSkill Delete a skill (directory including its bundle)
+// (DELETE /api/skills/{name})
+func (_ Unimplemented) DeleteSkill(w http.ResponseWriter, r *http.Request, name SkillName) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSkill Read one skill's detail (frontmatter + body)
+// (GET /api/skills/{name})
+func (_ Unimplemented) GetSkill(w http.ResponseWriter, r *http.Request, name SkillName) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdateSkill Edit a skill (full replace; rename supported)
+// (PATCH /api/skills/{name})
+func (_ Unimplemented) UpdateSkill(w http.ResponseWriter, r *http.Request, name SkillName) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -869,11 +1756,159 @@ func (siw *ServerInterfaceWrapper) SendChatMessage(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// GetDistillation operation middleware
+func (siw *ServerInterfaceWrapper) GetDistillation(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDistillation(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutDistillation operation middleware
+func (siw *ServerInterfaceWrapper) PutDistillation(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutDistillation(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreateGoal operation middleware
 func (siw *ServerInterfaceWrapper) CreateGoal(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateGoal(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListMcps operation middleware
+func (siw *ServerInterfaceWrapper) ListMcps(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMcps(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateMcp operation middleware
+func (siw *ServerInterfaceWrapper) CreateMcp(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateMcp(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ImportMcps operation middleware
+func (siw *ServerInterfaceWrapper) ImportMcps(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ImportMcps(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMcp operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMcp(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name McpName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", chi.URLParam(r, "name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMcp(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateMcp operation middleware
+func (siw *ServerInterfaceWrapper) UpdateMcp(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name McpName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", chi.URLParam(r, "name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateMcp(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TestMcp operation middleware
+func (siw *ServerInterfaceWrapper) TestMcp(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name McpName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", chi.URLParam(r, "name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestMcp(w, r, name)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1179,6 +2214,201 @@ func (siw *ServerInterfaceWrapper) ResumeSession(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// ListSkills operation middleware
+func (siw *ServerInterfaceWrapper) ListSkills(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSkills(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSkill operation middleware
+func (siw *ServerInterfaceWrapper) CreateSkill(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSkill(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CommitSkillArchive operation middleware
+func (siw *ServerInterfaceWrapper) CommitSkillArchive(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CommitSkillArchive(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PreviewSkillArchive operation middleware
+func (siw *ServerInterfaceWrapper) PreviewSkillArchive(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewSkillArchive(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// InstallSkillCapability operation middleware
+func (siw *ServerInterfaceWrapper) InstallSkillCapability(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.InstallSkillCapability(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PreviewSkillSource operation middleware
+func (siw *ServerInterfaceWrapper) PreviewSkillSource(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewSkillSource(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SearchSkillMarketplace operation middleware
+func (siw *ServerInterfaceWrapper) SearchSkillMarketplace(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SearchSkillMarketplaceParams
+
+	// ------------- Required query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SearchSkillMarketplace(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSkill operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSkill(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name SkillName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", chi.URLParam(r, "name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSkill(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSkill operation middleware
+func (siw *ServerInterfaceWrapper) GetSkill(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name SkillName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", chi.URLParam(r, "name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSkill(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSkill operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSkill(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name SkillName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", chi.URLParam(r, "name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSkill(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
 
@@ -1328,6 +2558,54 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/models", wrapper.ListModels)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/mcps", wrapper.ListMcps)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/mcps", wrapper.CreateMcp)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/skills/marketplace/search", wrapper.SearchSkillMarketplace)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/skills/marketplace/preview", wrapper.PreviewSkillSource)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/skills/marketplace/install", wrapper.InstallSkillCapability)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/skills/import/preview", wrapper.PreviewSkillArchive)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/skills/import/commit", wrapper.CommitSkillArchive)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/mcps/import", wrapper.ImportMcps)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/mcps/{name}", wrapper.DeleteMcp)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/mcps/{name}", wrapper.UpdateMcp)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/mcps/{name}/test", wrapper.TestMcp)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/skills", wrapper.ListSkills)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/skills", wrapper.CreateSkill)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/skills/{name}", wrapper.DeleteSkill)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/skills/{name}", wrapper.GetSkill)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/skills/{name}", wrapper.UpdateSkill)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/providers/{name}/models/refresh", wrapper.RefreshProviderModels)
 	})
 	r.Group(func(r chi.Router) {
@@ -1353,6 +2631,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/sessions/{sessionId}/events", wrapper.StreamSessionEvents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/distillation", wrapper.GetDistillation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/distillation", wrapper.PutDistillation)
 	})
 
 	return r

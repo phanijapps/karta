@@ -2,6 +2,7 @@ package eventbus
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -172,7 +173,7 @@ func TestCloseStopsAllDelivery(t *testing.T) {
 			t.Fatal("channel still open after Close")
 		}
 	}
-	if err := bus.Publish(ctx, ev("A", 0)); err != ErrClosed {
+	if err := bus.Publish(ctx, ev("A", 0)); !errors.Is(err, ErrClosed) {
 		t.Fatalf("Publish after Close: got %v, want ErrClosed", err)
 	}
 

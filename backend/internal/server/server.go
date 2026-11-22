@@ -18,7 +18,9 @@ import (
 	"zbot/backend/internal/chat"
 	"zbot/backend/internal/domain"
 	"zbot/backend/internal/eventbus"
+	"zbot/backend/internal/mcpclient"
 	"zbot/backend/internal/providers"
+	"zbot/backend/internal/registry"
 	apigen "zbot/backend/internal/server/apigen"
 	zbotstore "zbot/backend/internal/store"
 )
@@ -35,6 +37,9 @@ type Server struct {
 	engine  domain.AgentEngine
 	bus     *eventbus.Bus
 	db      *zbotstore.Store
+	reg     *registry.Registry
+	prober  mcpclient.Prober
+	hub     *skillHub
 	version string
 }
 
@@ -45,11 +50,12 @@ type ChatService interface {
 	Sync(afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error)
 }
 
-// New builds a server over the provider store and model catalog.
+// New builds a server over the provider store, model catalog, and the
+// control-plane registry (MCP + skill management) with its MCP prober.
 // version lands in /healthz (zbotd injects its build version; "dev" in
 // development).
-func New(store *providers.Store, client *providers.Client, catalog *providers.Catalog, chatSvc ChatService, eng domain.AgentEngine, bus *eventbus.Bus, db *zbotstore.Store, version string) *Server {
-	return &Server{store: store, client: client, catalog: catalog, chat: chatSvc, engine: eng, bus: bus, db: db, version: version}
+func New(store *providers.Store, client *providers.Client, catalog *providers.Catalog, chatSvc ChatService, eng domain.AgentEngine, bus *eventbus.Bus, db *zbotstore.Store, reg *registry.Registry, prober mcpclient.Prober, version string) *Server {
+	return &Server{store: store, client: client, catalog: catalog, chat: chatSvc, engine: eng, bus: bus, db: db, reg: reg, prober: prober, version: version}
 }
 
 // Routes mounts every contract operation (paths stay in lockstep with
@@ -79,7 +85,7 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func (s *Server) GetHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apigen.Health{
 		Service: apigen.Zbotd,
-		Status:  apigen.Ok,
+		Status:  apigen.HealthStatusOk,
 		Version: s.version,
 	})
 }

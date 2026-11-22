@@ -211,3 +211,294 @@ export async function sendChatMessage(text: string, model: string): Promise<Chat
     errorMessage: body.error?.message,
   };
 }
+
+// ---- MCP servers & skills (Settings management plane) --------------------
+//
+// Bindings below are CHECKED AGAINST THE GENERATED CONTRACT: every route
+// constant `satisfies keyof paths`, and every response/body type derives
+// from the generated `operations` entry — a contract path or shape change
+// breaks this module at compile time instead of drifting silently.
+
+import type { operations, paths } from './schema';
+
+// Route constants pinned to the generated paths (compile-time checked).
+const ROUTES = {
+  mcps: '/api/mcps',
+  skills: '/api/skills',
+} satisfies Record<string, keyof paths>;
+
+const mcpRoute = (name: string): keyof paths => `/api/mcps/${encodeURIComponent(name)}` as keyof paths;
+const skillRoute = (name: string): keyof paths => `/api/skills/${encodeURIComponent(name)}` as keyof paths;
+const mcpTestRoute = (name: string): keyof paths => `/api/mcps/${encodeURIComponent(name)}/test` as keyof paths;
+const MCP_IMPORT = '/api/mcps/import' as const satisfies keyof paths;
+
+type McpListResponse = operations['listMcps']['responses'][200]['content']['application/json'];
+type McpCreateRequest = operations['createMcp']['requestBody']['content']['application/json'];
+type McpCreateResponse = operations['createMcp']['responses'][201]['content']['application/json'];
+type McpUpdateRequest = operations['updateMcp']['requestBody']['content']['application/json'];
+type McpUpdateResponse = operations['updateMcp']['responses'][200]['content']['application/json'];
+type McpTestResponse = operations['testMcp']['responses'][200]['content']['application/json'];
+type SkillListResponse = operations['listSkills']['responses'][200]['content']['application/json'];
+type SkillDetailResponse = operations['getSkill']['responses'][200]['content']['application/json'];
+type SkillCreateRequest = operations['createSkill']['requestBody']['content']['application/json'];
+type SkillCreateResponse = operations['createSkill']['responses'][201]['content']['application/json'];
+type SkillUpdateRequest = operations['updateSkill']['requestBody']['content']['application/json'];
+type SkillUpdateResponse = operations['updateSkill']['responses'][200]['content']['application/json'];
+
+export type McpServer = McpListResponse['servers'][number];
+export type McpTransport = McpServer['transports'][number];
+export type McpCreateInput = McpCreateRequest;
+export type McpUpdateInput = McpUpdateRequest;
+export type McpTestResult = McpTestResponse;
+export type McpTransportTest = McpTestResult['results'][number];
+export type McpProbeFailureReason = NonNullable<McpTransportTest['failure']>['reason'];
+export type Skill = SkillListResponse['skills'][number];
+export type SkillDetail = SkillDetailResponse;
+export type SkillCreateInput = SkillCreateRequest;
+export type SkillUpdateInput = SkillUpdateRequest;
+export type RegistryLoadError = NonNullable<McpListResponse['load_errors']>[number];
+
+/** Typed registry-mutation failure the UI can render with guidance. */
+export type RegistryFailure = {
+  code: 'duplicate_name' | 'invalid_name' | 'invalid_manifest' | 'mcp_limit' | 'skill_limit' | 'io_error' | 'not_found' | 'daemon';
+  message: string;
+};
+
+export type McpMutationOutcome = { ok: true; server?: McpServer } | (RegistryFailure & { ok: false });
+export type SkillMutationOutcome = { ok: true; detail?: SkillDetail } | (RegistryFailure & { ok: false });
+
+async function mutateRegistry<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<{ ok: true; value?: T } | (RegistryFailure & { ok: false })> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method,
+      headers: body === undefined ? { Accept: 'application/json' } : { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (err) {
+    return { ok: false, code: 'daemon', message: `daemon unreachable (${String(err)})` };
+  }
+  if (res.status === 204) return { ok: true };
+  if (res.ok) return { ok: true, value: (await res.json()) as T };
+  const errBody = (await res.json().catch(() => null)) as { code?: string; message?: string } | null;
+  const code = errBody?.code as RegistryFailure['code'] | undefined;
+  return { ok: false, code: code ?? 'daemon', message: errBody?.message ?? `daemon answered ${res.status}` };
+}
+
+/** List registered MCP servers with per-file load errors. */
+export async function listMcps(): Promise<{ servers: McpServer[]; loadErrors: RegistryLoadError[] }> {
+  const body = (await getJSON(ROUTES.mcps)) as McpListResponse;
+  return { servers: body.servers ?? [], loadErrors: body.load_errors ?? [] };
+}
+
+/** List registered skills with per-file load errors. */
+export async function listSkills(): Promise<{ skills: Skill[]; loadErrors: RegistryLoadError[] }> {
+  const body = (await getJSON(ROUTES.skills)) as SkillListResponse;
+  return { skills: body.skills ?? [], loadErrors: body.load_errors ?? [] };
+}
+
+/** Read one skill's frontmatter and full body. */
+export async function getSkillDetail(name: string): Promise<SkillDetail> {
+  return (await getJSON(skillRoute(name))) as SkillDetail;
+}
+
+export function createMcp(input: McpCreateInput): Promise<McpMutationOutcome> {
+  return mutateRegistry<McpCreateResponse>('POST', ROUTES.mcps, input);
+}
+
+/** Full-replace edit; a present `name` renames. */
+export function updateMcp(name: string, input: McpUpdateInput): Promise<McpMutationOutcome> {
+  return mutateRegistry<McpUpdateResponse>('PATCH', mcpRoute(name), input);
+}
+
+export function deleteMcp(name: string): Promise<McpMutationOutcome> {
+  return mutateRegistry<void>('DELETE', mcpRoute(name));
+}
+
+// ---- MCP import (standard mcpServers JSON, raw paste) --------------------
+
+type McpImportResponse = operations['importMcps']['responses'][200]['content']['application/json'];
+export type McpImportRequest = operations['importMcps']['requestBody']['content']['application/json'];
+export type McpImportOutcome = McpImportResponse['results'][number];
+export type McpImportResult = McpImportResponse;
+export type McpImportFailureReason = 'invalid_import' | 'not_found' | 'invalid_manifest' | 'io_error' | 'daemon';
+
+/** Import outcome: per-entry results are data; only document-level
+ * rejections and transport failures are errors. */
+export type McpImportCallResult = { ok: true; result: McpImportResult } | { ok: false; code: McpImportFailureReason; message: string };
+
+export async function importMcps(req: McpImportRequest): Promise<McpImportCallResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${MCP_IMPORT}`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+  } catch (err) {
+    return { ok: false, code: 'daemon', message: `daemon unreachable (${String(err)})` };
+  }
+  if (res.ok) return { ok: true, result: (await res.json()) as McpImportResponse };
+  const errBody = (await res.json().catch(() => null)) as { code?: string; message?: string } | null;
+  const code = (errBody?.code ?? 'daemon') as McpImportFailureReason;
+  return { ok: false, code, message: errBody?.message ?? `daemon answered ${res.status}` };
+}
+
+/** Probe result: every per-transport outcome is data; only transport /
+ * unknown-server failures are errors (probe failures are 200 bodies). */
+export type McpTestOutcome = { ok: true; result: McpTestResult } | (RegistryFailure & { ok: false });
+
+export async function testMcp(name: string): Promise<McpTestOutcome> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${mcpTestRoute(name)}`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+  } catch (err) {
+    return { ok: false, code: 'daemon', message: `daemon unreachable (${String(err)})` };
+  }
+  if (res.ok) return { ok: true, result: (await res.json()) as McpTestResponse };
+  const errBody = (await res.json().catch(() => null)) as { code?: string; message?: string } | null;
+  const code = errBody?.code as RegistryFailure['code'] | undefined;
+  return { ok: false, code: code ?? 'daemon', message: errBody?.message ?? `daemon answered ${res.status}` };
+}
+
+export function createSkill(input: SkillCreateInput): Promise<SkillMutationOutcome> {
+  return mutateRegistry<SkillCreateResponse>('POST', ROUTES.skills, input);
+}
+
+/** Full-replace edit of frontmatter + body; a present `name` renames. */
+export function updateSkill(name: string, input: SkillUpdateInput): Promise<SkillMutationOutcome> {
+  return mutateRegistry<SkillUpdateResponse>('PATCH', skillRoute(name), input);
+}
+
+export function deleteSkill(name: string): Promise<SkillMutationOutcome> {
+  return mutateRegistry<void>('DELETE', skillRoute(name));
+}
+
+// ---- Skill marketplace -----------------------------------------------
+
+type MarketSearchResponse = operations['searchSkillMarketplace']['responses'][200]['content']['application/json'];
+type RepoPreviewResponse = operations['previewSkillSource']['responses'][200]['content']['application/json'];
+type SkillSourceRequest = operations['previewSkillSource']['requestBody']['content']['application/json'];
+type SkillInstallRequestBody = operations['installSkillCapability']['requestBody']['content']['application/json'];
+type SkillInstallResponse = operations['installSkillCapability']['responses'][200]['content']['application/json'];
+type ArchivePreviewResponse = operations['previewSkillArchive']['responses'][200]['content']['application/json'];
+type SkillCommitRequest = operations['commitSkillArchive']['requestBody']['content']['application/json'];
+
+export type MarketSkill = MarketSearchResponse['skills'][number];
+export type SkillPreviewPayload = RepoPreviewResponse['skills'][number];
+export type SkillPreviewFile = SkillPreviewPayload['files'][number];
+export type RepoPreview = RepoPreviewResponse;
+export type SkillInstallOutcomeRow = SkillInstallResponse['results'][number];
+export type ArchivePreview = ArchivePreviewResponse;
+
+const MARKET_ROUTES = {
+  search: '/api/skills/marketplace/search' as const satisfies keyof paths,
+  preview: '/api/skills/marketplace/preview' as const satisfies keyof paths,
+  install: '/api/skills/marketplace/install' as const satisfies keyof paths,
+  importPreview: '/api/skills/import/preview' as const satisfies keyof paths,
+  importCommit: '/api/skills/import/commit' as const satisfies keyof paths,
+};
+
+export type MarketFailure = { ok: false; code: string; message: string };
+export type MarketSearchOutcome = { ok: true; skills: MarketSkill[] } | MarketFailure;
+
+/** Daemon-proxied skills.sh search (typed index-unreachable failure). */
+export async function searchMarketplace(query: string): Promise<MarketSearchOutcome> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${MARKET_ROUTES.search}?q=${encodeURIComponent(query)}`, { headers: { Accept: 'application/json' } });
+  } catch (err) {
+    return { ok: false, code: 'daemon', message: `daemon unreachable (${String(err)})` };
+  }
+  if (res.ok) return { ok: true, skills: ((await res.json()) as MarketSearchResponse).skills ?? [] };
+  const errBody = (await res.json().catch(() => null)) as { message?: string } | null;
+  return { ok: false, code: res.status === 502 ? 'index_unreachable' : 'daemon', message: errBody?.message ?? `daemon answered ${res.status}` };
+}
+
+async function marketPost<T>(path: string, body: unknown): Promise<{ ok: true; value: T } | MarketFailure> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    return { ok: false, code: 'daemon', message: `daemon unreachable (${String(err)})` };
+  }
+  if (res.ok) return { ok: true, value: (await res.json()) as T };
+  const errBody = (await res.json().catch(() => null)) as { code?: string; message?: string } | null;
+  return { ok: false, code: errBody?.code ?? `status_${res.status}`, message: errBody?.message ?? `daemon answered ${res.status}` };
+}
+
+/** Preview a GitHub repo: immutable commit + capability + per-skill payloads. */
+export function previewSkillSource(source: string): Promise<{ ok: true; value: RepoPreview } | MarketFailure> {
+  return marketPost<RepoPreview>(MARKET_ROUTES.preview, { source } satisfies SkillSourceRequest);
+}
+
+/** Install previewed skills by capability (per-skill outcomes). */
+export function installSkillCapability(capability: string, skills: string[]): Promise<{ ok: true; value: SkillInstallResponse } | MarketFailure> {
+  return marketPost<SkillInstallResponse>(MARKET_ROUTES.install, { capability, skills } satisfies SkillInstallRequestBody);
+}
+
+/** Stage an uploaded .skill/.zip and return its preview (multipart, single `archive` part). */
+export async function previewSkillArchive(file: File): Promise<{ ok: true; value: ArchivePreview } | MarketFailure> {
+  const form = new FormData();
+  form.append('archive', file, file.name);
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${MARKET_ROUTES.importPreview}`, { method: 'POST', body: form });
+  } catch (err) {
+    return { ok: false, code: 'daemon', message: `daemon unreachable (${String(err)})` };
+  }
+  if (res.ok) return { ok: true, value: (await res.json()) as ArchivePreview };
+  const errBody = (await res.json().catch(() => null)) as { code?: string; message?: string } | null;
+  return { ok: false, code: errBody?.code ?? `status_${res.status}`, message: errBody?.message ?? `daemon answered ${res.status}` };
+}
+
+/** Commit a staged archive by its one-shot capability. */
+export function commitSkillArchive(stagingId: string): Promise<{ ok: true; value: SkillInstallOutcomeRow } | MarketFailure> {
+  return marketPost<SkillInstallOutcomeRow>(MARKET_ROUTES.importCommit, { stagingId } satisfies SkillCommitRequest);
+}
+
+// --- Distillation settings (Settings → Advanced) ---
+
+export type DistillationSettings = {
+  provider?: string;
+  model?: string;
+  prompt?: string;
+};
+
+export async function getDistillation(): Promise<DistillationSettings> {
+  const res = await fetch('/api/distillation');
+  if (!res.ok) throw new Error(`distillation GET: ${res.status}`);
+  return res.json();
+}
+
+export async function putDistillation(body: Partial<DistillationSettings>): Promise<DistillationSettings> {
+  const res = await fetch('/api/distillation', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message ?? `distillation PUT: ${res.status}`);
+  }
+  return res.json();
+}
+
+export type ModelCatalog = {
+  models: { id: string; provider: string }[];
+  refreshed_at: Record<string, string>;
+};
+
+export async function getModelCatalog(): Promise<ModelCatalog> {
+  const res = await fetch('/api/models');
+  if (!res.ok) throw new Error(`models GET: ${res.status}`);
+  return res.json();
+}

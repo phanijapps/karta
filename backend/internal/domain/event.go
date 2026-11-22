@@ -9,18 +9,21 @@ import "time"
 type TimelineEventKind string
 
 const (
-	// EventSession: session lifecycle transitions (started, waiting, ...).
+	// EventSession — session lifecycle transitions (started, waiting, ...).
 	EventSession TimelineEventKind = "session"
-	// EventAgentStep: one agent reasoning/writing step.
+	// EventAgentStep — one agent reasoning/writing step.
 	EventAgentStep TimelineEventKind = "agent_step"
-	// EventDelegation: the agent spawned a sub-agent for a task.
+	// EventDelegation — the agent spawned a sub-agent for a task.
 	EventDelegation TimelineEventKind = "delegation"
-	// EventToolCall: a tool was invoked (with its outcome).
+	// EventToolCall — a tool was invoked (with its outcome).
 	EventToolCall TimelineEventKind = "tool_call"
-	// EventHookDecision: lifecycle hooks decided allow/block/warn.
+	// EventHookDecision — lifecycle hooks decided allow/block/warn.
 	EventHookDecision TimelineEventKind = "hook_decision"
-	// EventCompactionTriggered: the context window was compacted.
+	// EventCompactionTriggered — the context window was compacted.
 	EventCompactionTriggered TimelineEventKind = "compaction_triggered"
+	// EventChittaToolInvoked — one chitta tool call (memory_*/knowledge_*),
+	// success or failure — every chitta operation is observable.
+	EventChittaToolInvoked TimelineEventKind = "chitta_tool_invoked"
 )
 
 // TimelineEvent is a single observable node in the Timeline Tree. Events
@@ -42,6 +45,19 @@ type TimelineEvent struct {
 	Delegation *DelegationPayload `json:"delegation,omitempty"`
 	Hook       *HookDecision      `json:"hook,omitempty"`
 	Compaction *CompactionStats   `json:"compaction,omitempty"`
+	// ChittaToolInvoked carries one chitta tool invocation's observability
+	// record (tool, outcome, affected ids, host provenance).
+	ChittaToolInvoked *ChittaToolInvokedPayload `json:"chitta_tool_invoked,omitempty"`
+}
+
+// ChittaToolInvokedPayload details one chitta tool call. Publication is
+// best-effort; a failed publication never fails the tool call.
+type ChittaToolInvokedPayload struct {
+	Tool        string            `json:"tool"`
+	Outcome     string            `json:"outcome"` // "success" | "error"
+	ErrorCode   string            `json:"error_code,omitempty"`
+	AffectedIDs []string          `json:"affected_ids"`
+	Provenance  *MemoryProvenance `json:"provenance,omitempty"`
 }
 
 // ToolCallPayload details one tool invocation.

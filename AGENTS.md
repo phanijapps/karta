@@ -17,7 +17,10 @@ the rebrand does not authorize an API or data migration.
 
 1. **Local-first storage.** All persistent state lives under `~/.zbot/`: the
    SQLite database at `~/.zbot/data/zbot.db` (sessions, Timeline Tree,
-   sqlite-vec, FTS5, knowledge graph) and the configuration tree
+   compactions — conversations only) and the chitta database at
+   `~/.zbot/data/chitta/` (ONE LadybugDB holding both chitta domains:
+   memory records and the knowledge graph, with their cross-domain
+   links), plus the configuration tree
    `~/.zbot/config/{prompts,agents,skills,hooks,mcps,providers}/**`. The one
    scoped exception: provider credential VALUES for daemon-managed providers
    live in the platform keyring (Linux Secret Service, macOS Keychain,

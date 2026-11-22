@@ -181,12 +181,14 @@ func TestMCPs(t *testing.T) {
 	d := tempDirs(t)
 	write(t, filepath.Join(d.MCPs, "stdio.yaml"), "command: npx\nargs:\n    - -y\n    - some-mcp\nenv:\n    KEY: val\n")
 	write(t, filepath.Join(d.MCPs, "http.yaml"), "url: https://mcp.example.com/mcp\n")
+	// Both transports on one entry is valid (dual-transport server).
 	write(t, filepath.Join(d.MCPs, "both.yaml"), "command: npx\nurl: https://x.example.com\n")
+	// Neither transport is the only invalid combination.
 	write(t, filepath.Join(d.MCPs, "neither.yaml"), "args:\n    - x\n")
 	r := New()
 	snap, errs := r.LoadAll(d)
-	if len(snap.MCPs) != 2 {
-		t.Fatalf("want 2 mcps, got %d", len(snap.MCPs))
+	if len(snap.MCPs) != 3 {
+		t.Fatalf("want 3 mcps, got %d", len(snap.MCPs))
 	}
 	if snap.MCPs["stdio"].Command != "npx" || len(snap.MCPs["stdio"].Args) != 2 {
 		t.Fatalf("stdio spec wrong: %+v", snap.MCPs["stdio"])
@@ -194,8 +196,12 @@ func TestMCPs(t *testing.T) {
 	if snap.MCPs["http"].URL == "" {
 		t.Fatal("http spec wrong")
 	}
-	if len(errs) != 2 || !errMentions(errs, "both.yaml") || !errMentions(errs, "neither.yaml") {
-		t.Fatalf("want both/neither errors, got: %v", errs)
+	both := snap.MCPs["both"]
+	if both.Command != "npx" || both.URL != "https://x.example.com" {
+		t.Fatalf("dual-transport spec wrong: %+v", both)
+	}
+	if len(errs) != 1 || !errMentions(errs, "neither.yaml") || !errMentions(errs, "at least one") {
+		t.Fatalf("want only a neither error, got: %v", errs)
 	}
 }
 

@@ -27,10 +27,14 @@ type Message struct {
 type Role string
 
 const (
-	RoleSystem    Role = "system"
-	RoleUser      Role = "user"
+	// RoleSystem — Roles a compaction message can take.
+	RoleSystem Role = "system"
+	// RoleUser — user-authored message role.
+	RoleUser Role = "user"
+	// RoleAssistant — model-authored message role.
 	RoleAssistant Role = "assistant"
-	RoleTool      Role = "tool"
+	// RoleTool — tool-result message role.
+	RoleTool Role = "tool"
 )
 
 // TokenBudget bounds the context window for compaction decisions.

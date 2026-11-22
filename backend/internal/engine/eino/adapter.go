@@ -14,6 +14,7 @@ import (
 	"hash/fnv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	einoopenai "github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
@@ -37,6 +38,12 @@ type ProviderStore interface {
 	Secrets() providers.SecretStore
 }
 
+// chatGenerator is the slice of eino's model.ChatModel the loop needs.
+// Unexported so tests can inject a fake model without a live provider.
+type chatGenerator interface {
+	Generate(ctx context.Context, msgs []*schema.Message, opts ...model.Option) (*schema.Message, error)
+}
+
 // Adapter implements domain.AgentEngine over eino's chat model.
 type Adapter struct {
 	provStore ProviderStore
@@ -44,10 +51,12 @@ type Adapter struct {
 	bus       *eventbus.Bus
 	toolProv  tools.Provider
 	idGen     func() string
+	// newModel builds (or fakes, in tests) the chat client on a cache miss.
+	newModel func(ctx context.Context, prov providers.Provider, token, modelID string) (chatGenerator, error)
 
 	mu      sync.Mutex
-	cancels map[string]context.CancelFunc    // sessionID → cancel
-	models  map[string]*einoopenai.ChatModel // cache: provider/model/key → model
+	cancels map[string]context.CancelFunc // sessionID → cancel
+	models  map[string]chatGenerator      // cache: provider/model/key → model
 }
 
 // New creates the engine adapter.
@@ -55,29 +64,33 @@ func New(provStore ProviderStore, st *store.Store, bus *eventbus.Bus, toolProv t
 	return &Adapter{
 		provStore: provStore, st: st, bus: bus, toolProv: toolProv,
 		cancels: map[string]context.CancelFunc{},
-		models:  map[string]*einoopenai.ChatModel{},
+		models:  map[string]chatGenerator{},
 		idGen:   func() string { return fmt.Sprintf("evt-%d", nextID()) },
+		newModel: func(ctx context.Context, prov providers.Provider, token, modelID string) (chatGenerator, error) {
+			return einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
+				BaseURL: prov.BaseURL,
+				APIKey:  token,
+				Model:   modelID,
+			})
+		},
 	}
 }
 
 var idCounter int64
 
 func nextID() int64 {
-	return atomicAdd(&idCounter)
-}
-
-func atomicAdd(p *int64) int64 {
-	// Simple increment without atomic import for this file.
-	*p++
-	return *p
+	return atomic.AddInt64(&idCounter, 1)
 }
 
 // Name identifies the engine.
 func (a *Adapter) Name() string { return "eino" }
 
 // RunGoal starts an autonomous run toward req.Goal, streaming TimelineEvents.
+// Model resolution is request-only today (F-25): req.Model must name
+// provider/model-id; req.Agent and req.Context are accepted but NOT yet
+// forwarded into the run (the agent seam lands with the run-ownership
+// follow-up).
 func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan domain.TimelineEvent, error) {
-	// Resolve model: request > agent > refuse.
 	modelRef := req.Model
 	if modelRef == "" {
 		return nil, fmt.Errorf("engine: no model selected — pass model or configure the agent's model")
@@ -104,7 +117,7 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 	}
 
 	// Register cancellation.
-	runCtx, cancel := context.WithCancel(context.Background())
+	runCtx, cancel := context.WithCancel(context.Background()) // ctx-ok: F-23 detach (follow-up backend-engine-run-ownership)
 	a.mu.Lock()
 	a.cancels[sessionID] = cancel
 	a.mu.Unlock()
@@ -137,14 +150,19 @@ func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events cha
 			ID: a.idGen(), SessionID: in.sessionID, Kind: kind,
 			Text: text, Agent: in.providerName + "/" + in.modelID,
 		}
-		// Durable-first.
+		// ATTEMPTED-durable-first (F-15, pinned by characterization tests):
+		// the append error is IGNORED — publish and stream happen anyway, so
+		// clients may observe events that failed to persist. The chat site
+		// does the OPPOSITE (skips publish on append failure). The
+		// retry/log/publish-anyway policy is owned by follow-up
+		// backend-engine-run-ownership.
 		payload, _ := json.Marshal(map[string]any{"text": text})
 		_ = a.st.AppendEvent(store.Event{
 			ID: evt.ID, SessionID: in.sessionID, ExecutionID: in.execID,
 			Kind: string(kind), Payload: string(payload),
 		})
 		if a.bus != nil {
-			_ = a.bus.Publish(context.Background(), evt)
+			_ = a.bus.Publish(context.Background(), evt) // ctx-ok: F-15 fire-and-forget emit
 		}
 		select {
 		case events <- evt:
@@ -160,11 +178,7 @@ func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events cha
 	a.mu.Unlock()
 	if !ok {
 		var err error
-		chatModel, err = einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
-			BaseURL: in.prov.BaseURL,
-			APIKey:  in.token,
-			Model:   in.modelID,
-		})
+		chatModel, err = a.newModel(ctx, in.prov, in.token, in.modelID)
 		if err != nil {
 			emit(domain.EventAgentStep, "engine: failed to create chat model: "+err.Error())
 			_ = a.st.FinishExecution(in.execID, "failed", err.Error(), 0, 0)
@@ -289,7 +303,7 @@ func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events cha
 				Kind: "tool_call", Payload: string(payload),
 			})
 			if a.bus != nil {
-				_ = a.bus.Publish(context.Background(), domain.TimelineEvent{
+				_ = a.bus.Publish(context.Background(), domain.TimelineEvent{ // ctx-ok: F-15
 					ID: a.idGen(), SessionID: in.sessionID, Kind: domain.EventToolCall,
 					ToolCall: &domain.ToolCallPayload{Tool: tc.Function.Name, Output: content},
 				})

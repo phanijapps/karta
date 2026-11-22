@@ -11,7 +11,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -45,16 +44,19 @@ type Provider interface {
 // BuiltinProvider serves the compiled-in tools.
 type BuiltinProvider struct{}
 
+// Tools — Tools lists the builtin tools (clock_now, echo).
 func (BuiltinProvider) Tools() []Tool { return []Tool{ClockNow{}, Echo{}} }
 
 // ClockNow reports the current UTC time.
 type ClockNow struct{}
 
+// Def — Def describes the clock_now tool.
 func (ClockNow) Def() Def {
 	return Def{Name: "clock.now", Description: "Returns the current UTC time as RFC3339.",
 		ParamsJSON: `{"type":"object","properties":{}}`}
 }
 
+// Exec — Exec returns the current wall-clock time.
 func (ClockNow) Exec(_ context.Context, _ string) Result {
 	return Result{Output: time.Now().UTC().Format(time.RFC3339)}
 }
@@ -62,11 +64,13 @@ func (ClockNow) Exec(_ context.Context, _ string) Result {
 // Echo returns its input (bounded).
 type Echo struct{}
 
+// Def — Def describes the echo tool.
 func (Echo) Def() Def {
 	return Def{Name: "echo", Description: "Returns the provided text (bounded length).",
 		ParamsJSON: `{"type":"object","properties":{"text":{"type":"string","maxLength":4096}},"required":["text"]}`}
 }
 
+// Exec — Exec returns the input arguments unchanged.
 func (Echo) Exec(_ context.Context, argsJSON string) Result {
 	var args struct {
 		Text string `json:"text"`
@@ -104,4 +108,32 @@ func Lookup(p Provider, name string) *Def {
 	return nil
 }
 
-var _ = strings.TrimSpace
+// Multi merges providers into one tool surface. Duplicate tool names
+// panic at composition time (a startup error by design — never a
+// mid-run ambiguity); execution keeps the typed unknown-tool error.
+type multiProvider struct{ providers []Provider }
+
+// Multi returns a Provider serving every tool of every provider.
+// Duplicate names panic HERE — at composition time (startup), never
+// mid-run (final-gate finding: the panic must not lurk in Tools()).
+func Multi(providers ...Provider) Provider {
+	m := multiProvider{providers}
+	_ = m.Tools() // eager duplicate-name validation
+	return m
+}
+
+func (m multiProvider) Tools() []Tool {
+	seen := map[string]bool{}
+	var out []Tool
+	for _, p := range m.providers {
+		for _, t := range p.Tools() {
+			name := t.Def().Name
+			if seen[name] {
+				panic("tools: duplicate tool name in Multi: " + name)
+			}
+			seen[name] = true
+			out = append(out, t)
+		}
+	}
+	return out
+}

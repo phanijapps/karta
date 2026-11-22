@@ -16,11 +16,16 @@ import (
 type Kind string
 
 const (
+	// KindPrompt — Kind values — the registry managed entry kinds.
 	KindPrompt Kind = "prompts"
-	KindAgent  Kind = "agents"
-	KindSkill  Kind = "skills"
-	KindHook   Kind = "hooks"
-	KindMCP    Kind = "mcps"
+	// KindAgent — one of the Kind values.
+	KindAgent Kind = "agents"
+	// KindSkill — one of the Kind values.
+	KindSkill Kind = "skills"
+	// KindHook — one of the Kind values.
+	KindHook Kind = "hooks"
+	// KindMCP — one of the Kind values.
+	KindMCP Kind = "mcps"
 	// KindConfigFile names config.yaml change notifications (notify only;
 	// the daemon reloads configuration itself).
 	KindConfigFile Kind = "config-file"
@@ -84,16 +89,33 @@ func emptySnapshot() *Snapshot {
 // Registry holds the current snapshot behind an atomic pointer.
 type Registry struct {
 	snap atomic.Pointer[Snapshot]
-	// reloadMu serializes snapshot swaps (LoadAll and watcher flushes).
-	// Without it, two concurrent reloads can interleave load→store and
-	// silently revert each other's kind rebuild (a lost-update race that
-	// is not a data race, so -race cannot catch it).
+	// reloadMu serializes snapshot swaps (LoadAll, watcher flushes, and
+	// mutations). Without it, two concurrent reloads can interleave
+	// load→store and silently revert each other's kind rebuild (a
+	// lost-update race that is not a data race, so -race cannot catch it).
 	reloadMu sync.Mutex
+
+	// dirsPtr holds the last configured Dirs (set by LoadAll/Watch) so
+	// mutations can resolve their kind directories.
+	dirsPtr atomic.Pointer[Dirs]
+
+	// errByKind holds the most recent per-kind load errors (guarded by
+	// reloadMu); errsFlat is the flattened copy published for lock-free
+	// readers via Errors(). Errors describe the current snapshot: an
+	// entry whose file no longer loads is absent, its error names the
+	// file that went away.
+	errByKind map[Kind][]LoadError
+	errsFlat  atomic.Pointer[[]LoadError]
+
+	// notifyMu guards subs; mutations and watcher flushes deliver
+	// entry-level changes through notify.
+	notifyMu sync.Mutex
+	subs     []func(Change)
 }
 
 // New returns a registry with an empty snapshot.
 func New() *Registry {
-	r := &Registry{}
+	r := &Registry{errByKind: map[Kind][]LoadError{}}
 	r.snap.Store(emptySnapshot())
 	return r
 }
@@ -101,18 +123,74 @@ func New() *Registry {
 // Snapshot returns the current immutable state.
 func (r *Registry) Snapshot() Snapshot { return *r.snap.Load() }
 
+// Errors returns the most recent load errors across kinds, coherent with
+// the current snapshot (refreshed on initial load, watcher reloads, and
+// mutations). The returned slice must not be modified.
+func (r *Registry) Errors() []LoadError {
+	if errs := r.errsFlat.Load(); errs != nil {
+		return *errs
+	}
+	return nil
+}
+
+// storeErrorsLocked replaces one kind's load errors and republishes the
+// flattened copy. Caller holds reloadMu (or is single-threaded setup).
+func (r *Registry) storeErrorsLocked(kind Kind, errs []LoadError) {
+	if r.errByKind == nil {
+		r.errByKind = map[Kind][]LoadError{}
+	}
+	r.errByKind[kind] = errs
+	r.publishErrorsLocked()
+}
+
+func (r *Registry) publishErrorsLocked() {
+	flat := make([]LoadError, 0)
+	for _, kind := range Kinds {
+		flat = append(flat, r.errByKind[kind]...)
+	}
+	r.errsFlat.Store(&flat)
+}
+
+// Subscribe registers an entry-level change callback (adds, edits,
+// renames, deletes — from mutations and watcher reloads alike).
+// Callbacks run synchronously on the mutating/reloading goroutine and
+// must not block.
+func (r *Registry) Subscribe(fn func(Change)) {
+	r.notifyMu.Lock()
+	defer r.notifyMu.Unlock()
+	r.subs = append(r.subs, fn)
+}
+
+// notify delivers one change to every subscriber.
+func (r *Registry) notify(c Change) {
+	r.notifyMu.Lock()
+	subs := make([]func(Change), len(r.subs))
+	copy(subs, r.subs)
+	r.notifyMu.Unlock()
+	for _, fn := range subs {
+		fn(c)
+	}
+}
+
 // LoadAll reads every file in every configured directory, swaps in a new
 // snapshot, and returns the snapshot with all per-file errors it collected.
 // A missing directory loads as empty; one bad file never blocks the rest.
 func (r *Registry) LoadAll(dirs Dirs) (Snapshot, []LoadError) {
 	r.reloadMu.Lock()
 	defer r.reloadMu.Unlock()
+	r.dirsPtr.Store(&dirs)
 	snap := emptySnapshot()
 	var errs []LoadError
 	for _, kind := range Kinds {
 		loadKind(snap, dirs.byKind()[kind], kind, &errs)
 	}
 	r.snap.Store(snap)
+	byKind := map[Kind][]LoadError{}
+	for _, e := range errs {
+		byKind[e.Kind] = append(byKind[e.Kind], e)
+	}
+	r.errByKind = byKind
+	r.publishErrorsLocked()
 	return *snap, errs
 }
 

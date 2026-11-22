@@ -125,6 +125,351 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mcps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List registered MCP servers
+         * @description Every registered MCP server from the registry snapshot, with each
+         *     server's declared transports (stdio command/args/env and/or
+         *     streamable-http url) and its manifest file. `load_errors` carries
+         *     per-file registry failures (broken hand edits) naming their paths;
+         *     entries whose files do not load are absent from `servers`. Lists are
+         *     complete within the per-kind capacity; hand-edited overflow surfaces
+         *     as load errors. Env values are the file content the user authored —
+         *     the daemon adds no secrets.
+         */
+        get: operations["listMcps"];
+        put?: never;
+        /**
+         * Create an MCP server (managed manifest file)
+         * @description Writes `config/mcps/<name>.yaml`. The body is the complete
+         *     manifest: stdio (`command` + optional `args`/`env`) and/or
+         *     streamable-http (`url`); at least one transport is required.
+         *     Managed names only (`^[a-z0-9][a-z0-9-]{0,63}$`, no
+         *     Windows-reserved). Applies immediately via the registry — no
+         *     restart. No-clobber: a target path occupied on disk (valid,
+         *     invalid, or in the watcher window) fails with `duplicate_name`.
+         */
+        post: operations["createMcp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/marketplace/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search the open skills.sh directory (daemon-proxied)
+         * @description Proxies the pinned skills.sh index at the user's explicit
+         *     action. Results carry each skill's slug (`owner/repo/skill`),
+         *     source repo, name, and install count. Five-minute cache:
+         *     fresh cache serves, expired re-queries synchronously, no
+         *     background refresh. Typed index-unreachable failure; never
+         *     fabricated results.
+         */
+        get: operations["searchSkillMarketplace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/marketplace/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview skills in a GitHub repository (byte-binding)
+         * @description Resolves the repository's default branch to an IMMUTABLE commit,
+         *     fetches the tarball at that commit under the shared safety
+         *     envelope, detects skill folders (skills/*\/, .agents/skills/*\/,
+         *     root SKILL.md, single-directory), and returns each skill's
+         *     parsed SKILL.md, complete file list with sizes, license when
+         *     present, the pinned commit, and an opaque preview CAPABILITY
+         *     binding repo + commit + skill paths + per-file digests.
+         *     Installs consume the capability; there is no install without a
+         *     preview. A pasted source parses to a canonical GitHub
+         *     owner/repo identity — never an arbitrary fetch destination.
+         */
+        post: operations["previewSkillSource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/marketplace/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install previewed skills by capability
+         * @description Consumes a preview capability for the chosen skill subset —
+         *     never arbitrary source/ref inputs. On capability cache expiry
+         *     the daemon re-fetches the PINNED commit and verifies per-file
+         *     digests; any mismatch is a typed changed-upstream failure. One
+         *     outcome per chosen skill (created / skipped-duplicate /
+         *     failed), processed independently like the MCP import. Nothing
+         *     executes at install.
+         */
+        post: operations["installSkillCapability"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/import/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview and stage a .skill/.zip archive (multipart)
+         * @description The ONLY endpoint exempt from the JSON-mutation rule: accepts
+         *     multipart/form-data with EXACTLY one file part named `archive`
+         *     (no other parts; body ≤ 10 MiB enforced before parsing),
+         *     protected by trusted-Host plus Origin enforcement. Parses under
+         *     the shared safety envelope (50 MiB uncompressed, 512 entries,
+         *     streaming re-enforcement, regular files/dirs only, path
+         *     validator; SKILL.md at root or exactly one top-level
+         *     directory; the reserved `.karta/provenance.yaml` path rejects).
+         *     Stages server-side and returns the staging id with the same
+         *     preview payload. Violations are typed 400s naming the reason.
+         */
+        post: operations["previewSkillArchive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/import/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install a staged archive by its capability
+         * @description Commits a staged preview by its opaque one-shot bearer id.
+         *     Expiry is checked synchronously; replays and unknown ids 404;
+         *     the skill installs with origin `import` and provenance.
+         */
+        post: operations["commitSkillArchive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcps/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import MCP servers from standard JSON (raw paste)
+         * @description Imports standard `mcpServers` JSON (modelcontextprotocol.io
+         *     quickstart shape; `servers` alias, bare map, and single-object
+         *     pastes accepted). The paste travels as RAW TEXT in `document` —
+         *     the daemon is the only parser: entries process in paste order,
+         *     numeric env literals coerce from their exact source text, and
+         *     duplicate keys (Unicode-escaped equivalents included) reject
+         *     the whole document before any write. Every entry gets one
+         *     outcome row; entry failures never fail the request. Duplicate
+         *     detection (existing manifest, occupied target path, or an
+         *     earlier entry of the same paste) outranks capacity; a write
+         *     failure (`io_error`) on one entry never aborts the rest.
+         *     Document-level rejections (400, nothing created): malformed
+         *     JSON, duplicate keys, trailing content, BOM or non-UTF-8 text,
+         *     JSON non-object, unclassifiable shape, no recognizable servers,
+         *     single-object paste without `name`, over 256 KiB, over 32
+         *     entries. `replaceName` is edit-as-JSON: the document must hold
+         *     exactly one entry whose transports replace that server's
+         *     manifest wholesale (name unchanged); a multi-entry document, an
+         *     entry that would skip or fail, or an unknown target rejects
+         *     with the target untouched.
+         */
+        post: operations["importMcps"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcps/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description The MCP server's registered name (file stem). Legacy entries may
+                 *     carry broader stems than managed names allow.
+                 */
+                name: components["parameters"]["McpName"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete an MCP server
+         * @description Removes the server's manifest file and unregisters it. After a
+         *     failed filesystem commit the published registry state matches disk.
+         */
+        delete: operations["deleteMcp"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit an MCP server (full replace; rename supported)
+         * @description Replaces the named server's manifest wholesale (PUT semantics over
+         *     PATCH). An included `name` renames: the new manifest is written
+         *     (no-clobber), published, and the old file removed; a failed old-file
+         *     removal surfaces both files as a duplicate load error and the retry
+         *     is idempotent. Clearing both transports is a 400 — at least one is
+         *     required. Legacy broader-named files are editable in place via
+         *     their loaded source path; renames normalize to managed names.
+         */
+        patch: operations["updateMcp"];
+        trace?: never;
+    };
+    "/api/mcps/{name}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description The MCP server's registered name (file stem). Legacy entries may
+                 *     carry broader stems than managed names allow.
+                 */
+                name: components["parameters"]["McpName"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Probe an MCP server's declared transports
+         * @description Runs a real MCP client per declared transport (spawn the stdio
+         *     command with its env; connect the HTTP url) — initialize,
+         *     tools/list, shutdown — concurrently under one shared deadline.
+         *     Returns one result per transport: discovered tools (capped, with
+         *     `truncated` set) or a typed failure. Probe failures are 200 bodies:
+         *     a broken configuration is expected data, not a server error. The
+         *     probe executes no tool and mutates nothing.
+         */
+        post: operations["testMcp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List registered skills
+         * @description Every registered skill from the registry snapshot with name,
+         *     description, and directory. `load_errors` carries per-file registry
+         *     failures naming their paths; skills whose SKILL.md does not load
+         *     are absent from `skills`.
+         */
+        get: operations["listSkills"];
+        put?: never;
+        /**
+         * Create a skill (managed directory)
+         * @description Writes `config/skills/<slug>/SKILL.md` (slug derived from the
+         *     name, managed-name form). No-clobber: an occupied directory
+         *     fails with `duplicate_name` whatever occupies it. Applies
+         *     immediately — no restart.
+         */
+        post: operations["createSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The skill's frontmatter name. */
+                name: components["parameters"]["SkillName"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read one skill's detail (frontmatter + body)
+         * @description The skill's name, description, directory, and full SKILL.md body
+         *     as currently loaded. Reading alters nothing.
+         */
+        get: operations["getSkill"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a skill (directory including its bundle)
+         * @description Removes the skill's whole directory, bundled files included. A
+         *     partially failed removal publishes the on-disk state and reports
+         *     the residual as a load error or an assets-only directory.
+         */
+        delete: operations["deleteSkill"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit a skill (full replace; rename supported)
+         * @description Replaces the skill's SKILL.md wholesale (PUT semantics over
+         *     PATCH). An included `name` renames: the directory moves to the
+         *     new slug (no-clobber) and the frontmatter updates; a failed
+         *     rename rolls back, and if rollback itself fails the published
+         *     state matches disk and the retry is idempotent. Bundled files are
+         *     preserved verbatim by every operation that keeps the skill.
+         */
+        patch: operations["updateSkill"];
+        trace?: never;
+    };
     "/api/providers/{name}/models/refresh": {
         parameters: {
             query?: never;
@@ -280,6 +625,24 @@ export interface paths {
          */
         get: operations["streamSessionEvents"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/distillation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current distillation settings (provider, model, prompt) */
+        get: operations["getDistillation"];
+        /** Update distillation settings (applied without restart) */
+        put: operations["putDistillation"];
         post?: never;
         delete?: never;
         options?: never;
@@ -463,11 +826,16 @@ export interface components {
         UserInput: {
             text: string;
         };
+        DistillationSettings: {
+            provider?: string;
+            model?: string;
+            prompt?: string;
+        };
         /**
          * @description Mirrors the domain TimelineEventKind set.
          * @enum {string}
          */
-        TimelineEventKind: "session" | "agent_step" | "delegation" | "tool_call" | "hook_decision" | "compaction_triggered";
+        TimelineEventKind: "session" | "agent_step" | "delegation" | "tool_call" | "hook_decision" | "compaction_triggered" | "chitta_tool_invoked";
         TimelineEvent: {
             id: components["schemas"]["Id"];
             session_id: components["schemas"]["Id"];
@@ -481,6 +849,24 @@ export interface components {
             delegation?: components["schemas"]["DelegationPayload"];
             hook?: components["schemas"]["HookDecision"];
             compaction?: components["schemas"]["CompactionStats"];
+            chitta_tool_invoked?: components["schemas"]["ChittaToolInvokedPayload"];
+        };
+        /** @description One chitta tool invocation (memory_* / knowledge_* tools) — the observable heartbeat of the chitta capability. */
+        ChittaToolInvokedPayload: {
+            tool: string;
+            /** @enum {string} */
+            outcome: "success" | "error";
+            /** @enum {string} */
+            error_code?: "invalid_input" | "not_found" | "conflict" | "unavailable";
+            affected_ids: string[];
+            provenance?: {
+                /** @enum {string} */
+                source?: "agent" | "user" | "distiller";
+                session_id?: string;
+                execution_id?: string;
+                agent_id?: string;
+                message_seq?: number;
+            };
         };
         ToolCallPayload: {
             tool: string;
@@ -511,6 +897,227 @@ export interface components {
             tokens_after: number;
             messages_before: number;
             messages_after: number;
+        };
+        /** @description Name for API-created and API-renamed MCP servers (the manifest file stem). Existing hand-authored entries may carry broader stems. */
+        McpManagedName: string;
+        McpStdio: {
+            command: string;
+            args?: string[];
+            env?: {
+                [key: string]: string;
+            };
+        };
+        McpHttp: {
+            url: string;
+        };
+        /**
+         * @description The complete manifest. At least one of `stdio` or `http` is
+         *     required (both is valid — one entry, two transports).
+         */
+        McpCreate: {
+            name: components["schemas"]["McpManagedName"];
+            stdio?: components["schemas"]["McpStdio"];
+            http?: components["schemas"]["McpHttp"];
+            /** @description Absent means enabled. */
+            enabled?: boolean;
+        };
+        /**
+         * @description Full replace of the manifest (PUT semantics). Absent `stdio` and
+         *     `http` together is a 400. Present `name` renames.
+         */
+        McpUpdate: {
+            name?: components["schemas"]["McpManagedName"];
+            stdio?: components["schemas"]["McpStdio"];
+            http?: components["schemas"]["McpHttp"];
+            /** @description Absent means enabled — full replace, so omitting the field re-enables the server. */
+            enabled?: boolean;
+        };
+        Mcp: {
+            name: components["schemas"]["Id"];
+            /** @description The manifest's absolute path on disk. */
+            file: string;
+            /** @description False when the manifest is disabled (an absent field means enabled). Disabled servers stay listed, toggleable, and probeable; future runtime wiring skips them. */
+            enabled: boolean;
+            /** @description The declared transports — stdio and/or http, discriminated by `kind`. */
+            transports: {
+                /** @enum {string} */
+                kind: "stdio" | "http";
+                /** @description Present when kind is stdio. */
+                command?: string;
+                args?: string[];
+                env?: {
+                    [key: string]: string;
+                };
+                /** @description Present when kind is http. */
+                url?: string;
+            }[];
+        };
+        RegistryLoadError: {
+            path: string;
+            /** @enum {string} */
+            kind: "mcp" | "skill";
+            message: string;
+        };
+        McpList: {
+            servers: components["schemas"]["Mcp"][];
+            load_errors?: components["schemas"]["RegistryLoadError"][];
+        };
+        McpTool: {
+            name: string;
+            description?: string;
+        };
+        McpTransportTest: {
+            /** @enum {string} */
+            transport: "stdio" | "http";
+            /** @enum {string} */
+            status: "ok" | "failed";
+            failure?: {
+                /** @enum {string} */
+                reason: "spawn_failed" | "connect_failed" | "timeout" | "protocol_error";
+                message: string;
+            };
+            tools?: components["schemas"]["McpTool"][];
+            truncated?: boolean;
+        };
+        McpTestResult: {
+            results: components["schemas"]["McpTransportTest"][];
+        };
+        SkillMarketSkill: {
+            /** @description owner/repo/skill slug from the index. */
+            id: string;
+            /** @description owner/repo. */
+            source: string;
+            name: string;
+            /** Format: int64 */
+            installs?: number;
+        };
+        SkillMarketSearchResult: {
+            skills: components["schemas"]["SkillMarketSkill"][];
+        };
+        SkillSourceInput: {
+            /** @description A GitHub owner/repo, or a github.com URL form. */
+            source: string;
+        };
+        SkillFileEntry: {
+            path: string;
+            /** Format: int64 */
+            size: number;
+            /** @description Per-file content digest recorded in the preview capability (byte binding). */
+            sha256?: string;
+            executable?: boolean;
+        };
+        SkillPreviewPayload: {
+            name: string;
+            description: string;
+            body: string;
+            files: components["schemas"]["SkillFileEntry"][];
+            license?: string;
+        };
+        SkillRepoPreview: {
+            source: string;
+            /** @description The immutable commit the preview pinned. */
+            commit: string;
+            /** @description Opaque install capability; expires with the preview cache (15 minutes). */
+            capability: string;
+            skills: components["schemas"]["SkillPreviewPayload"][];
+        };
+        SkillInstallRequest: {
+            capability: string;
+            /** @description The chosen skill names from the preview. */
+            skills: string[];
+        };
+        /** @enum {string} */
+        SkillInstallStatus: "created" | "skipped" | "failed";
+        SkillInstallOutcome: {
+            name: string;
+            /** @description The stored directory name when created. */
+            slug?: string;
+            status: components["schemas"]["SkillInstallStatus"];
+            /** @enum {string} */
+            reason?: "duplicate" | "invalid_skill" | "capacity" | "io_error";
+            message?: string;
+            /** @enum {string} */
+            origin?: "marketplace" | "import" | "local";
+        };
+        SkillInstallResult: {
+            results: components["schemas"]["SkillInstallOutcome"][];
+        };
+        SkillArchivePreview: {
+            /** @description Opaque one-shot bearer capability for commit. */
+            stagingId: string;
+            skill: components["schemas"]["SkillPreviewPayload"];
+        };
+        SkillImportCommitRequest: {
+            stagingId: string;
+        };
+        McpImportRequest: {
+            /** @description The pasted configuration as raw text. The daemon is the only parser — never send pre-parsed JSON objects (they lose key order, duplicate keys, and number fidelity). */
+            document: string;
+            /** @description Name for single-object pastes (the object itself carries no key). */
+            name?: string;
+            /** @description Edit-as-JSON — replace this existing server's transports with the document's exactly-one entry (name unchanged). */
+            replaceName?: string;
+        };
+        /**
+         * @description Why an entry skipped or failed. Skips — duplicate, disabled, other_os. Failures — shape, field, name, capacity, io_error.
+         * @enum {string}
+         */
+        McpImportOutcomeReason: "duplicate" | "disabled" | "other_os" | "shape" | "field" | "name" | "capacity" | "io_error";
+        McpImportOutcome: {
+            /** @description The original JSON key the entry came from. */
+            source_key: string;
+            /** @description The stored name, when the entry was created (or replaced); includes slug normalization from the key. */
+            name?: string;
+            /** @enum {string} */
+            status: "created" | "skipped" | "failed";
+            reason?: components["schemas"]["McpImportOutcomeReason"];
+            message?: string;
+            /** @description Tolerance report — ignored foreign keys (named, values never echoed), coercions, deprecations. */
+            warnings?: string[];
+        };
+        McpImportResult: {
+            /** @description One outcome per entry, in paste order. */
+            results: components["schemas"]["McpImportOutcome"][];
+        };
+        Skill: {
+            name: components["schemas"]["Id"];
+            description: string;
+            /** @description The skill directory's absolute path on disk. */
+            directory: string;
+            /** @enum {string} */
+            origin: "local" | "marketplace" | "import";
+            /** @description owner/repo for marketplace skills when recorded. */
+            source?: string;
+            /** @description The recorded branch/ref for marketplace skills. */
+            ref?: string;
+        };
+        SkillDetail: {
+            name: components["schemas"]["Id"];
+            description: string;
+            directory: string;
+            body: string;
+            /** @enum {string} */
+            origin: "local" | "marketplace" | "import";
+            /** @description owner/repo for marketplace skills when recorded. */
+            source?: string;
+        };
+        SkillCreate: {
+            /** @description The skill name; the directory slug is derived from it (lowercase, `[a-z0-9-]`). */
+            name: string;
+            description: string;
+            /** @default  */
+            body: string;
+        };
+        SkillUpdate: {
+            /** @description Present to rename (the directory moves to the new slug and the frontmatter updates). */
+            name?: string;
+            description: string;
+            /** @description The complete replacement body (PUT semantics — send the current body for a frontmatter-only edit). */
+            body: string;
+        };
+        SkillList: {
+            skills: components["schemas"]["Skill"][];
+            load_errors?: components["schemas"]["RegistryLoadError"][];
         };
         Error: {
             code: string;
@@ -555,11 +1162,27 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description The filesystem commit failed after validation (`io_error`); the published registry state matches disk. */
+        InternalError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: {
         SessionId: components["schemas"]["Id"];
         /** @description The configured provider's name. */
         ProviderName: components["schemas"]["Id"];
+        /**
+         * @description The MCP server's registered name (file stem). Legacy entries may
+         *     carry broader stems than managed names allow.
+         */
+        McpName: components["schemas"]["Id"];
+        /** @description The skill's frontmatter name. */
+        SkillName: components["schemas"]["Id"];
     };
     requestBodies: never;
     headers: never;
@@ -771,6 +1394,554 @@ export interface operations {
                     "application/json": components["schemas"]["ModelCatalog"];
                 };
             };
+        };
+    };
+    listMcps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The registered servers (empty list when none). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpList"];
+                };
+            };
+        };
+    };
+    createMcp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpCreate"];
+            };
+        };
+        responses: {
+            /** @description Created; the server is listed now. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mcp"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Duplicate name or occupied target path (`duplicate_name`), or the per-kind capacity is full (`mcp_limit`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    searchSkillMarketplace: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Search results (possibly empty). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillMarketSearchResult"];
+                };
+            };
+            /** @description The skills.sh index is unreachable. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    previewSkillSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillSourceInput"];
+            };
+        };
+        responses: {
+            /** @description Repository preview with per-skill payloads and the install capability. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillRepoPreview"];
+                };
+            };
+            /** @description Malformed source identity or archive/skill validation failure naming the violation. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Repository not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description GitHub unreachable or rate-limited (retry guidance in the message), or no valid skills found. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    installSkillCapability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillInstallRequest"];
+            };
+        };
+        responses: {
+            /** @description One outcome per chosen skill, in request order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillInstallResult"];
+                };
+            };
+            /** @description Unknown/malformed capability or empty subset. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Expired or already-consumed capability. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Upstream fetch failed, rate-limited, or content changed upstream (re-preview guidance in the message). */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    previewSkillArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description The .skill or .zip file (≤10 MiB).
+                     */
+                    archive: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Staged preview (commit by staging id). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillArchivePreview"];
+                };
+            };
+            /** @description Archive violation naming the reason (traversal, symlink, caps, corrupt, no SKILL.md, extra parts, reserved path) or the busy bound exceeded. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Body over the pre-parse size bound. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    commitSkillArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillImportCommitRequest"];
+            };
+        };
+        responses: {
+            /** @description The installed skill detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillInstallOutcome"];
+                };
+            };
+            /** @description Unknown, expired, or already-consumed staging id. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    importMcps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpImportRequest"];
+            };
+        };
+        responses: {
+            /** @description One outcome per entry, in paste order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpImportResult"];
+                };
+            };
+            /** @description Document-level rejection (nothing was created) or an invalid replace-mode document. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Replace mode with an unknown target (the document was valid; nothing was changed). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    deleteMcp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description The MCP server's registered name (file stem). Legacy entries may
+                 *     carry broader stems than managed names allow.
+                 */
+                name: components["parameters"]["McpName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    updateMcp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description The MCP server's registered name (file stem). Legacy entries may
+                 *     carry broader stems than managed names allow.
+                 */
+                name: components["parameters"]["McpName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpUpdate"];
+            };
+        };
+        responses: {
+            /** @description The updated server as now registered. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mcp"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            /** @description Duplicate target name or occupied target path (`duplicate_name`), or capacity (`mcp_limit`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    testMcp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description The MCP server's registered name (file stem). Legacy entries may
+                 *     carry broader stems than managed names allow.
+                 */
+                name: components["parameters"]["McpName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One result per declared transport. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpTestResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The registered skills (empty list when none). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillList"];
+                };
+            };
+        };
+    };
+    createSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillCreate"];
+            };
+        };
+        responses: {
+            /** @description Created; the skill is listed now. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Skill"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Duplicate skill name or occupied target directory (`duplicate_name`), or the per-kind capacity is full (`skill_limit`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The skill's frontmatter name. */
+                name: components["parameters"]["SkillName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The skill detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The skill's frontmatter name. */
+                name: components["parameters"]["SkillName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    updateSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The skill's frontmatter name. */
+                name: components["parameters"]["SkillName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillUpdate"];
+            };
+        };
+        responses: {
+            /** @description The updated skill detail as now registered. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            /** @description Duplicate target name or occupied target directory (`duplicate_name`), or capacity (`skill_limit`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
         };
     };
     refreshProviderModels: {
@@ -995,6 +2166,59 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    getDistillation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DistillationSettings"];
+                };
+            };
+        };
+    };
+    putDistillation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DistillationSettings"];
+            };
+        };
+        responses: {
+            /** @description Updated settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DistillationSettings"];
+                };
+            };
+            /** @description Unknown provider or empty model */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
 }

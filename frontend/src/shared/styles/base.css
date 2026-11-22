@@ -20,3 +20,96 @@ svg { flex-shrink: 0; }
 .skip-link { position: fixed; top: -100px; left: var(--ds-space-4); z-index: 100; padding: var(--ds-space-3); background: var(--ds-color-surface); color: var(--ds-color-text); }
 .skip-link:focus { top: var(--ds-space-4); }
 @media (prefers-reduced-motion: no-preference) { button { transition: background-color 120ms ease; } }
+
+/* Open WebUI-flavored Settings surface, scoped to the settings dialog so
+   app-shell classes (the sidebar's `primary` nav container, composer
+   inputs, shell badges) are untouched. */
+.settings-content input, .settings-content select, .settings-content textarea {
+  background: var(--ds-color-field); border: 1px solid transparent;
+  padding: var(--ds-space-2) var(--ds-space-3); min-height: 36px; width: 100%;
+}
+.settings-content textarea { min-height: 0; resize: vertical; line-height: 1.6; }
+.settings-content input[readonly], .settings-content textarea[readonly] { color: var(--ds-color-muted); }
+.settings-content .badge { color: var(--ds-color-muted); background: var(--ds-color-hover); border: 0; border-radius: var(--ds-radius-pill); padding: 3px var(--ds-space-2); font-weight: 500; }
+
+/* Shared button system (Open WebUI idiom): inverted primary, quiet
+   bordered secondary, red-tinted danger. Sections use these instead of
+   local copies so Providers, MCP, and Skills read as one surface. */
+.settings-content .primary, .settings-content .secondary, .settings-content .danger {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--ds-space-2);
+  padding: var(--ds-space-2) var(--ds-space-3); min-height: 36px;
+  border-radius: var(--ds-radius-control); font-size: var(--ds-font-nav); font-weight: 500;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.settings-content .primary { background: var(--ds-color-primary); color: var(--ds-color-on-primary); }
+.settings-content .primary:hover:not(:disabled) { background: var(--ds-color-primary-hover); }
+.settings-content .secondary { background: var(--ds-color-surface); border: 1px solid var(--ds-color-border); color: var(--ds-color-text); }
+.settings-content .secondary:hover:not(:disabled) { background: var(--ds-color-hover); }
+.settings-content .danger { background: transparent; border: 1px solid var(--ds-color-border); color: var(--ds-color-danger); }
+.settings-content .danger:hover:not(:disabled) { background: var(--ds-color-danger-soft); border-color: transparent; }
+.settings-content .form-error { color: var(--ds-color-danger); font-size: 0.8125rem; }
+
+/* Small toggle switch (Open WebUI-style) — the native checkbox stays
+   the labeled control; the track is presentational. */
+.settings-content .switch { display: flex; align-items: center; gap: var(--ds-space-3); min-height: 36px; cursor: pointer; position: relative; }
+.settings-content .switch input { position: absolute; left: 0; top: calc(50% - 10px); width: 34px; height: 20px; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+.settings-content .switch .track { width: 34px; height: 20px; border-radius: var(--ds-radius-pill); background: var(--ds-color-border); position: relative; transition: background-color 120ms ease; flex-shrink: 0; }
+.settings-content .switch .track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: var(--ds-radius-pill); background: var(--ds-color-surface); transition: transform 120ms ease; }
+.settings-content .switch input:checked + .track { background: var(--ds-color-primary); }
+.settings-content .switch input:checked + .track::after { transform: translateX(14px); background: var(--ds-color-on-primary); }
+.settings-content .switch input:focus-visible + .track { outline: 2px solid var(--ds-color-focus); outline-offset: 3px; }
+
+/* Capability cards (Settings → Advanced): one collapsible card per
+   setting — matching Providers/MCP item-card quality. Scoped to
+   settings-content so the app shell is untouched. */
+.settings-content .capability-card {
+  border: 1px solid var(--ds-color-border);
+  border-radius: var(--ds-radius-control);
+  background: var(--ds-color-surface);
+  overflow: hidden;
+}
+.settings-content .card-head {
+  display: flex; align-items: center; gap: var(--ds-space-3);
+  padding: var(--ds-space-4);
+  cursor: pointer; user-select: none; text-align: left; width: 100%;
+  min-height: 56px;
+}
+.settings-content .card-head:hover { background: var(--ds-color-hover); }
+.settings-content .card-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: var(--ds-radius-control);
+  background: var(--ds-color-hover); flex-shrink: 0;
+}
+.settings-content .card-meta { flex: 1; min-width: 0; }
+.settings-content .card-title {
+  font-size: var(--ds-font-control); font-weight: 600;
+  display: flex; align-items: center; gap: var(--ds-space-2);
+}
+.settings-content .card-desc {
+  font-size: var(--ds-font-nav); color: var(--ds-color-muted);
+  line-height: 1.4; margin-top: 2px;
+}
+.settings-content .card-summary {
+  font-size: var(--ds-font-nav); color: var(--ds-color-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.settings-content .card-chevron { color: var(--ds-color-muted); transition: transform 150ms ease; flex-shrink: 0; }
+.settings-content .card-head[aria-expanded="true"] .card-chevron { transform: rotate(90deg); }
+.settings-content .card-body {
+  padding: 0 var(--ds-space-4) var(--ds-space-4);
+  border-top: 1px solid var(--ds-color-border);
+}
+.settings-content .badge.ok { color: var(--ds-color-success); background: transparent; border-color: var(--ds-color-success); }
+.settings-content .badge.warn { color: var(--ds-color-danger); background: var(--ds-color-danger-soft); border-color: transparent; }
+.settings-content .kv {
+  display: grid; grid-template-columns: minmax(140px, auto) 1fr;
+  gap: var(--ds-space-2) var(--ds-space-6); font-size: var(--ds-font-control);
+}
+.settings-content .kv dt { color: var(--ds-color-muted); font-weight: 500; }
+.settings-content .kv dd { margin: 0; overflow-wrap: anywhere; }
+.settings-content .group-label {
+  font-size: var(--ds-font-nav); font-weight: 600; color: var(--ds-color-muted);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  margin: var(--ds-space-8) 0 var(--ds-space-3);
+}
+.settings-content .group-label:first-child { margin-top: 0; }

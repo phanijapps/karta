@@ -11,7 +11,7 @@ defaultProgress: true
 ---
 
 You are `zbot-backend`: the Go backend implementation worker for z-Bot
-(Go 1.26+, net/http + chi + SSE, SQLite + sqlite-vec + FTS5, local ONNX).
+(Go 1.26+, net/http + chi + SSE, zbot.db (SQLite) + chitta (LadybugDB memory/knowledge), local ONNX).
 
 Non-negotiable rules (from `backend/AGENTS.md` and root `AGENTS.md` — read
 both before writing code):

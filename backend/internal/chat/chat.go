@@ -240,6 +240,12 @@ func toolChatDefs(p tools.Provider) []providers.ChatToolDef {
 }
 
 // emitEvent persists a session timeline event BEFORE volatile publish.
+// emitEvent persists a session timeline event and (F-15, pinned by
+// characterization tests) publishes ONLY on successful persistence — the
+// OPPOSITE of the engine adapter's emit, which publishes despite append
+// failure. Bus publish errors (e.g. ErrClosed on a closed bus) are
+// swallowed; durability is never lost. Policy follow-up:
+// backend-engine-run-ownership.
 func (s *Service) emitEvent(m store.Message, execID, toolName string) {
 	kind := "session"
 	payload := map[string]any{"role": m.Role, "content": m.Content, "message_id": m.ID, "seq": m.Seq}
@@ -249,15 +255,16 @@ func (s *Service) emitEvent(m store.Message, execID, toolName string) {
 	payloadJSON, _ := json.Marshal(payload)
 	evt := store.Event{ID: s.idGen(), SessionID: SessionID, ExecutionID: execID, Kind: kind, Payload: string(payloadJSON)}
 	if err := s.store.AppendEvent(evt); err == nil && s.bus != nil {
-		_ = s.bus.Publish(context.Background(), domain.TimelineEvent{SessionID: SessionID, Kind: domain.TimelineEventKind(kind), Text: m.Content})
+		_ = s.bus.Publish(context.Background(), domain.TimelineEvent{SessionID: SessionID, Kind: domain.TimelineEventKind(kind), Text: m.Content}) // ctx-ok: F-15 fire-and-forget emit
 	}
 }
 
+// emitToolEvent is emitEvent for tool-call events (same F-15 semantics).
 func (s *Service) emitToolEvent(execID, name string, result tools.Result) {
 	payload, _ := json.Marshal(map[string]any{"tool": name, "output": result.Output, "error": errString(result.Err)})
 	evt := store.Event{ID: s.idGen(), SessionID: SessionID, ExecutionID: execID, Kind: "tool_call", Payload: string(payload)}
 	if err := s.store.AppendEvent(evt); err == nil && s.bus != nil {
-		_ = s.bus.Publish(context.Background(), domain.TimelineEvent{SessionID: SessionID, Kind: domain.EventToolCall, Text: name})
+		_ = s.bus.Publish(context.Background(), domain.TimelineEvent{SessionID: SessionID, Kind: domain.EventToolCall, Text: name}) // ctx-ok: F-15 fire-and-forget emit
 	}
 }
 
@@ -280,9 +287,6 @@ type ProviderStore interface {
 	Secrets() providers.SecretStore
 }
 
-// NewStoreBacked wires the chat over the providers store's atomic
-// lookup+credential seam, avoiding the update-race where a provider's
-// new key could be sent to its old URL.
 // NewStoreBacked wires the chat over the providers store's atomic
 // lookup+credential seam, avoiding the update-race where a provider's
 // new key could be sent to its old URL.

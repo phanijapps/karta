@@ -7,39 +7,75 @@ version: '3'
 vars:
   GO_PACKAGES: './...'
   CONTRACT: contracts/openapi.yaml
+  # The chitta memory capability embeds LadybugDB via cgo (vendored at
+  # backend/third_party/go-ladybug — run its download_lbug.sh once after
+  # cloning; see backend/chitta/AGENTS.md). All backend build/test/lint
+  # tasks therefore run with CGO_ENABLED=1.
+  CGO: 'CGO_ENABLED=1'
 
 tasks:
   build:
     desc: Build all backend packages
     dir: backend
     cmds:
-      - go build {{.GO_PACKAGES}}
+      - "{{.CGO}} go build {{.GO_PACKAGES}}"
 
   test:
     desc: Run all backend tests (race detector on)
     aliases: [test:backend]
     dir: backend
     cmds:
-      - go test -race {{.GO_PACKAGES}}
+      - "{{.CGO}} go test -race {{.GO_PACKAGES}}"
+
+  test:chitta:ladybug:
+    desc: Run the chitta suite against the real LadybugDB driver
+    dir: backend
+    cmds:
+      - "{{.CGO}} CHITTA_DRIVER=ladybug go test -race ./chitta/ -timeout 600s"
 
   lint:
     desc: Vet and gofmt-check the backend
     dir: backend
     cmds:
-      - go vet {{.GO_PACKAGES}}
+      - "{{.CGO}} go vet {{.GO_PACKAGES}}"
       - test -z "$(gofmt -l .)" || { gofmt -l .; echo 'gofmt needed - run task fmt'; exit 1; }
 
   lint:backend:
     desc: golangci-lint over the backend (constitution Verification)
     dir: backend
     cmds:
-      - golangci-lint run ./...
+      - "{{.CGO}} golangci-lint run ./..."
+
+  gates:backend:
+    desc: Mechanical go-rules.md gates (LOC budget, names, ctx, boundaries, docs, contract drift)
+    cmds:
+      - scripts/backend-gates.sh
+
+  budget:backend:
+    desc: Suite runtime budget gate (go-rules.md 4.3, machine-qualified)
+    cmds:
+      - scripts/backend-gates.sh --budget
 
   fmt:
     desc: Format the backend
     dir: backend
     cmds:
       - gofmt -w .
+
+  setup:chitta:
+    desc: Vendor LadybugDB extensions + warm the fastembed model cache (once per machine; daemon never downloads at runtime)
+    dir: backend
+    cmds:
+      - "{{.CGO}} go run ./tools/lbug-setup"
+      - |
+        # Warm the fastembed model cache (downloads bge-small-en-v1.5 once).
+        {{.CGO}} go run ./tools/embed-setup || echo "embed model warm-up skipped (optional)"
+
+  test:chitta:recall:
+    desc: Golden recall evaluation with floors (nDCG@10, MRR@10)
+    dir: backend
+    cmds:
+      - "{{.CGO}} go test ./chitta/internal/recalleval/ -v -timeout 300s"
 
   codegen:
     desc: Validate the API contract and regenerate clients (always runs validation)
@@ -81,12 +117,15 @@ tasks:
       - pnpm test
 
   verify:
-    desc: End-to-end check - codegen, lint, tests, build (constitution Verification)
+    desc: End-to-end check - codegen, gates, lint, tests (incl. real LadybugDB driver), build (constitution Verification)
     cmds:
+      - task: gates:backend
       - task: codegen
       - task: lint
       - task: lint:backend
       - task: test
+      - task: budget:backend
+      - task: test:chitta:ladybug
       - task: build
       - task: check:frontend
       - task: test:frontend

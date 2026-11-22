@@ -21,7 +21,15 @@
   --ds-color-border: var(--neutral-94);
   --ds-color-bubble: var(--neutral-98);
   --ds-color-focus: #2563eb;
+  --ds-color-field: var(--neutral-98);
+  --ds-color-primary: var(--neutral-20);
+  --ds-color-primary-hover: var(--neutral-32);
+  --ds-color-on-primary: var(--neutral-white);
+  --ds-color-danger: oklch(0.55 0.19 27);
+  --ds-color-danger-soft: oklch(0.96 0.02 27);
+  --ds-color-success: oklch(0.6 0.14 152);
   --ds-radius-control: 0.5rem;
+  --ds-radius-pill: 999px;
   --ds-radius-composer: 1.5rem;
   --ds-radius-dialog: 2rem;
   --ds-chat-width: 58rem;
@@ -47,5 +55,12 @@
   --ds-color-border: var(--neutral-32);
   --ds-color-bubble: var(--neutral-27);
   --ds-color-focus: #93c5fd;
+  --ds-color-field: var(--neutral-16);
+  --ds-color-primary: var(--neutral-98);
+  --ds-color-primary-hover: var(--neutral-white);
+  --ds-color-on-primary: var(--neutral-20);
+  --ds-color-danger: oklch(0.7 0.16 27);
+  --ds-color-danger-soft: oklch(0.3 0.06 27);
+  --ds-color-success: oklch(0.75 0.15 152);
   color-scheme: dark;
 }

@@ -16,12 +16,12 @@ import (
 type FailureReason string
 
 const (
-	// ReasonUnreachable: the provider endpoint could not be reached or did
+	// ReasonUnreachable — the provider endpoint could not be reached or did
 	// not answer within the bound.
 	ReasonUnreachable FailureReason = "unreachable"
-	// ReasonUnauthorized: the provider rejected the request's credentials.
+	// ReasonUnauthorized — the provider rejected the request's credentials.
 	ReasonUnauthorized FailureReason = "unauthorized"
-	// ReasonMalformed: the provider answered, but the response was not a
+	// ReasonMalformed — the provider answered, but the response was not a
 	// usable OpenAI-compatible model list.
 	ReasonMalformed FailureReason = "malformed"
 )

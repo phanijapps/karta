@@ -51,3 +51,34 @@ func TestProviderExecuteUnknown(t *testing.T) {
 		t.Fatalf("lookup miss: %+v", d)
 	}
 }
+
+func TestMultiMergesAndGuards(t *testing.T) {
+	a := BuiltinProvider{}
+	all := Multi(a).Tools()
+	names := map[string]bool{}
+	for _, tl := range all {
+		names[tl.Def().Name] = true
+	}
+	if !names["clock.now"] || !names["echo"] {
+		t.Fatalf("builtin tools missing: %v", names)
+	}
+	// Duplicate names panic at composition.
+	collide := stubProvider{stubTool{name: "clock.now"}}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("duplicate tool name must panic")
+		}
+	}()
+	_ = Multi(a, collide).Tools()
+}
+
+type stubProvider struct{ t Tool }
+
+func (s stubProvider) Tools() []Tool { return []Tool{s.t} }
+
+type stubTool struct{ name string }
+
+func (s stubTool) Def() Def { return Def{Name: s.name} }
+func (s stubTool) Exec(ctx context.Context, args string) Result {
+	return Result{Output: "stub"}
+}

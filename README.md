@@ -1,6 +1,6 @@
 # Karta
 
-A local-first agent workspace. The current frontend is an Open WebUI-style workspace: mock chat, two sidebars, and a Settings dialog whose Providers section is a live, manageable daemon view (`zbotd` — add/edit/delete providers with OS-keyring credentials; the other sections are previews). Chat is live: one persistent conversation (SQLite at `~/.zbot/data/zbot.db`), replies from the selected model with basic tools; agents and streaming are pending. `config.yaml` itself is never written by the daemon.
+A local-first agent workspace. The current frontend is an Open WebUI-style workspace: mock chat, two sidebars, and a Settings dialog whose Providers, MCP, and Skills sections are live, manageable daemon views (`zbotd` — provider CRUD with OS-keyring credentials; MCP server and skill CRUD over the config-tree registry with a per-transport connection probe; Logging/Advanced are previews). Chat is live: one persistent conversation (SQLite at `~/.zbot/data/zbot.db`), replies from the selected model with basic tools; agents and streaming are pending. `config.yaml` itself is never written by the daemon.
 
 ## Run the preview
 

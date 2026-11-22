@@ -21,12 +21,61 @@ type Config struct {
 	Compaction CompactionConfig `yaml:"compaction"`
 	Wards      WardsConfig      `yaml:"wards"`
 	Providers  []ProviderConfig `yaml:"providers"`
+	Chitta     ChittaConfig     `yaml:"chitta"`
 }
 
 // ServerConfig is the daemon's HTTP listen address.
 type ServerConfig struct {
 	Address string `yaml:"address"`
 }
+
+// ChittaConfig selects the memory/knowledge provider (design D7 of the
+// add-chitta change). "local" is the built-in LadybugDB provider at
+// <data-dir>/chitta/; the "mcps:<name>" grammar is reserved for the
+// future MCP-backed provider and fails loudly until it exists.
+type ChittaConfig struct {
+	Provider  string                `yaml:"provider"`
+	Embedding ChittaEmbeddingConfig `yaml:"embedding"`
+	Recall    ChittaRecallConfig    `yaml:"recall"`
+}
+
+// ChittaRecallConfig carries the pipeline tuning knobs; zeros mean the
+// calibrated defaults (design D4/D5 of add-chitta-recall-quality).
+type ChittaRecallConfig struct {
+	Weights         RecallWeights `yaml:"weights"`
+	HalflifeDays    float64       `yaml:"halflife_days,omitempty"`
+	BlendRecency    float64       `yaml:"blend_recency,omitempty"`
+	BlendConfidence float64       `yaml:"blend_confidence,omitempty"`
+	BlendMentions   float64       `yaml:"blend_mentions,omitempty"`
+	MMRLambda       float64       `yaml:"mmr_lambda,omitempty"`
+	Rerank          *bool         `yaml:"rerank,omitempty"`
+	RerankTop       int           `yaml:"rerank_top,omitempty"`
+}
+
+// RecallWeights are the RRF lane weights.
+type RecallWeights struct {
+	Keyword float64 `yaml:"keyword,omitempty"`
+	Vector  float64 `yaml:"vector,omitempty"`
+	Graph   float64 `yaml:"graph,omitempty"`
+}
+
+// ChittaEmbeddingConfig is the ADVANCED embedding contract: config-file
+// only — NOT exposed as an editable setting anywhere until reindex
+// support exists (swapping model/dim requires a database created at that
+// dimension; mismatched opens fail loudly, never a silent re-index).
+// Defaults pin the decided model (fastembed-go + BAAI/bge-small-en-v1.5,
+// 384-dim); any replacement model with its own dimension may be
+// configured here.
+type ChittaEmbeddingConfig struct {
+	Model string `yaml:"model"`
+	Dim   int    `yaml:"dim"`
+}
+
+// Default embedding model constants (add-chitta design.md).
+const (
+	DefaultChittaEmbeddingModel = "BAAI/bge-small-en-v1.5"
+	DefaultChittaEmbeddingDim   = 384
+)
 
 // CompactionConfig carries the token budgets consumed by the compactor.
 type CompactionConfig struct {
@@ -86,6 +135,11 @@ func Default() Config {
 		Compaction: CompactionConfig{MaxContextTokens: 128000, ReserveOutputTokens: 8192},
 		Wards:      WardsConfig{Root: "wards"},
 		Providers:  []ProviderConfig{}, // marshals as `providers: []` so the key is discoverable
+		Chitta: ChittaConfig{
+			Provider:  "local",
+			Embedding: ChittaEmbeddingConfig{Model: DefaultChittaEmbeddingModel, Dim: DefaultChittaEmbeddingDim},
+			Recall:    ChittaRecallConfig{Weights: RecallWeights{Keyword: 1.0, Vector: 1.0, Graph: 0.8}, HalflifeDays: 30, BlendRecency: 0.3, BlendConfidence: 0.15, BlendMentions: 0.1, MMRLambda: 0.7, Rerank: boolPtrLocal(true), RerankTop: 50},
+		},
 	}
 }
 
@@ -154,26 +208,83 @@ func Load(paths Paths) (Config, error) {
 	if err := validateProviders(cfg, paths.ConfigFile); err != nil {
 		return Config{}, err
 	}
-	if err := validateLoopback(cfg.Server.Address, paths.ConfigFile); err != nil {
+	if err := validateChitta(&cfg, paths.ConfigFile); err != nil {
+		return Config{}, err
+	}
+	if err := validateBind(cfg.Server.Address, paths.ConfigFile); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
 }
 
-// validateLoopback hard-fails a server address whose host is not
-// loopback. The daemon is local-first and unauthenticated; the contract's
-// loopback-only server entry is a declaration, this is the enforcement.
-func validateLoopback(address, file string) error {
+// validateChitta enforces the provider selection: unknown or
+// unimplemented providers fail loudly, never a silent fallback (spec
+// chitta "Provider selection via configuration").
+func validateChitta(cfg *Config, file string) error {
+	provider := cfg.Chitta.Provider
+	if provider == "" {
+		provider = "local"
+		cfg.Chitta.Provider = provider
+	}
+	if provider != "local" {
+		return fmt.Errorf("config: %s: chitta.provider %q is not known to the daemon (available: local; mcps:<name> is reserved for the MCP-backed provider)", file, provider)
+	}
+	// Embedding contract (advanced, config-file only). A replacement
+	// model with a different dimension MAY be configured, but its dim
+	// must be explicit — reindex is not yet supported, so a database
+	// created at another dimension fails loudly at open.
+	if cfg.Chitta.Embedding.Model == "" {
+		cfg.Chitta.Embedding.Model = DefaultChittaEmbeddingModel
+	} else if cfg.Chitta.Embedding.Model != DefaultChittaEmbeddingModel && cfg.Chitta.Embedding.Dim == 0 {
+		return fmt.Errorf("config: %s: chitta.embedding.dim must be set explicitly when embedding.model is not the default %q (reindex is not yet supported)", file, DefaultChittaEmbeddingModel)
+	}
+	if cfg.Chitta.Embedding.Dim != 0 && (cfg.Chitta.Embedding.Dim < 2 || cfg.Chitta.Embedding.Dim > 4096) {
+		return fmt.Errorf("config: %s: chitta.embedding.dim must be within [2, 4096], got %d", file, cfg.Chitta.Embedding.Dim)
+	}
+	r := cfg.Chitta.Recall
+	for name, v := range map[string]float64{
+		"weights.keyword": r.Weights.Keyword, "weights.vector": r.Weights.Vector, "weights.graph": r.Weights.Graph,
+		"blend_recency": r.BlendRecency, "blend_confidence": r.BlendConfidence, "blend_mentions": r.BlendMentions,
+	} {
+		if v < 0 {
+			return fmt.Errorf("config: %s: chitta.recall.%s must be >= 0, got %v", file, name, v)
+		}
+	}
+	if r.MMRLambda < 0 || r.MMRLambda > 1 {
+		return fmt.Errorf("config: %s: chitta.recall.mmr_lambda must be within [0, 1], got %v", file, r.MMRLambda)
+	}
+	if r.HalflifeDays < 0 {
+		return fmt.Errorf("config: %s: chitta.recall.halflife_days must be >= 0, got %v", file, r.HalflifeDays)
+	}
+	if r.RerankTop < 0 || r.RerankTop > 100 {
+		return fmt.Errorf("config: %s: chitta.recall.rerank_top must be within [0, 100], got %d", file, r.RerankTop)
+	}
+	// Normalize the default dimension last so the loaded config always
+	// carries the effective model/dimension (the composition root reads
+	// these).
+	if cfg.Chitta.Embedding.Dim == 0 {
+		cfg.Chitta.Embedding.Dim = DefaultChittaEmbeddingDim
+	}
+	return nil
+}
+
+// validateBind enforces host:port. The daemon is unauthenticated and
+// local-first: loopback is the default and recommended bind. Exposing a
+// wildcard (0.0.0.0/::) or LAN address is an explicit operator choice —
+// accepted here — that puts an unauthenticated API (authored env values,
+// the MCP command probe) on the network; the request guard adapts (see
+// internal/server/guard.go) and the operator owns that trust decision.
+func validateBind(address, file string) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
 		return fmt.Errorf("config: %s: server.address %q must be host:port", file, address)
 	}
-	if host == "localhost" {
+	if host == "localhost" || host == "" {
 		return nil
 	}
 	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return fmt.Errorf("config: %s: server.address host %q must be loopback (127.0.0.0/8, ::1, or localhost) — the daemon is unauthenticated and local-first", file, host)
+	if ip == nil {
+		return fmt.Errorf("config: %s: server.address host %q must be an IP address, a wildcard, or localhost", file, host)
 	}
 	return nil
 }
@@ -213,3 +324,5 @@ func validateProviders(cfg Config, file string) error {
 	}
 	return nil
 }
+
+func boolPtrLocal(b bool) *bool { return &b }

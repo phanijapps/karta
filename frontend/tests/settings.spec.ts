@@ -28,20 +28,45 @@ const liveProviders = [
   { name: 'zai', type: 'openai-compatible', base_url: 'https://api.z.ai/v1', api_key_env: 'ZAI_API_KEY', credential_configured: true },
 ];
 
+const mockServers = [
+  { name: 'github', file: '/home/u/.zbot/config/mcps/github.yaml', transports: [
+    { kind: 'stdio', command: 'gh-mcp', args: ['serve'] },
+    { kind: 'http', url: 'https://mcp.example.com/mcp' },
+  ] },
+];
+const mockSkills = [
+  { name: 'Code review', description: 'Review a change for correctness.', directory: '/home/u/.zbot/config/skills/code-review' },
+];
+
 test('integration details and logging/advanced fields are honest previews', async ({ page }) => {
   await mockProviders(page, liveProviders);
+  await page.route('**/api/mcps', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ servers: mockServers }) }),
+  );
+  await page.route('**/api/skills', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ skills: mockSkills }) }),
+  );
+  await page.route('**/api/skills/Code%20review', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...mockSkills[0], body: '# Code review\n\nChecklist…' }) }),
+  );
   await mockChat(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Settings', exact: true });
+  // MCP and Skills are live managed views: daemon data, no mock badges.
   await dialog.getByRole('button', { name: 'MCP', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Remote tools' }).click();
-  await expect(dialog.getByRole('textbox', { name: 'URL preview' })).toHaveValue('https://mcp.example/mcp');
-  await expect(dialog.getByRole('button', { name: 'Connect unavailable' })).toBeDisabled();
+  await dialog.getByRole('button', { name: /github/ }).click();
+  await expect(dialog.getByRole('textbox', { name: 'Command' })).toHaveValue('gh-mcp serve');
+  await expect(dialog.getByRole('textbox', { name: 'HTTP URL' })).toHaveValue('https://mcp.example.com/mcp');
+  await expect(dialog.getByText('Mock')).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Test connection' })).toBeEnabled();
+  // The detail popup covers the nav — close it before switching sections.
+  await page.getByRole('button', { name: 'Close dialog' }).click();
   await dialog.getByRole('button', { name: 'Skills', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Code review', exact: false }).click();
-  await expect(dialog.getByText('~/.zbot/config/skills/code-review/SKILL.md')).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Install skill unavailable' })).toBeDisabled();
+  await dialog.getByRole('button', { name: /Code review/ }).click();
+  await expect(dialog.getByText('/home/u/.zbot/config/skills/code-review')).toBeVisible();
+  await expect(dialog.getByRole('textbox', { name: 'SKILL.md body' })).toHaveValue('# Code review\n\nChecklist…');
+  // Logging/Advanced remain honest shell previews with drafts.
   await dialog.getByRole('button', { name: 'Logging', exact: true }).click();
   await dialog.getByRole('combobox', { name: 'Log level' }).selectOption('Debug');
   await dialog.getByRole('checkbox', { name: 'Detailed diagnostics preview' }).check();

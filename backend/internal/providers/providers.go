@@ -26,9 +26,9 @@ var ErrUnknownProvider = errors.New("providers: unknown provider")
 type Origin string
 
 const (
-	// OriginConfig: hand-authored in config.yaml (read-only via API).
+	// OriginConfig — hand-authored in config.yaml (read-only via API).
 	OriginConfig Origin = "config"
-	// OriginFile: daemon-managed under config/providers/ (CRUD-able).
+	// OriginFile — daemon-managed under config/providers/ (CRUD-able).
 	OriginFile Origin = "file"
 )
 
@@ -37,8 +37,11 @@ const (
 type CredentialKind string
 
 const (
-	CredentialNone    CredentialKind = "none"
-	CredentialEnv     CredentialKind = "env"
+	// CredentialNone — CredentialKind values — how a provider references its credential.
+	CredentialNone CredentialKind = "none"
+	// CredentialEnv — one of the CredentialKind values.
+	CredentialEnv CredentialKind = "env"
+	// CredentialKeyring — one of the CredentialKind values.
 	CredentialKeyring CredentialKind = "keyring"
 )
 

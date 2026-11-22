@@ -19,10 +19,16 @@ type Session struct {
 type SessionStatus string
 
 const (
-	SessionCreated   SessionStatus = "created"
-	SessionRunning   SessionStatus = "running"
-	SessionWaiting   SessionStatus = "waiting" // paused, awaiting user input
+	// SessionCreated — SessionStatus values — a session lifecycle state.
+	SessionCreated SessionStatus = "created"
+	// SessionRunning — one of the SessionStatus values.
+	SessionRunning SessionStatus = "running"
+	// SessionWaiting — one of the SessionStatus values.
+	SessionWaiting SessionStatus = "waiting" // paused, awaiting user input
+	// SessionCompleted — one of the SessionStatus values.
 	SessionCompleted SessionStatus = "completed"
+	// SessionCancelled — one of the SessionStatus values.
 	SessionCancelled SessionStatus = "cancelled"
-	SessionFailed    SessionStatus = "failed"
+	// SessionFailed — one of the SessionStatus values.
+	SessionFailed SessionStatus = "failed"
 )

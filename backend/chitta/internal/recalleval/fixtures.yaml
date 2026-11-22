@@ -1,0 +1,56 @@
+# Golden recall fixtures (spec chitta-recall "Evaluation harness with
+# floors"). Queries + expected content substrings + per-query nDCG@10
+# floors; aggregate floors gate recall-affecting changes.
+seed:
+  - kind: preference
+    content: "Prefers concise answers with code examples"
+  - kind: preference
+    content: "Prefers dark theme in editors"
+  - kind: fact
+    content: "Uses pnpm as the package manager"
+  - kind: fact
+    content: "Runs Ubuntu 24.04 on the workstation"
+  - kind: fact
+    content: "Works on the zbot project in Go"
+  - kind: observation
+    content: "Complained the build was slow on Mondays"
+  - kind: procedure
+    content: "Deploy checklist: run tests, build, then tag"
+  - kind: correction
+    content: "Uses neovim, not vscode"
+  - kind: fact
+    content: "Deploy notes alpha: run tests first"
+  - kind: fact
+    content: "Deploy notes alpha: run tests before tagging"
+  - kind: fact
+    content: "Deploy notes alpha: tests precede the tag"
+  - kind: fact
+    content: "The postgres database stores user preferences"
+
+cases:
+  - query: "package manager"
+    expect_ids: ["pnpm"]
+    floor: 0.9
+  - query: "editor preference"
+    expect_ids: ["dark theme", "neovim"]
+    floor: 0.5
+  - query: "concise answers"
+    expect_ids: ["code examples"]
+    floor: 0.9
+  - query: "workstation operating system"
+    expect_ids: ["Ubuntu"]
+    floor: 0.7
+  - query: "deploy steps"
+    expect_ids: ["checklist"]
+    floor: 0.7
+
+  - query: "deploy notes alpha"
+    expect_ids: ["run tests first", "tagging", "tests precede"]
+    floor: 0.5
+  - query: "database stores user preferences"
+    expect_ids: ["postgres"]
+    floor: 0.5
+
+floors:
+  ndcg_at_10: 0.7
+  mrr_at_10: 0.75

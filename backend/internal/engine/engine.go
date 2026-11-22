@@ -43,13 +43,6 @@ func ResolveAgent(snap registry.Snapshot, name string) (AgentDef, error) {
 	return def, nil
 }
 
-// BuiltinProvider adapts the chat change's tools to the engine's
-// ToolProvider needs (list defs + execute). This change registers exactly
-// the builtins; skills/MCP/subagent tools register additional providers.
-type BuiltinProvider struct{}
-
-func (BuiltinProvider) Tools() []tools.Tool { return tools.BuiltinProvider{}.Tools() }
-
 // FilterTools returns only the tools whose names appear in allowlist
 // (empty allowlist = all tools).
 func FilterTools(p tools.Provider, allowlist []string) []tools.Tool {
