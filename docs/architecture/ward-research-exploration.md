@@ -217,6 +217,52 @@ The operator's refinement of the execution strategy:
   venv lives inside the ward; absent uv → typed tool error naming the
   install path. **Node** via `node`/`npx` on demand, same shape.
 
+## Operator's intent-analysis prompt reference (`~/Documents/zbot/config/`)
+
+The operator runs agentzero with a tuned prompt set — the intent prompt
+(`config/intent-analysis-prompt.md`) and agent instructions are
+**reference material for slice 2** (assess quality, adopt, or replace —
+not blindly copy):
+
+**Intent prompt strengths worth keeping:**
+- Skills vs agents are explicitly distinguished (load_skill vs
+  delegate_to_agent — "never mix them"), with a hard "recommend from
+  the listed resources only" rule (no hallucinated names)
+- **Ward naming discipline**: wards are REUSABLE domain categories
+  ("financial-analysis" good; "amd-stock-analysis" bad) — never
+  task-specific; existing-ward matching with exact-name reuse before
+  create-new ("never invent a near-duplicate")
+- **Approach gating**: "simple" vs "graph" with concrete criteria
+  (graph only for multi-agent/pipeline/spec-plan-artifact work) and an
+  anti-pattern callout ("do NOT choose graph merely because the answer
+  needs current data or research")
+- Flat JSON contract (no envelope), runtime-supplied schema, no tools/
+  browsing during analysis
+
+**Differences from agentzero's contract worth noting for Karta:** the
+operator's version drops complexity/iteration-budget and solution_path;
+agentzero's has them. Karta's spec should decide deliberately.
+
+**Supporting prompt family** (`config/agent-prompts/`, `config/agent/`):
+- `first-turn-protocol.md` — the **fast-path override** (approach=simple
+  → skip ward/planner/plan-reading entirely) + the one-action-per-turn
+  agent loop + graph first-actions (enter ward → planner → read
+  specs/plan.md → delegate steps in order)
+- `INSTRUCTIONS.md` — execution modes keyed to intent: warm path (ward
+  matches → ONE delegation to the ward-agent), cold path (no ward →
+  planner-agent first, spec-driven plan in specs/plan.md, step-by-step
+  delegation); plan.md re-read on every continuation; completion =
+  synthesize artifacts + respond
+- `OS.md` — platform pack (shell syntax, python invocation, ward paths
+  `~/Documents/zbot/wards/{ward}/`) — the template for Karta's
+  per-OS runtime info injection
+- `chat-instructions.md`, `SOUL.md`, `tooling-skills.md` — chat protocol
+  (memory-first answering), persona, and the tool-family contract
+  (shell/write_file/edit_file/update_plan discipline) for reference
+
+These live at `~/Documents/zbot/config/` — the exploration treats them
+as the operator's quality bar for slice 2's prompts.
+
 ## Sources (verified in `~/projects/agentzero`)
 
 - `wiki/archive/architecture/components/intent-analysis/overview.md` — pipeline
@@ -226,3 +272,4 @@ The operator's refinement of the execution strategy:
 - `gateway/gateway-execution/src/middleware/intent/contract.rs` — intent JSON
 - `docs/constitution/architecture/knowledge/execution.md` — delegation/continuation
 - `gateway/templates/skills/pdf/agents/openai.yaml` + `~/Documents/zbot/agents/` — ward-guard prompt shape
+- `~/Documents/zbot/config/intent-analysis-prompt.md` + `agent-prompts/*` + `agent/INSTRUCTIONS.md` — the operator's tuned prompt set (slice 2 reference)
