@@ -12,14 +12,30 @@ existing tool plane — NOT a port of agentzero's Rust shell machinery.
 ## Investigation findings (what we build on)
 
 **eino's tool surface (v0.9.23 in go.mod):** `components/tool` defines
-BaseTool/InvokableTool/StreamableTool + `utils.InferTool` (schema
-inferred from Go funcs). **eino-ext (our version) ships only
-`components/model` — no shell/python tool components.** Conclusion: a
-"eino shell tool" to leverage is the *interface pattern*, not a library;
-Karta's `internal/tools.Tool` (Def/Exec) already IS that seam and the
-adapter already converts it to eino's schema. Ward tools are therefore
-Karta-native tools in/behind `tools.Provider`, consuming eino's pattern
-— zero new framework dependencies.
+BaseTool/InvokableTool/StreamableTool + `utils.InferTool`. **eino-ext
+main DOES ship a `components/tool/commandline` package** (operator.go,
+editor.go, pyexecutor.go + `sandbox` subpackage) — NOT in our pinned
+version, but go-gettable as its own module. Its shape:
+`Operator` interface (ReadFile/WriteFile/IsDirectory/Exists/
+RunCommand([]string) → {Stdout, Stderr, ExitCode} — direct exec, no
+shell string); `NewPyExecutor` (writes code to a temp .py, runs the
+configured command via the operator); `NewStrReplaceEditor` (file
+create/view/edit); the only shipped operator is **DockerSandbox**
+(python:3.9-slim, memory/CPU limits, network toggle, 30s default
+timeout) — Docker REQUIRED, no local operator.
+
+**Karta's leverage:** implement a **ward-scoped local Operator**
+(exec.Command, cwd = active ward, guardrails) satisfying eino-ext's
+interface; the upstream PyExecutor/StrReplaceEditor work unchanged on
+top of it; a Karta-native ward-shell tool wraps RunCommand for generic
+commands; DockerSandbox becomes an optional config upgrade for heavier
+isolation (the Code Wards convergence). Python command = `uv run
+python` from the ward's venv. eino boundary: these imports live in the
+tool-plane package (NOT engine/eino/) — the rule says only engine/eino
+imports eino *framework*; eino-ext tool components are libraries
+consumed by Karta's tool plane, same as robfig/cron. (If the boundary
+checker disagrees, scope the exception explicitly in the slice-3
+change.)
 
 **agentzero's execution family** (`runtime/agent-tools/src/tools/
 execution/`): shell.rs (platform shell, blocked-command list, timeout),
@@ -76,13 +92,15 @@ shell/python/node execution, spec→plan→tasks skills, chitta bridge.
    endpoint returns node ids + matches (the same ids the ward tool will
    inject as the Active Ward Template).
 6. **Tool-execution strategy recorded for slice 3** (not built here):
-   ward-scoped shell/python/node tools as Karta `tools.Tool`s —
-   cwd pinned to the active ward, agentzero-derived blocked-command
-   list + output caps + timeout; Python via per-ward `uv` venv
-   (`~/.venv` inside the ward, gitignored), `uv run python -c/-m`;
-   node via `node`/`npx` on demand; absent runtime = typed tool error
-   naming the install path. The eino boundary holds: tools live in
-   Karta's plane; the adapter already converts.
+   a `wardops` package implements eino-ext's Operator interface with a
+   LOCAL ward-scoped backend (cwd pinned to the active ward, agentzero-
+   derived blocked-command list, output caps, timeout; RunCommand takes
+   []string — direct exec, no shell-string injection surface); tools =
+   upstream PyExecutor (python command = `uv run python`, per-ward venv
+   `.venv/` gitignored) + StrReplaceEditor + a Karta ward-shell tool;
+   node via `node`/`npx` through the same operator; absent runtime =
+   typed tool error naming the install path; DockerSandbox operator =
+   optional config upgrade for isolation-heavy work.
 
 ## Risks / Trade-offs
 

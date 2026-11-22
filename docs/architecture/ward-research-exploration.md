@@ -150,13 +150,19 @@ recall), knowledge (the ward).
 
 ## Tool-execution findings (investigated for slice 3, recorded here)
 
-- **eino v0.9.23** ships the tool *interface* (`components/tool`:
-  BaseTool/InvokableTool + utils.InferTool) but **eino-ext in our graph
-  has no shell/python tool components** — only models. A "eino shell
-  tool" to leverage is the pattern, not a library; Karta's
-  `internal/tools.Tool` plane already matches it and the adapter already
-  converts to eino schemas. Ward tools are Karta-native; zero new
-  framework deps.
+- **eino-ext main ships `components/tool/commandline`** (not in our
+  pinned version; separate go module): an `Operator` interface
+  (RunCommand([]string) → stdout/stderr/exit — direct exec, no shell
+  string), `NewPyExecutor` (temp .py + configured command), and
+  `NewStrReplaceEditor`; the only shipped operator is DockerSandbox
+  (python:3.9-slim, resource limits — Docker required). Karta's
+  leverage: implement a ward-scoped LOCAL Operator (cwd = active ward,
+  guardrails, uv python) and run the upstream tools on it;
+  DockerSandbox becomes the optional isolation upgrade (Code Wards
+  convergence). Tool imports live in Karta's tool plane, not
+  engine/eino/. Other tool components on main worth watching:
+  httprequest, duckduckgo/bing/google search, wikipedia,
+  sequentialthinking.
 - **agentzero's execution family** (`tools/execution/`: shell.rs with a
   blocked-command list + timeout + platform shell; write_file/edit_file;
   ward_cwd.rs scoping cwd to the ACTIVE WARD with `~/Documents/zbot/
