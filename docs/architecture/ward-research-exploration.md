@@ -99,9 +99,16 @@ recall), knowledge (the ward).
   → host the run there (sticky ward); no match → recommend/create with
   an archetype; trivial work → no ward.
 - The main agent orchestrates: specs (`spec.md`), plan (`plan.md`),
-  task files (`tasks/*.md`) all live **in the ward**; specialists
-  (subagents) implement tasks; the canonical page accumulates the
-  knowledge; chitta distillation can later index wards as memory.
+  task files (`tasks/*.md`) all live **in the ward** — and the
+  spec→plan→tasks **flow itself is executed via SKILLS**, not hardcoded
+  engine machinery: the orchestrator loads the relevant skills (a spec
+  skill knows how to elicit/write `spec.md`; a plan skill turns a spec
+  into `plan.md`; a task skill decomposes the plan into `tasks/*.md`),
+  and the ward's conf declares where their outputs land. Skills stay the
+  reusable-knowledge plane; the ward is where their outputs become
+  documented knowledge; specialists (subagents) implement the tasks; the
+  canonical page accumulates the knowledge; chitta distillation can
+  later index wards as memory.
 - **Not** "Code Wards" (the sandboxed-project placeholder): the sidebar
   slot may host the surface, but ward-based research is its own concept —
   a research/knowledge workspace per domain.
@@ -133,6 +140,10 @@ recall), knowledge (the ward).
   sessions into ward pages? Both directions?
 - Archetype set for Karta v1 (research, project, generic?) and whether
   ward-agents are registry agents with ward discipline or a new kind.
+- Skill-driven spec→plan→tasks: are the flow skills shipped as seeded
+  examples (like the example agents) or marketplace items? Do ward
+  confs reference required skills, and does the intent analysis
+  recommend them from the skills index?
 - Async delegation continuation (agentzero's model) vs Karta's synchronous
   v1 — wards make cross-session resumption attractive; the run-ownership
   follow-up already owns that machinery.
