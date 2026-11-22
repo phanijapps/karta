@@ -1,4 +1,4 @@
-export const sections = ['Providers', 'MCP', 'Skills', 'Logging', 'Advanced'] as const;
+export const sections = ['Providers', 'MCP', 'Skills', 'Agents', 'Logging', 'Advanced'] as const;
 export type Section = typeof sections[number];
 // Providers, MCP, and Skills are NOT fixtures: those Settings sections
 // are live daemon views (src/shared/api/client.ts). Only Logging and

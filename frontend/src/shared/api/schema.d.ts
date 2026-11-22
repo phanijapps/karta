@@ -125,6 +125,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List configured agents
+         * @description Every agent definition loaded from ~/.zbot/agents (the registry
+         *     snapshot), ordered by name: name, optional display name,
+         *     when-to-delegate description, optional model override, tool
+         *     allowlist, and delegation grant (max_depth). Read-only — agents
+         *     are file-defined and user-owned; broken hand edits surface via
+         *     the registry's load-error surface, and entries that do not load
+         *     are absent here.
+         */
+        get: operations["listAgents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mcps": {
         parameters: {
             query?: never;
@@ -997,6 +1023,23 @@ export interface components {
             kind: "mcp" | "skill";
             message: string;
         };
+        Agent: {
+            name: string;
+            display_name?: string;
+            /** @description The when-to-delegate hint; empty = not offered for delegation (goal-request use only). */
+            description?: string;
+            /** @description Provenance — the agent's optional provider/model-id override. */
+            model?: string;
+            /** @description Tool allowlist (empty array = explicit no-tools; absent = all tools). */
+            tools?: string[];
+            /** @description Delegation grant — the agent may spawn children while their depth stays below this (0 = never). */
+            max_depth?: number;
+            /** @description The definition file the registry loaded. */
+            source?: string;
+        };
+        AgentList: {
+            agents: components["schemas"]["Agent"][];
+        };
         McpList: {
             servers: components["schemas"]["Mcp"][];
             load_errors?: components["schemas"]["RegistryLoadError"][];
@@ -1431,6 +1474,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelCatalog"];
+                };
+            };
+        };
+    };
+    listAgents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The agent roster. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentList"];
                 };
             };
         };

@@ -622,3 +622,18 @@ export async function getDefaultModel(): Promise<string> {
     return '';
   }
 }
+
+/** One configured agent (read-only roster view) — the generated type. */
+export type AgentEntry = components['schemas']['Agent'];
+
+/** List the agent roster (GET /api/agents). */
+export async function listAgents(): Promise<AgentEntry[]> {
+  try {
+    const res = await fetch(`${BASE}/api/agents`);
+    if (!res.ok) return [];
+    const body = (await res.json().catch(() => null)) as { agents?: AgentEntry[] } | null;
+    return body?.agents ?? [];
+  } catch {
+    return [];
+  }
+}

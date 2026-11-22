@@ -1,15 +1,16 @@
 <script lang="ts">
-  import { ArrowLeft, X, Server, Plug, BookOpen, ScrollText, SlidersHorizontal, RotateCcw } from '@lucide/svelte';
+  import { ArrowLeft, X, Server, Plug, BookOpen, ScrollText, SlidersHorizontal, RotateCcw, Bot } from '@lucide/svelte';
   import Modal from '../../shared/ui/Modal.svelte';
   import Providers from './Providers.svelte';
   import McpServers from './McpServers.svelte';
   import SkillsSection from './Skills.svelte';
+  import AgentsSection from './Agents.svelte';
   import { sections, settingsFixtures, type Section } from './fixtures';
   import Advanced from './advanced/Advanced.svelte';
   let { onclose }: { onclose: () => void } = $props();
   let section = $state<Section>('Providers');
   let draft = $state(settingsFixtures());
-  const icons = [Server, Plug, BookOpen, ScrollText, SlidersHorizontal];
+  const icons = [Server, Plug, BookOpen, ScrollText, SlidersHorizontal, Bot];
 
 </script>
 
@@ -27,7 +28,7 @@
       <div class="nav-footer"><span class="brand">Karta</span><span class="muted">Your local workspace</span></div>
     </nav>
     <section class="settings-content" aria-label={`${section} settings`}>
-      <header><div><h2>{section}</h2><p class="muted">{section === 'Providers' ? 'The model providers your workspace is configured to use.' : section === 'MCP' ? 'Give your agents a way to work with your tools.' : section === 'Skills' ? 'Reusable knowledge for the way you work.' : section === 'Logging' ? 'Understand what’s happening in your workspace.' : 'Fine-tune the foundations of your workspace.'}</p></div><button class="icon-button" onclick={onclose} aria-label="Close Settings"><X size={20} /></button></header>
+      <header><div><h2>{section}</h2><p class="muted">{section === 'Providers' ? 'The model providers your workspace is configured to use.' : section === 'Agents' ? 'Your specialist agents for delegation and deep work.' : section === 'MCP' ? 'Give your agents a way to work with your tools.' : section === 'Skills' ? 'Reusable knowledge for the way you work.' : section === 'Logging' ? 'Understand what’s happening in your workspace.' : 'Fine-tune the foundations of your workspace.'}</p></div><button class="icon-button" onclick={onclose} aria-label="Close Settings"><X size={20} /></button></header>
       {#if section === 'Logging' || section === 'Advanced'}
         <div class="notice"><span class="badge">Shell preview</span><p>Changes are not saved. These are illustrative values, not your installed configuration.</p></div>
       {/if}
@@ -37,6 +38,8 @@
         <McpServers />
       {:else if section === 'Skills'}
         <SkillsSection />
+      {:else if section === 'Agents'}
+        <AgentsSection />
       {:else if section === 'Logging'}
         <h3>Diagnostics</h3><p class="source">Proposed UI-only settings. No daemon logging configuration is changed.</p>
         <div class="fields"><label class="full">Log level<select bind:value={draft.level}><option>Debug</option><option>Info</option><option>Warn</option><option>Error</option></select></label><label class="checkbox full"><input type="checkbox" bind:checked={draft.diagnostics} />Detailed diagnostics preview</label></div>

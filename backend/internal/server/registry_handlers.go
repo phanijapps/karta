@@ -358,3 +358,29 @@ func strPtrOrNil(s string) *string {
 	}
 	return &s
 }
+
+// ListAgents lists the configured agent roster (read-only; agents are
+// file-defined under ~/.zbot/agents).
+func (s *Server) ListAgents(w http.ResponseWriter, r *http.Request) {
+	snap := s.reg.Snapshot()
+	names := make([]string, 0, len(snap.Agents))
+	for name := range snap.Agents {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	agents := make([]apigen.Agent, 0, len(names))
+	for _, name := range names {
+		spec := snap.Agents[name]
+		agent := apigen.Agent{
+			Name: spec.Name, DisplayName: nilStrPtr(spec.DisplayName),
+			Description: nilStrPtr(spec.Description), Model: nilStrPtr(spec.Model),
+			MaxDepth: &spec.MaxDepth, Source: nilStrPtr(spec.Path),
+		}
+		if spec.Tools != nil {
+			tools := spec.Tools
+			agent.Tools = &tools
+		}
+		agents = append(agents, agent)
+	}
+	writeJSON(w, http.StatusOK, apigen.AgentList{Agents: agents})
+}

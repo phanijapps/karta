@@ -370,3 +370,52 @@ func TestGuardHostValidation(t *testing.T) {
 		t.Fatalf("localhost GET: %d", res.StatusCode)
 	}
 }
+
+func TestListAgents(t *testing.T) {
+	agentDir := t.TempDir()
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(agentDir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile("researcher.md", "---\nname: researcher\ndescription: Gathers evidence.\nmodel: zai/glm-5.3\ntools: [clock_now]\nmax_depth: 1\n---\nYou research.")
+	writeFile("plain.md", "---\nname: plain\n---\nP.")
+	reg := registry.New()
+	if _, errs := reg.LoadAll(registry.Dirs{Agents: agentDir}); len(errs) != 0 {
+		t.Fatalf("load: %v", errs)
+	}
+	srv := New(nil, nil, nil, nil, nil, nil, nil, reg, nil, "test")
+	rec := httptest.NewRecorder()
+	srv.ListAgents(rec, httptest.NewRequest(http.MethodGet, "/api/agents", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	var body struct {
+		Agents []struct {
+			Name        string   `json:"name"`
+			Description *string  `json:"description"`
+			Model       *string  `json:"model"`
+			MaxDepth    *int     `json:"max_depth"`
+			Tools       []string `json:"tools"`
+		} `json:"agents"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Agents) != 2 || body.Agents[0].Name != "plain" || body.Agents[1].Name != "researcher" {
+		t.Fatalf("roster wrong: %+v", body.Agents)
+	}
+	r := body.Agents[1]
+	if r.Description == nil || *r.Description != "Gathers evidence." || r.Model == nil || *r.Model != "zai/glm-5.3" {
+		t.Fatalf("researcher metadata wrong: %+v", r)
+	}
+	if r.MaxDepth == nil || *r.MaxDepth != 1 || len(r.Tools) != 1 || r.Tools[0] != "clock_now" {
+		t.Fatalf("delegation metadata wrong: %+v", r)
+	}
+	if body.Agents[0].Description != nil {
+		t.Fatalf("plain agent should have no description: %+v", body.Agents[0])
+	}
+}

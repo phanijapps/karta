@@ -647,6 +647,31 @@ func (e TimelineEventKind) Valid() bool {
 	}
 }
 
+// Agent defines model for Agent.
+type Agent struct {
+	// Description The when-to-delegate hint; empty = not offered for delegation (goal-request use only).
+	Description *string `json:"description,omitempty"`
+	DisplayName *string `json:"display_name,omitempty"`
+
+	// MaxDepth Delegation grant — the agent may spawn children while their depth stays below this (0 = never).
+	MaxDepth *int `json:"max_depth,omitempty"`
+
+	// Model Provenance — the agent's optional provider/model-id override.
+	Model *string `json:"model,omitempty"`
+	Name  string  `json:"name"`
+
+	// Source The definition file the registry loaded.
+	Source *string `json:"source,omitempty"`
+
+	// Tools Tool allowlist (empty array = explicit no-tools; absent = all tools).
+	Tools *[]string `json:"tools,omitempty"`
+}
+
+// AgentList defines model for AgentList.
+type AgentList struct {
+	Agents []Agent `json:"agents"`
+}
+
 // ChatDelta defines model for ChatDelta.
 type ChatDelta struct {
 	// Kind Which stream is being written — the model's thinking (reasoning) or its visible answer (content).
@@ -1414,6 +1439,9 @@ type UpdateSkillJSONRequestBody = SkillUpdate
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// ListAgents List configured agents
+	// (GET /api/agents)
+	ListAgents(w http.ResponseWriter, r *http.Request)
 	// SyncChatMessages Sync the chat transcript (cursor-paginated)
 	// (GET /api/chat/messages)
 	SyncChatMessages(w http.ResponseWriter, r *http.Request, params SyncChatMessagesParams)
@@ -1524,6 +1552,12 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// ListAgents List configured agents
+// (GET /api/agents)
+func (_ Unimplemented) ListAgents(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // SyncChatMessages Sync the chat transcript (cursor-paginated)
 // (GET /api/chat/messages)
@@ -1743,6 +1777,20 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListAgents operation middleware
+func (siw *ServerInterfaceWrapper) ListAgents(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAgents(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // SyncChatMessages operation middleware
 func (siw *ServerInterfaceWrapper) SyncChatMessages(w http.ResponseWriter, r *http.Request) {
@@ -2618,6 +2666,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/models", wrapper.ListModels)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/agents", wrapper.ListAgents)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/mcps", wrapper.ListMcps)

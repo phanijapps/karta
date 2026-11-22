@@ -185,6 +185,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/ModelCatalog'
 
+  /api/agents:
+    get:
+      operationId: listAgents
+      summary: List configured agents
+      description: |
+        Every agent definition loaded from ~/.zbot/agents (the registry
+        snapshot), ordered by name: name, optional display name,
+        when-to-delegate description, optional model override, tool
+        allowlist, and delegation grant (max_depth). Read-only — agents
+        are file-defined and user-owned; broken hand edits surface via
+        the registry's load-error surface, and entries that do not load
+        are absent here.
+      responses:
+        '200':
+          description: The agent roster.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentList'
+
   /api/mcps:
     get:
       operationId: listMcps
@@ -1831,6 +1851,53 @@ components:
         message:
           type: string
           maxLength: 1024
+
+    Agent:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 128
+        display_name:
+          type: string
+          maxLength: 256
+        description:
+          type: string
+          maxLength: 2048
+          description: The when-to-delegate hint; empty = not offered for
+            delegation (goal-request use only).
+        model:
+          type: string
+          maxLength: 384
+          description: "Provenance — the agent's optional provider/model-id override."
+        tools:
+          type: array
+          items:
+            type: string
+            maxLength: 128
+          description: Tool allowlist (empty array = explicit no-tools;
+            absent = all tools).
+        max_depth:
+          type: integer
+          minimum: 0
+          description: Delegation grant — the agent may spawn children
+            while their depth stays below this (0 = never).
+        source:
+          type: string
+          maxLength: 1024
+          description: The definition file the registry loaded.
+
+    AgentList:
+      type: object
+      additionalProperties: false
+      required: [agents]
+      properties:
+        agents:
+          type: array
+          items:
+            $ref: '#/components/schemas/Agent'
 
     McpList:
       type: object
