@@ -148,6 +148,25 @@ recall), knowledge (the ward).
   v1 — wards make cross-session resumption attractive; the run-ownership
   follow-up already owns that machinery.
 
+## Tool-execution findings (investigated for slice 3, recorded here)
+
+- **eino v0.9.23** ships the tool *interface* (`components/tool`:
+  BaseTool/InvokableTool + utils.InferTool) but **eino-ext in our graph
+  has no shell/python tool components** — only models. A "eino shell
+  tool" to leverage is the pattern, not a library; Karta's
+  `internal/tools.Tool` plane already matches it and the adapter already
+  converts to eino schemas. Ward tools are Karta-native; zero new
+  framework deps.
+- **agentzero's execution family** (`tools/execution/`: shell.rs with a
+  blocked-command list + timeout + platform shell; write_file/edit_file;
+  ward_cwd.rs scoping cwd to the ACTIVE WARD with `~/Documents/zbot/
+  wards/<id>` fallback — the same Documents convention as our default).
+  Port the *shape* (cwd scoping, guardrails, caps) in Go.
+- **Python via uv** per ward: `uv venv` + `uv pip install` + `uv run
+  python` (agentzero skills already call `uv pip install` inline); ward
+  venv lives inside the ward; absent uv → typed tool error naming the
+  install path. **Node** via `node`/`npx` on demand, same shape.
+
 ## Sources (verified in `~/projects/agentzero`)
 
 - `wiki/archive/architecture/components/intent-analysis/overview.md` — pipeline

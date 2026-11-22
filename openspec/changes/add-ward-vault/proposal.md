@@ -11,10 +11,12 @@ wards exist, validate, and are visible in the UI.
 
 ## What Changes
 
-- **Vault config**: `wards.vault_root` in config.yaml (default
-  `~/karta-wards` — OUTSIDE `~/.zbot` by design: wards are user data /
-  documented knowledge, not daemon state; the daemon only points at the
-  path). Missing dir = created empty on bootstrap (like the config tree).
+- **Vault config**: `wards.vault_root` in config.yaml — default
+  OS-aware `~/Documents/wards` (Windows: `%USERPROFILE%\Documents\wards`;
+  matches agentzero's own ward convention). OUTSIDE `~/.zbot` by design:
+  wards are user data / documented knowledge, not daemon state; the
+  daemon only points at the path. Missing dir = created empty on
+  bootstrap (like the config tree).
 - **`internal/wards` package**: vault scan (ward index), ward-conf.yaml
   schema parse (declarative tree: kind file/dir, match, required/repeat,
   format markdown/raw, $ref), layout linter (validate a ward's tree
