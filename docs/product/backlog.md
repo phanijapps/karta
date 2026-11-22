@@ -67,6 +67,54 @@ later option if MCP coverage disappoints.
 **Phase 2 exit:** Karta answers in Telegram/WhatsApp, delegates, schedules,
 and uses the wider MCP tool ecosystem safely.
 
+## Phase 2.5 — Ward-based research (from docs/architecture/ward-research-exploration.md)
+
+Sliced so each change is one session, independently valuable, and lands
+on the last. Slice 1's proposal is live in openspec/changes/add-ward-vault.
+
+### add-ward-vault — foundation (SLICE 1, proposal ready)
+
+Vault root outside ~/.zbot (config, default ~/karta-wards); internal/wards
+(schema parse, linter, archetype seeds generic+research); GET /api/wards
+read-only; Wards sidebar surface replacing the Code Wards placeholder.
+Constitution gets a scoped ~/.zbot exception for the user-chosen vault.
+
+### add-intent-analysis — SLICE 2 (after 1)
+
+Pre-execution middleware for goal runs: cheap router (trivial bypass,
+procedure pin) + intent agent writing a typed JSON contract (primary/
+hidden intents, solution path, complexity S/M/L/XL → step budget,
+recommended skills/agents/wards, ward_recommendation, execution
+strategy). Injected as a Task Analysis prompt section; emitted as
+events; non-fatal on failure. Depends on slice 1's ward index for ward
+recommendation; skills/agents recommendation uses the registry snapshot.
+
+### add-ward-hosting — SLICE 3 (after 1; parallel with 2)
+
+Ward tools for root agents (ward_use/ward_create with archetype);
+sticky ward per run; Active Ward Template injection (layout + digest,
+untrusted-data framing) into the run's agents INCLUDING children;
+ward-scoped file tools (read/write/list within the active ward only —
+Karta's first filesystem tool plane, bounded by the ward);
+delegate tool contract grows the ward guard (children act via declared
+roles; structural mutations return bounded requests to the root).
+Biggest slice — split file tools first if it fights back.
+
+### add-research-orchestration — SLICE 4 (after 3)
+
+The spec→plan→tasks flow executed via SKILLS (operator decision):
+seeded example skills (spec skill → spec.md, plan skill → plan.md,
+task skill → tasks/*.md) whose outputs land in ward conf-declared
+roles; an orchestrator agent definition (ward discipline, delegates to
+specialists); end-to-end: intent → ward → skills run → tasks →
+specialists implement → canonical page accumulates.
+
+### add-chitta-ward-bridge — SLICE 5 (after 4, low priority)
+
+chitta indexes ward canonical pages as memory records (recall surfaces
+ward knowledge in chat/goals); distillation optionally writes session
+knowledge into the ward's pages. Both directions, own change.
+
 ## Phase 3 — Differentiators and depth
 
 ### add-mobile-client — medium
