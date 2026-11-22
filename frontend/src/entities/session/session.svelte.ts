@@ -1,7 +1,7 @@
 // The eternal chat session: transcript rows from the daemon, cursor
 // sync state, and the selected model. Fixture conversations are retired
 // — there is exactly one conversation and it lives forever.
-import { syncChatMessages, type ChatMessage } from '../../shared/api/client';
+import { getDefaultModel,  syncChatMessages, type ChatMessage } from '../../shared/api/client';
 
 export function createSessions() {
   let messages = $state<ChatMessage[]>([]);
@@ -16,11 +16,8 @@ export function createSessions() {
     try {
       // Pre-select the default (last-used) model.
       try {
-        const res = await fetch('/api/chat/default-model');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.model && model === '') model = data.model;
-        }
+        const model0 = await getDefaultModel();
+        if (model0 && model === '') model = model0;
       } catch { /* non-critical */ }
       messages = [];
       cursor = 0;

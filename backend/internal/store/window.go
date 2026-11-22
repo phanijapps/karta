@@ -73,7 +73,7 @@ func (s *Store) HistoryWindow(sessionID, executionID string, bound int) (History
 // replaySince returns non-summary rows with seq > afterSeq in order.
 func (s *Store) replaySince(sessionID string, afterSeq int64, limit int) ([]Message, error) {
 	rows, err := s.db.Query(`SELECT id, session_id, execution_id, seq, role, content,
-		COALESCE(tool_calls, ''), COALESCE(tool_call_id, ''), COALESCE(tool_name, ''),
+		COALESCE(reasoning, ''), COALESCE(tool_calls, ''), COALESCE(tool_call_id, ''), COALESCE(tool_name, ''),
 		COALESCE(provider, ''), COALESCE(model, ''), prompt_tokens, completion_tokens, created_at
 		FROM messages WHERE session_id = ? AND seq > ? AND role != 'summary'
 		ORDER BY seq LIMIT ?`, sessionID, afterSeq, limit)
@@ -85,7 +85,7 @@ func (s *Store) replaySince(sessionID string, afterSeq int64, limit int) ([]Mess
 
 func (s *Store) messageByID(id string) (Message, error) {
 	rows, err := s.db.Query(`SELECT id, session_id, execution_id, seq, role, content,
-		COALESCE(tool_calls, ''), COALESCE(tool_call_id, ''), COALESCE(tool_name, ''),
+		COALESCE(reasoning, ''), COALESCE(tool_calls, ''), COALESCE(tool_call_id, ''), COALESCE(tool_name, ''),
 		COALESCE(provider, ''), COALESCE(model, ''), prompt_tokens, completion_tokens, created_at
 		FROM messages WHERE id = ?`, id)
 	if err != nil {

@@ -4,7 +4,9 @@ The simple chat exchange: one serialized send per conversation that
 appends the user message, drives a bounded completion (with built-in
 tools) against the selected provider model, persists every row
 (intent-before-execution), and emits durable-first timeline events.
-No agents, no streaming — the base exchange the engine layer later
+SendStream streams volatile reasoning/content deltas (never persisted);
+the synchronous Send is the same exchange without deltas. No agents —
+the base exchange the engine layer later
 generalizes.
 
 - `Service.Send` is serialized per session (sendMu); no database

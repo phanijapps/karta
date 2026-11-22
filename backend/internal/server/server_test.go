@@ -204,6 +204,9 @@ type stubChatService struct{}
 func (s *stubChatService) Send(ctx context.Context, text, providerName, model string) chat.SendOutcome {
 	return chat.SendOutcome{Err: fmt.Errorf("stub")}
 }
+func (s *stubChatService) SendStream(ctx context.Context, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome {
+	return s.Send(ctx, text, providerName, model)
+}
 func (s *stubChatService) Sync(afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error) {
 	return nil, afterSeq, false, nil
 }

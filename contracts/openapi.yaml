@@ -780,6 +780,41 @@ paths:
         '502':
           $ref: '#/components/responses/ProviderFailure'
 
+  /api/chat/send:
+    post:
+      operationId: streamChatMessage
+      summary: Send a message and stream the reply (SSE)
+      description: |
+        Same exchange semantics as sendChatMessage, streamed over
+        Server-Sent Events: zero or more `chat_delta` events (kind
+        `reasoning` or `content`) stream as the model works, and the stream
+        ends with exactly one terminal `chat_exchange` event — the same
+        schema as the synchronous response (persisted rows in order, end
+        cursor, typed error when the exchange failed). Deltas are volatile
+        (never persisted, never required for replay); the terminal exchange
+        is the truth. Invalid bodies or model references fail with the same
+        typed 4xx JSON as the synchronous endpoint before any stream opens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatSend'
+      responses:
+        '200':
+          description: SSE event stream — chat_delta events, then one
+            terminal chat_exchange.
+          content:
+            text/event-stream:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ChatDelta'
+                  - $ref: '#/components/schemas/ChatExchange'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '502':
+          $ref: '#/components/responses/ProviderFailure'
+
   /api/goals:
     post:
       operationId: createGoal
@@ -1275,6 +1310,29 @@ components:
         completion_tokens:
           type: integer
           minimum: 0
+        reasoning:
+          type: string
+          maxLength: 262144
+          description: The model's final reasoning/thinking text
+            (assistant rows from reasoning models; null when the model
+            produced none).
+
+    ChatDelta:
+      type: object
+      additionalProperties: false
+      required: [kind, text]
+      properties:
+        kind:
+          type: string
+          enum: [reasoning, content]
+          description: Which stream is being written — the model's
+            thinking (reasoning) or its visible answer (content).
+        text:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          description: One text fragment. Fragments concatenate, in order,
+            within their kind.
 
     ChatSend:
       type: object
@@ -1475,7 +1533,7 @@ components:
     TimelineEventKind:
       type: string
       description: Mirrors the domain TimelineEventKind set.
-      enum: [session, agent_step, delegation, tool_call, hook_decision, compaction_triggered, chitta_tool_invoked]
+      enum: [session, agent_step, delegation, tool_call, hook_decision, compaction_triggered, chitta_tool_invoked, chat_delta]
 
     TimelineEvent:
       type: object

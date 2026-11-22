@@ -1,8 +1,8 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { ArrowUp, Plus, Sparkles, Wrench } from '@lucide/svelte';
+  import { ArrowUp, Brain, Plus, Sparkles, Wrench } from '@lucide/svelte';
   import ModelPicker from '../../shared/ui/ModelPicker.svelte';
-  import { sendChatMessage } from '../../shared/api/client';
+  import { sendChatMessage, streamChatMessage } from '../../shared/api/client';
   import type { Sessions } from '../../entities/session/session.svelte';
 
   let { sessions }: { sessions: Sessions } = $props();
@@ -10,6 +10,13 @@
   let draft = $state('');
   let sending = $state(false);
   let transcriptEl: HTMLElement;
+
+  // Live stream state (volatile view; the transcript stays the truth).
+  let reasoning = $state('');
+  let content = $state('');
+  let streaming = $state(false);
+  let thinkingOpen = $state(true);
+  let announced = $state('');
 
   // One-shot load (cursor changes inside load() must not retrigger).
   let loaded = false;
@@ -35,19 +42,47 @@
     const text = draft.trim();
     if (!text || sending) return;
     sending = true;
+    streaming = true;
+    reasoning = '';
+    content = '';
+    thinkingOpen = true;
+    announced = '';
     sessions.sendError = '';
     try {
-      const result = await sendChatMessage(text, sessions.model);
+      let result: Awaited<ReturnType<typeof sendChatMessage>>;
+      try {
+        // Streamed send: deltas render live; the terminal exchange (the
+        // persisted rows) reconciles the transcript afterward.
+        result = await streamChatMessage(text, sessions.model, (d) => {
+          if (d.kind === 'reasoning') {
+            reasoning += d.text;
+          } else {
+            // First content collapses the Thinking block; the user can
+            // reopen it afterward.
+            if (content === '' && reasoning !== '') thinkingOpen = false;
+            content += d.text;
+          }
+        });
+      } catch {
+        // Stream transport failed before any typed answer: fall back to
+        // the synchronous endpoint (same persisted truth).
+        result = await sendChatMessage(text, sessions.model);
+      }
       // Reconcile from the last contiguously delivered cursor on EVERY
       // outcome — the daemon returns the persisted rows either way.
       await sessions.reconcile();
       if (!result.ok) {
         sessions.sendError = result.errorMessage ?? 'send failed';
+        announced = 'Reply failed.';
+      } else {
+        announced = 'Reply complete.';
       }
       draft = '';
     } catch {
       sessions.sendError = 'daemon';
+      announced = 'Reply failed.';
     } finally {
+      streaming = false;
       sending = false;
       await scrollToLatest();
       composerFocus();
@@ -75,6 +110,8 @@
     <div class="chat-banner" role="alert">{sessions.sendError}</div>
   {/if}
 
+  <span class="sr-only" aria-live="polite">{announced}</span>
+
   <div class="transcript" bind:this={transcriptEl} aria-label="Conversation transcript">
     {#if sessions.loading}
       <div class="chat-empty"><Sparkles size={28} strokeWidth={1.2} /><p class="muted">Loading the conversation…</p></div>
@@ -94,17 +131,37 @@
           </article>
         {:else}
           <article class="bubble {m.role}" aria-label={m.role === 'user' ? 'Your message' : 'Assistant message'}>
+            {#if m.reasoning}
+              <details class="thinking">
+                <summary><Brain size={13} aria-hidden="true" /> Thinking</summary>
+                <p class="muted">{m.reasoning}</p>
+              </details>
+            {/if}
             {m.content}
           </article>
         {/if}
       {/each}
-      {#if sending}
-        <article class="bubble assistant pending" aria-label="Assistant is working">
+    {/if}
+      {#if streaming && (reasoning !== '' || content !== '')}
+        <article class="bubble assistant streaming" aria-label="Assistant is responding" aria-busy="true">
+          {#if reasoning !== ''}
+            <details class="thinking" bind:open={thinkingOpen}>
+              <summary><Brain size={13} aria-hidden="true" /> Thinking</summary>
+              <p class="muted">{reasoning}</p>
+            </details>
+          {/if}
+          {#if content !== ''}
+            <div class="stream-text">{content}</div>
+          {:else}
+            <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          {/if}
+        </article>
+      {:else if sending}
+        <article class="bubble assistant pending" aria-label="Assistant is working" aria-busy="true">
           <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
           <span class="sr-only">Working on your message…</span>
         </article>
       {/if}
-    {/if}
   </div>
 
   <div class="composer-region">
@@ -138,6 +195,28 @@
   .dots { display: inline-flex; gap: 4px; }
   .dots i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.4; animation: dot-pulse 1.2s infinite; }
   .dots i:nth-child(2) { animation-delay: 0.2s; }
+
+  .thinking {
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+  }
+  .thinking summary {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--tx-muted, #888);
+    user-select: none;
+  }
+  .thinking p {
+    margin: 0.4rem 0 0;
+    white-space: pre-wrap;
+    border-left: 2px solid var(--border, #333);
+    padding-left: 0.6rem;
+  }
+  .stream-text {
+    white-space: pre-wrap;
+  }
   .dots i:nth-child(3) { animation-delay: 0.4s; }
   @keyframes dot-pulse { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
   .tool-row { display: flex; align-items: baseline; gap: var(--ds-space-2); max-width: 48rem; margin: 0 auto var(--ds-space-3) 0; font-size: 0.8125rem; color: var(--ds-color-muted); border: 1px dashed var(--ds-color-border); border-radius: var(--ds-radius-control); padding: var(--ds-space-1) var(--ds-space-2); }

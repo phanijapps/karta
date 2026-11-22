@@ -502,3 +502,123 @@ export async function getModelCatalog(): Promise<ModelCatalog> {
   if (!res.ok) throw new Error(`models GET: ${res.status}`);
   return res.json();
 }
+
+/** One streamed chat fragment (volatile — the terminal exchange is the truth). */
+export interface ChatStreamDelta {
+  kind: 'reasoning' | 'content';
+  text: string;
+}
+
+/**
+ * streamChatMessage sends via the SSE endpoint (POST /api/chat/send):
+ * chat_delta events stream to onDelta as the model works (reasoning
+ * first, then/interleaved content); the promise resolves with the
+ * terminal chat_exchange — the same shape sendChatMessage returns.
+ * Pre-stream failures (4xx JSON) reject like the synchronous endpoint.
+ */
+export async function streamChatMessage(
+  text: string,
+  model: string,
+  onDelta: (d: ChatStreamDelta) => void,
+): Promise<ChatExchange> {
+  const res = await fetch(`${BASE}/api/chat/send`, {
+    method: 'POST',
+    headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, model }),
+  });
+  if (!res.ok || !res.body) {
+    // Pre-stream typed 4xx/5xx JSON — mirror sendChatMessage's contract.
+    const body = (await res.json().catch(() => null)) as any;
+    if (body) {
+      return {
+        ok: false,
+        messages: body.messages ?? [],
+        endCursor: body.end_cursor ?? 0,
+        errorReason: body.code ?? body.error?.reason ?? 'invalid_request',
+        errorMessage: body.message ?? body.error?.message ?? `daemon answered ${res.status}`,
+      };
+    }
+    return { ok: false, messages: [], endCursor: 0, errorReason: 'daemon', errorMessage: `daemon answered ${res.status}` };
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let terminal: ChatExchange | null = null;
+  // SSE assembly: data: lines join with newlines; a blank line dispatches.
+  let dataLines: string[] = [];
+  const dispatch = (event: string) => {
+    if (dataLines.length === 0) return;
+    const payload = dataLines.join('\n');
+    dataLines = [];
+    if (event === 'chat_delta') {
+      try {
+        const d = JSON.parse(payload) as { kind: 'reasoning' | 'content'; text: string };
+        if (d && typeof d.text === 'string') onDelta({ kind: d.kind, text: d.text });
+      } catch {
+        // Malformed delta: skip; the terminal exchange is the truth.
+      }
+      return;
+    }
+    if (event === 'chat_exchange') {
+      try {
+        const x = JSON.parse(payload) as any;
+        terminal = {
+          ok: !x?.error,
+          messages: x?.messages ?? [],
+          endCursor: x?.end_cursor ?? 0,
+          errorReason: x?.error?.reason,
+          errorMessage: x?.error?.message,
+        };
+      } catch {
+        terminal = { ok: false, messages: [], endCursor: 0, errorReason: 'daemon', errorMessage: 'unreadable terminal exchange' };
+      }
+    }
+  };
+  let eventName = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (value) buf += decoder.decode(value, { stream: true });
+    for (;;) {
+      const nl = buf.indexOf('\n');
+      if (nl === -1) break;
+      const line = buf.slice(0, nl).replace(/\r$/, '');
+      buf = buf.slice(nl + 1);
+      if (line === '') {
+        dispatch(eventName);
+        eventName = '';
+      } else if (line.startsWith('event:')) {
+        eventName = line.slice(6).trim();
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).replace(/^ /, ''));
+      }
+    }
+    if (done) {
+      dispatch(eventName);
+      break;
+    }
+  }
+  return terminal ?? { ok: false, messages: [], endCursor: 0, errorReason: 'daemon', errorMessage: 'stream closed without a terminal exchange' };
+}
+
+/** Clear the conversation (DELETE /api/chat/messages). */
+export async function clearChat(): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/api/chat/messages`, { method: 'DELETE' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** The last-used model (GET /api/chat/default-model); '' when unset. */
+export async function getDefaultModel(): Promise<string> {
+  try {
+    const res = await fetch(`${BASE}/api/chat/default-model`);
+    if (!res.ok) return '';
+    const body = (await res.json().catch(() => null)) as { model?: string } | null;
+    return body?.model ?? '';
+  } catch {
+    return '';
+  }
+}

@@ -14,6 +14,24 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for ChatDeltaKind.
+const (
+	Content   ChatDeltaKind = "content"
+	Reasoning ChatDeltaKind = "reasoning"
+)
+
+// Valid indicates whether the value is a known member of the ChatDeltaKind enum.
+func (e ChatDeltaKind) Valid() bool {
+	switch e {
+	case Content:
+		return true
+	case Reasoning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ChatMessageRole.
 const (
 	ChatMessageRoleAssistant ChatMessageRole = "assistant"
@@ -596,6 +614,7 @@ func (e SkillInstallStatus) Valid() bool {
 // Defines values for TimelineEventKind.
 const (
 	TimelineEventKindAgentStep           TimelineEventKind = "agent_step"
+	TimelineEventKindChatDelta           TimelineEventKind = "chat_delta"
 	TimelineEventKindChittaToolInvoked   TimelineEventKind = "chitta_tool_invoked"
 	TimelineEventKindCompactionTriggered TimelineEventKind = "compaction_triggered"
 	TimelineEventKindDelegation          TimelineEventKind = "delegation"
@@ -608,6 +627,8 @@ const (
 func (e TimelineEventKind) Valid() bool {
 	switch e {
 	case TimelineEventKindAgentStep:
+		return true
+	case TimelineEventKindChatDelta:
 		return true
 	case TimelineEventKindChittaToolInvoked:
 		return true
@@ -625,6 +646,18 @@ func (e TimelineEventKind) Valid() bool {
 		return false
 	}
 }
+
+// ChatDelta defines model for ChatDelta.
+type ChatDelta struct {
+	// Kind Which stream is being written — the model's thinking (reasoning) or its visible answer (content).
+	Kind ChatDeltaKind `json:"kind"`
+
+	// Text One text fragment. Fragments concatenate, in order, within their kind.
+	Text string `json:"text"`
+}
+
+// ChatDeltaKind Which stream is being written — the model's thinking (reasoning) or its visible answer (content).
+type ChatDeltaKind string
 
 // ChatExchange defines model for ChatExchange.
 type ChatExchange struct {
@@ -649,7 +682,10 @@ type ChatMessage struct {
 	PromptTokens *int `json:"prompt_tokens,omitempty"`
 
 	// Provider Provenance — which provider answered (assistant rows).
-	Provider   *string         `json:"provider,omitempty"`
+	Provider *string `json:"provider,omitempty"`
+
+	// Reasoning The model's final reasoning/thinking text (assistant rows from reasoning models; null when the model produced none).
+	Reasoning  *string         `json:"reasoning,omitempty"`
 	Role       ChatMessageRole `json:"role"`
 	Seq        int             `json:"seq"`
 	ToolCallId *string         `json:"tool_call_id,omitempty"`
@@ -1331,6 +1367,9 @@ type SearchSkillMarketplaceParams struct {
 // SendChatMessageJSONRequestBody defines body for SendChatMessage for application/json ContentType.
 type SendChatMessageJSONRequestBody = ChatSend
 
+// StreamChatMessageJSONRequestBody defines body for StreamChatMessage for application/json ContentType.
+type StreamChatMessageJSONRequestBody = ChatSend
+
 // PutDistillationJSONRequestBody defines body for PutDistillation for application/json ContentType.
 type PutDistillationJSONRequestBody = DistillationSettings
 
@@ -1381,6 +1420,9 @@ type ServerInterface interface {
 	// SendChatMessage Send a message and get the assistant's reply
 	// (POST /api/chat/messages)
 	SendChatMessage(w http.ResponseWriter, r *http.Request)
+	// StreamChatMessage Send a message and stream the reply (SSE)
+	// (POST /api/chat/send)
+	StreamChatMessage(w http.ResponseWriter, r *http.Request)
 	// GetDistillation Current distillation settings (provider, model, prompt)
 	// (GET /api/distillation)
 	GetDistillation(w http.ResponseWriter, r *http.Request)
@@ -1492,6 +1534,12 @@ func (_ Unimplemented) SyncChatMessages(w http.ResponseWriter, r *http.Request, 
 // SendChatMessage Send a message and get the assistant's reply
 // (POST /api/chat/messages)
 func (_ Unimplemented) SendChatMessage(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// StreamChatMessage Send a message and stream the reply (SSE)
+// (POST /api/chat/send)
+func (_ Unimplemented) StreamChatMessage(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1747,6 +1795,20 @@ func (siw *ServerInterfaceWrapper) SendChatMessage(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SendChatMessage(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StreamChatMessage operation middleware
+func (siw *ServerInterfaceWrapper) StreamChatMessage(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StreamChatMessage(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2613,6 +2675,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/chat/messages", wrapper.SendChatMessage)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/chat/send", wrapper.StreamChatMessage)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/goals", wrapper.CreateGoal)

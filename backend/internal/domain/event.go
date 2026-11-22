@@ -24,6 +24,10 @@ const (
 	// EventChittaToolInvoked — one chitta tool call (memory_*/knowledge_*),
 	// success or failure — every chitta operation is observable.
 	EventChittaToolInvoked TimelineEventKind = "chitta_tool_invoked"
+	// EventChatDelta — a VOLATILE streamed chat fragment (reasoning or
+	// content) during a send; ephemeral typing notification, never
+	// persisted to the timeline (the persisted rows are the truth).
+	EventChatDelta TimelineEventKind = "chat_delta"
 )
 
 // TimelineEvent is a single observable node in the Timeline Tree. Events

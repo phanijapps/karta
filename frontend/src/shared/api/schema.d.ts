@@ -522,6 +522,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a message and stream the reply (SSE)
+         * @description Same exchange semantics as sendChatMessage, streamed over
+         *     Server-Sent Events: zero or more `chat_delta` events (kind
+         *     `reasoning` or `content`) stream as the model works, and the stream
+         *     ends with exactly one terminal `chat_exchange` event — the same
+         *     schema as the synchronous response (persisted rows in order, end
+         *     cursor, typed error when the exchange failed). Deltas are volatile
+         *     (never persisted, never required for replay); the terminal exchange
+         *     is the truth. Invalid bodies or model references fail with the same
+         *     typed 4xx JSON as the synchronous endpoint before any stream opens.
+         */
+        post: operations["streamChatMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/goals": {
         parameters: {
             query?: never;
@@ -756,6 +784,17 @@ export interface components {
             /** @description REQUEST usage (bills the whole request context); not content size. */
             prompt_tokens?: number;
             completion_tokens?: number;
+            /** @description The model's final reasoning/thinking text (assistant rows from reasoning models; null when the model produced none). */
+            reasoning?: string;
+        };
+        ChatDelta: {
+            /**
+             * @description Which stream is being written — the model's thinking (reasoning) or its visible answer (content).
+             * @enum {string}
+             */
+            kind: "reasoning" | "content";
+            /** @description One text fragment. Fragments concatenate, in order, within their kind. */
+            text: string;
         };
         ChatSend: {
             text: string;
@@ -835,7 +874,7 @@ export interface components {
          * @description Mirrors the domain TimelineEventKind set.
          * @enum {string}
          */
-        TimelineEventKind: "session" | "agent_step" | "delegation" | "tool_call" | "hook_decision" | "compaction_triggered" | "chitta_tool_invoked";
+        TimelineEventKind: "session" | "agent_step" | "delegation" | "tool_call" | "hook_decision" | "compaction_triggered" | "chitta_tool_invoked" | "chat_delta";
         TimelineEvent: {
             id: components["schemas"]["Id"];
             session_id: components["schemas"]["Id"];
@@ -2014,6 +2053,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatExchange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            502: components["responses"]["ProviderFailure"];
+        };
+    };
+    streamChatMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatSend"];
+            };
+        };
+        responses: {
+            /** @description SSE event stream — chat_delta events, then one terminal chat_exchange. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["ChatDelta"] | components["schemas"]["ChatExchange"];
                 };
             };
             400: components["responses"]["BadRequest"];

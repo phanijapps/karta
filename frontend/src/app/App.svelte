@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+import { clearChat } from '../shared/api/client';
   import { PanelLeft, PanelRight, Sun, Moon, ArrowLeft, Folder, Trash2 } from '@lucide/svelte';
   import Sidebar from './Sidebar.svelte';
   import ContextPanel from './ContextPanel.svelte';
@@ -63,7 +64,7 @@
       <p class="muted">All messages will be permanently deleted from your local database. This cannot be undone.</p>
       <div class="confirm-actions">
         <button class="cancel" onclick={() => (confirmClear = false)}>Cancel</button>
-        <button class="danger" onclick={async () => { await fetch('/api/chat/messages', { method: 'DELETE' }); confirmClear = false; sessions.load(); }}>Clear everything</button>
+        <button class="danger" onclick={async () => { await clearChat(); confirmClear = false; sessions.load(); }}>Clear everything</button>
       </div>
     </div>
   </div>

@@ -111,7 +111,7 @@ reviewer-only rules than that is aspiration).
    sanctioned harness pattern.
 
 4.3 The full backend suite has a warm-run wall-clock budget with a machine
-   qualifier (measured on this dev box: **≤ 20s** per-package sum; packages
+   qualifier (measured on this dev box: **≤ 25s** per-package sum — raised from 20s when add-chat-streaming added ~2s of tests and run variance (19.8–21.2s) made the old line flaky; budgets track measured reality, not aspiration; packages
    over 5s are flagged and justified); budgets come from measurement, never
    aspiration. **[gate]** (`task budget:backend` — runs the suite, parses
    timings, fails over budget; reports go version + hostname)

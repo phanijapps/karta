@@ -47,6 +47,7 @@ type Server struct {
 // *chat.Service in production; a fake in handler tests).
 type ChatService interface {
 	Send(ctx context.Context, text, providerName, model string) chat.SendOutcome
+	SendStream(ctx context.Context, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome
 	Sync(afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error)
 }
 
