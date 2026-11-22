@@ -1,0 +1,227 @@
+package eino
+
+// Delegation machinery (add-engine-delegation): the depth-granted
+// delegate_agent tool, the agent routing table, and the offered-inventory
+// executor. Semantics live in adapter.go's runLoop; this file is the
+// tooling it offers.
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/cloudwego/eino/schema"
+
+	"zbot/backend/internal/domain"
+	"zbot/backend/internal/registry"
+	"zbot/backend/internal/tools"
+)
+
+// agentList names configured agents (error guidance).
+// Delegation errors: distinguishable by callers (errors.Is).
+var (
+	// ErrUnknownAgent: the named agent is not configured.
+	ErrUnknownAgent = errors.New("engine: unknown agent")
+	// ErrNotDelegatable: the agent exists but has no description and is
+	// therefore not offered for delegation.
+	ErrNotDelegatable = errors.New("engine: agent not delegatable")
+	// ErrToolNotOffered: the model named a tool outside this run's inventory.
+	ErrToolNotOffered = errors.New("engine: tool not offered in this run")
+	// ErrInvalidAgentModel: the agent's configured model reference is malformed.
+	ErrInvalidAgentModel = errors.New("engine: invalid agent model reference")
+)
+
+func agentList(snap registry.Snapshot) string {
+	if len(snap.Agents) == 0 {
+		return "none configured"
+	}
+	names := make([]string, 0, len(snap.Agents))
+	for n := range snap.Agents {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
+}
+
+// delegateDescription builds the delegate tool's description: the routing
+// table of delegatable agents (description required to be offered).
+func delegateDescription(snap registry.Snapshot) string {
+	names := make([]string, 0, len(snap.Agents))
+	for n, spec := range snap.Agents {
+		if spec.Description != "" {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	b.WriteString("Delegate a self-contained task to a specialist agent and receive its final answer. Agents: ")
+	for i, n := range names {
+		if i > 0 {
+			b.WriteString("; ")
+		}
+		fmt.Fprintf(&b, "%s — %s", n, snap.Agents[n].Description)
+	}
+	b.WriteString(". Arguments: {\"agent\": \"name\", \"task\": \"what to do\"}. The child cannot be interrupted mid-answer; give it complete context.")
+	return b.String()
+}
+
+// delegateTool builds this run's delegate_agent tool. It closes over the
+// run context (cancellation propagates to children), the parent's input,
+// and the live registry snapshot's routing table.
+func (a *Adapter) delegateTool(ctx context.Context, events chan domain.TimelineEvent, parent runInput) tools.Tool {
+	snap := a.snapFn()
+	desc := delegateDescription(snap)
+	return delegateTool{
+		adapter: a, ctx: ctx, events: events, parent: parent, snap: snap, desc: desc,
+	}
+}
+
+type delegateTool struct {
+	adapter *Adapter
+	ctx     context.Context
+	events  chan domain.TimelineEvent
+	parent  runInput
+	snap    registry.Snapshot
+	desc    string
+}
+
+func (d delegateTool) Def() tools.Def {
+	return tools.Def{Name: "delegate_agent", Description: d.desc, ParamsJSON: `{"type":"object","properties":{"agent":{"type":"string","description":"agent name"},"task":{"type":"string","description":"complete, self-contained task"}},"required":["agent","task"]}`}
+}
+
+// Exec runs the named agent as a CHILD of the parent's execution: its own
+// record (parent linkage), its agent wiring, depth+1, steps surfaced as
+// delegation events, final answer folded back as the tool result.
+func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
+	var args struct {
+		Agent string `json:"agent"`
+		Task  string `json:"task"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil || args.Agent == "" || args.Task == "" {
+		return tools.Result{Err: fmt.Errorf("delegate_agent: arguments must be {agent, task}: %w", err)}
+	}
+	spec, ok := d.snap.Agents[args.Agent]
+	if !ok {
+		return tools.Result{Err: fmt.Errorf("delegate_agent: %w %q (configured: %s)", ErrUnknownAgent, args.Agent, agentList(d.snap))}
+	}
+	if spec.Description == "" {
+		// Not offered for delegation: the description IS the eligibility
+		// contract (routing table and invocation agree).
+		return tools.Result{Err: fmt.Errorf("delegate_agent: %w %q (no description; usable via goal requests only)", ErrNotDelegatable, args.Agent)}
+	}
+	child := runInput{
+		sessionID: d.parent.sessionID, goal: args.Task,
+		providerName: d.parent.providerName, modelID: d.parent.modelID,
+		token: d.parent.token, prov: d.parent.prov,
+		systemPrompt: spec.SystemPrompt, toolAllow: spec.Tools,
+		agentName: spec.Name, depth: d.parent.depth + 1,
+		grant: spec.MaxDepth, isChild: true,
+	}
+	if spec.Model != "" {
+		p, m, found := strings.Cut(spec.Model, "/")
+		if !found || p == "" || m == "" {
+			return tools.Result{Err: fmt.Errorf("delegate_agent: agent %q: %w %q", args.Agent, ErrInvalidAgentModel, spec.Model)}
+		}
+		prov, token, err := d.adapter.provStore.ResolvedLookup(d.ctx, p)
+		if err != nil {
+			return tools.Result{Err: fmt.Errorf("delegate_agent: agent %q model %q: %w", args.Agent, spec.Model, err)}
+		}
+		child.providerName, child.modelID, child.token, child.prov = p, m, token, prov
+	}
+	childExec, err := d.adapter.st.CreateChildExecution(d.parent.sessionID, d.parent.execID, spec.Name)
+	if err != nil {
+		return tools.Result{Err: fmt.Errorf("delegate_agent: child execution: %w", err)}
+	}
+	child.execID = childExec
+	answer, err := d.adapter.runLoop(d.ctx, d.events, child)
+	if err != nil {
+		return tools.Result{Err: fmt.Errorf("delegate_agent: %s: %w", args.Agent, err)}
+	}
+	return tools.Result{Output: answer}
+}
+
+// Cancel stops a session's active run.
+func (a *Adapter) Cancel(ctx context.Context, sessionID string) error {
+	a.mu.Lock()
+	cancel, ok := a.cancels[sessionID]
+	a.mu.Unlock()
+	if ok {
+		cancel()
+	}
+	return nil // idempotent on idle sessions
+}
+
+// Resume is not yet implemented (typed not-yet).
+func (a *Adapter) Resume(ctx context.Context, sessionID string, input domain.UserInput) (<-chan domain.TimelineEvent, error) {
+	return nil, fmt.Errorf("engine: resume not yet implemented")
+}
+
+const systemPrompt = "You are Karta, a local-first assistant. Work toward the user's goal using the available tools. Be direct and useful."
+
+// paramsOneOfFromJSON converts a tool's JSON-Schema parameters object
+// into eino's parameter shape, preserving required flags, types, and
+// descriptions. An empty/invalid schema degrades to no parameters (the
+// pre-delegation behavior) — tool defs are internal constants.
+func paramsOneOfFromJSON(paramsJSON string) *schema.ParamsOneOf {
+	var raw struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+	}
+	if err := json.Unmarshal([]byte(paramsJSON), &raw); err != nil || len(raw.Properties) == 0 {
+		return schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{})
+	}
+	req := map[string]bool{}
+	for _, r := range raw.Required {
+		req[r] = true
+	}
+	out := map[string]*schema.ParameterInfo{}
+	for name, rawParam := range raw.Properties {
+		if pi := paramInfoFromJSON(rawParam, req[name]); pi != nil {
+			out[name] = pi
+		}
+	}
+	return schema.NewParamsOneOfByParams(out)
+}
+
+// paramInfoFromJSON converts one JSON-Schema property (including nested
+// object sub-parameters and number typing) into eino's parameter shape.
+func paramInfoFromJSON(raw json.RawMessage, required bool) *schema.ParameterInfo {
+	var p struct {
+		Type        string                     `json:"type"`
+		Description string                     `json:"description"`
+		Properties  map[string]json.RawMessage `json:"properties"`
+		Required    []string                   `json:"required"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil || p.Type == "" {
+		return nil
+	}
+	pi := &schema.ParameterInfo{Desc: p.Description, Required: required}
+	switch p.Type {
+	case "integer":
+		pi.Type = schema.Integer
+	case "number":
+		pi.Type = schema.Number
+	case "boolean":
+		pi.Type = schema.Boolean
+	case "object":
+		pi.Type = schema.Object
+		subReq := map[string]bool{}
+		for _, r := range p.Required {
+			subReq[r] = true
+		}
+		for subName, subRaw := range p.Properties {
+			if sub := paramInfoFromJSON(subRaw, subReq[subName]); sub != nil {
+				if pi.SubParams == nil {
+					pi.SubParams = map[string]*schema.ParameterInfo{}
+				}
+				pi.SubParams[subName] = sub
+			}
+		}
+	default:
+		pi.Type = schema.String
+	}
+	return pi
+}

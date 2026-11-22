@@ -339,3 +339,35 @@ func (s *Store) ClearSession(sessionID string) error {
 	}
 	return nil
 }
+
+// CreateChildExecution records one delegated child execution under a
+// parent, returning its id. The executions table's parent_id + delegation
+// columns carry the tree.
+func (s *Store) CreateChildExecution(sessionID, parentExecID, agentName string) (string, error) {
+	id := fmt.Sprintf("exec-child-%s-%d", agentName, time.Now().UnixNano())
+	if _, err := s.db.Exec(`INSERT INTO executions (id, session_id, parent_id, status, delegation, created_at)
+		VALUES (?, ?, ?, 'running', ?, ?)`,
+		id, sessionID, parentExecID, agentName, now()); err != nil {
+		return "", fmt.Errorf("store: create child execution: %w", err)
+	}
+	return id, nil
+}
+
+// QueryChildExecutions lists child executions for a session (delegation
+// tree reads).
+func QueryChildExecutions(s *Store, sessionID string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT id FROM executions WHERE session_id = ? AND delegation != 'root'`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("store: child executions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}

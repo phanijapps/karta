@@ -49,12 +49,18 @@ type Fixture struct {
 	// and a nil channel (declared deferral — e.g. the eino adapter today).
 	ResumeImplemented bool
 
+	// Delegation, when non-nil, adds the delegation scenario group:
+	// delegate-and-fold-back, unknown target, depth refusal, cancellation
+	// propagation. Engines without delegation leave it nil (the group is
+	// skipped, matching an empty registry).
+	Delegation *DelegationFixture
+
 	// FailureEventPredicate identifies the event that DESCRIBES a failed
 	// run (e.g. kind agent_step mentioning "model error"). Required — a
 	// failing run that dies silently violates the no-silent-work rule.
 	FailureEventPredicate func(domain.TimelineEvent) bool
 
-	// CompletionEventPredicate identifies the run's COMPLEITION event
+	// CompletionEventPredicate identifies the run's COMPLETION event
 	// (e.g. session-kind mentioning "run completed"). Required — the
 	// session KIND alone also covers goal/cancel/step-bound transitions,
 	// so ordering asserts on it alone can pass without a completion.
@@ -73,6 +79,9 @@ func Suite(t *testing.T, fx Fixture) {
 	t.Run("ConcurrentRunsUniqueEventIDs", func(t *testing.T) { testConcurrentEventIDs(t, fx) })
 	t.Run("Resume", func(t *testing.T) { testResume(t, fx) })
 	t.Run("GoroutineHygiene", func(t *testing.T) { testGoroutineHygiene(t, fx) })
+	if fx.Delegation != nil {
+		t.Run("Delegation", func(t *testing.T) { testDelegation(t, fx) })
+	}
 }
 
 func testName(t *testing.T, fx Fixture) {

@@ -24,6 +24,7 @@ import (
 	"zbot/backend/internal/engine"
 	"zbot/backend/internal/eventbus"
 	"zbot/backend/internal/providers"
+	"zbot/backend/internal/registry"
 	"zbot/backend/internal/store"
 	"zbot/backend/internal/tools"
 )
@@ -50,7 +51,13 @@ type Adapter struct {
 	st        *store.Store
 	bus       *eventbus.Bus
 	toolProv  tools.Provider
-	idGen     func() string
+	// snapFn supplies registry snapshots (agents for delegation); nil =
+	// no agents (delegation off, agent-named runs refuse with the empty
+	// list).
+	snapFn func() registry.Snapshot
+	// depthCap bounds the delegation tree regardless of agent grants.
+	depthCap int
+	idGen    func() string
 	// newModel builds (or fakes, in tests) the chat client on a cache miss.
 	newModel func(ctx context.Context, prov providers.Provider, token, modelID string) (chatGenerator, error)
 
@@ -59,10 +66,14 @@ type Adapter struct {
 	models  map[string]chatGenerator      // cache: provider/model/key → model
 }
 
-// New creates the engine adapter.
-func New(provStore ProviderStore, st *store.Store, bus *eventbus.Bus, toolProv tools.Provider) *Adapter {
+// DefaultDepthCap bounds delegation depth unless configured lower.
+const DefaultDepthCap = 2
+
+// New creates the engine adapter. snapFn may be nil.
+func New(provStore ProviderStore, st *store.Store, bus *eventbus.Bus, toolProv tools.Provider, snapFn func() registry.Snapshot) *Adapter {
 	return &Adapter{
 		provStore: provStore, st: st, bus: bus, toolProv: toolProv,
+		snapFn: snapFn, depthCap: DefaultDepthCap,
 		cancels: map[string]context.CancelFunc{},
 		models:  map[string]chatGenerator{},
 		idGen:   func() string { return fmt.Sprintf("evt-%d", nextID()) },
@@ -86,11 +97,32 @@ func nextID() int64 {
 func (a *Adapter) Name() string { return "eino" }
 
 // RunGoal starts an autonomous run toward req.Goal, streaming TimelineEvents.
-// Model resolution is request-only today (F-25): req.Model must name
-// provider/model-id; req.Agent and req.Context are accepted but NOT yet
-// forwarded into the run (the agent seam lands with the run-ownership
+// Model precedence: the request's model, else the named agent's, else a
+// typed refusal. req.Agent shapes the run (system prompt, tool allowlist,
+// delegation grant); req.Context remains unimplemented (run-ownership
 // follow-up).
 func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan domain.TimelineEvent, error) {
+	var snap registry.Snapshot
+	if a.snapFn != nil {
+		snap = a.snapFn()
+	}
+	in := runInput{systemPrompt: systemPrompt, grant: a.depthCap}
+	if req.Agent != "" {
+		spec, ok := snap.Agents[req.Agent]
+		if !ok {
+			return nil, fmt.Errorf("%w %q (configured: %s)", ErrUnknownAgent, req.Agent, agentList(snap))
+		}
+		in.agentName = spec.Name
+		in.systemPrompt = spec.SystemPrompt
+		if in.systemPrompt == "" && spec.Prompt != "" {
+			in.systemPrompt = "(prompt template " + spec.Prompt + ")"
+		}
+		in.toolAllow = spec.Tools
+		in.grant = spec.MaxDepth
+		if req.Model == "" && spec.Model != "" {
+			req.Model = spec.Model
+		}
+	}
 	modelRef := req.Model
 	if modelRef == "" {
 		return nil, fmt.Errorf("engine: no model selected — pass model or configure the agent's model")
@@ -99,6 +131,7 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 	if !found || providerName == "" || modelID == "" {
 		return nil, fmt.Errorf("engine: invalid model reference %q (want provider/model-id)", modelRef)
 	}
+	in.providerName, in.modelID = providerName, modelID
 
 	// Resolve provider + credential atomically.
 	prov, token, err := a.provStore.ResolvedLookup(ctx, providerName)
@@ -122,11 +155,9 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 	a.cancels[sessionID] = cancel
 	a.mu.Unlock()
 
+	in.sessionID, in.execID, in.goal, in.token, in.prov = sessionID, rootExec, req.Goal, token, prov
 	events := make(chan domain.TimelineEvent, 64)
-	go a.run(runCtx, cancel, events, runInput{
-		sessionID: sessionID, execID: rootExec, goal: req.Goal,
-		providerName: providerName, modelID: modelID, token: token, prov: prov,
-	})
+	go a.run(runCtx, cancel, events, in)
 	return events, nil
 }
 
@@ -134,8 +165,18 @@ type runInput struct {
 	sessionID, execID, goal      string
 	providerName, modelID, token string
 	prov                         providers.Provider
+
+	// Delegation wiring: agent-shaped runs and children.
+	systemPrompt string   // resolved system prompt (agent body or default)
+	toolAllow    []string // agent allowlist (nil = all tools)
+	agentName    string   // "" for root default wiring
+	depth        int      // 0 = root
+	grant        int      // may delegate while depth < grant (agent max_depth; root = cap)
+	isChild      bool     // children surface steps as delegation events
 }
 
+// run is the ROOT wrapper: cleanup, cancellation registration, channel
+// close. Children bypass it (no cancels-map entry, no channel close).
 func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events chan domain.TimelineEvent, in runInput) {
 	defer func() {
 		cancel()
@@ -144,11 +185,35 @@ func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events cha
 		a.mu.Unlock()
 		close(events)
 	}()
+	// Root run: the answer was already emitted as the final agent step;
+	// runLoop's error variants emit their own failure events (the caller
+	// observes the stream, not the return value).
+	if _, err := a.runLoop(ctx, events, in); err != nil {
+		// Nothing further to do at the root: the failure event and
+		// execution status were already recorded inside the loop.
+		_ = err
+	}
+}
+
+// runLoop is the ONE bounded loop for roots and children: returns the
+// final answer text ("" on failure/cancellation). Children reuse it via
+// the delegate tool with their own execution record and wiring.
+func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent, in runInput) (string, error) {
 
 	emit := func(kind domain.TimelineEventKind, text string) {
+		chanKind, chanAgent := kind, in.providerName+"/"+in.modelID
+		if in.isChild {
+			// Child steps surface in the parent's stream as delegation
+			// events (the Timeline Tree keeps the original kinds under
+			// the child's execution).
+			chanKind, chanAgent = domain.EventDelegation, in.agentName
+		} else if in.agentName != "" {
+			// Named root runs attribute their events to the agent.
+			chanAgent = in.agentName
+		}
 		evt := domain.TimelineEvent{
-			ID: a.idGen(), SessionID: in.sessionID, Kind: kind,
-			Text: text, Agent: in.providerName + "/" + in.modelID,
+			ID: a.idGen(), SessionID: in.sessionID, Kind: chanKind,
+			Text: text, Agent: chanAgent,
 		}
 		// ATTEMPTED-durable-first (F-15, pinned by characterization tests):
 		// the append error is IGNORED — publish and stream happen anyway, so
@@ -182,7 +247,7 @@ func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events cha
 		if err != nil {
 			emit(domain.EventAgentStep, "engine: failed to create chat model: "+err.Error())
 			_ = a.st.FinishExecution(in.execID, "failed", err.Error(), 0, 0)
-			return
+			return "", fmt.Errorf("engine: chat model: %w", err)
 		}
 		a.mu.Lock()
 		a.models[modelKey] = chatModel
@@ -198,53 +263,81 @@ func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events cha
 	if err != nil {
 		emit(domain.EventAgentStep, "engine: failed to persist goal: "+err.Error())
 		_ = a.st.FinishExecution(in.execID, "failed", err.Error(), 0, 0)
-		return
+		return "", fmt.Errorf("engine: persist goal: %w", err)
 	}
 	emit(domain.EventSession, fmt.Sprintf("goal: %s", in.goal))
 
 	// Bounded loop over the spike-verified Generate + WithTools.
 	var tokensIn, tokensOut int64
+	var childMsgs []*schema.Message // child's retained conversation (P1-2)
 	for step := 0; step < MaxSteps; step++ {
 		if ctx.Err() != nil {
 			emit(domain.EventSession, "run cancelled")
 			_ = a.st.FinishExecution(in.execID, "cancelled", "", tokensIn, tokensOut)
-			return
+			return "", fmt.Errorf("engine: cancelled")
 		}
 
-		// Build messages: goal + history.
-		hw, err := a.st.HistoryWindow(in.sessionID, "", 200)
-		if err != nil {
-			emit(domain.EventAgentStep, "engine: history error: "+err.Error())
-			break
-		}
+		// Build messages. Root: compaction-aware session history. Child:
+		// a FRESH context — system prompt + the delegated task only (the
+		// parent embeds needed context in the task; inheriting the whole
+		// session transcript pollutes the child and bills the parent's
+		// history twice).
 		var msgs []*schema.Message
-		msgs = append(msgs, schema.SystemMessage(systemPrompt))
-		if hw.Summary != nil {
-			msgs = append(msgs, schema.SystemMessage(hw.Summary.Content))
+		if in.isChild && childMsgs != nil {
+			msgs = childMsgs // retained child conversation (tool rounds feed back)
+		} else {
+			msgs = append(msgs, schema.SystemMessage(in.systemPrompt))
 		}
-		for _, m := range hw.Rows {
-			switch m.Role {
-			case "user":
-				msgs = append(msgs, schema.UserMessage(m.Content))
-			case "assistant":
-				am := &schema.Message{Role: schema.Assistant, Content: m.Content}
-				if m.ToolCalls != "" {
-					_ = json.Unmarshal([]byte(m.ToolCalls), &am.ToolCalls)
+		if in.isChild {
+			if childMsgs == nil {
+				msgs = append(msgs, schema.UserMessage(in.goal))
+				childMsgs = msgs
+			}
+		} else {
+			hw, err := a.st.RootWindowFull(in.sessionID, in.execID, 200)
+			if err != nil {
+				emit(domain.EventAgentStep, "engine: history error: "+err.Error())
+				return "", fmt.Errorf("engine: history: %w", err)
+			}
+			if hw.Summary != nil {
+				msgs = append(msgs, schema.SystemMessage(hw.Summary.Content))
+			}
+			for _, m := range hw.Rows {
+				switch m.Role {
+				case "user":
+					msgs = append(msgs, schema.UserMessage(m.Content))
+				case "assistant":
+					am := &schema.Message{Role: schema.Assistant, Content: m.Content}
+					if m.ToolCalls != "" {
+						_ = json.Unmarshal([]byte(m.ToolCalls), &am.ToolCalls)
+					}
+					msgs = append(msgs, am)
+				case "tool":
+					msgs = append(msgs, &schema.Message{Role: schema.Tool, Content: m.Content, ToolCallID: m.ToolCallID, ToolName: m.ToolName})
 				}
-				msgs = append(msgs, am)
-			case "tool":
-				msgs = append(msgs, &schema.Message{Role: schema.Tool, Content: m.Content, ToolCallID: m.ToolCallID, ToolName: m.ToolName})
 			}
 		}
 
-		// Offer tools on all but the final step.
+		// Offer tools on all but the final step: the agent's allowlist
+		// plus the delegate tool when this run's depth grant allows. The
+		// offered set is ALSO the execution inventory (an allowlist binds
+		// execution, not just the menu; the delegate tool is executable).
 		var opts []model.Option
+		var offered []tools.Tool
 		if step < MaxSteps-1 {
+			if in.toolAllow != nil && len(in.toolAllow) == 0 {
+				offered = nil // tools: [] is an EXPLICIT no-tools inventory
+			} else {
+				offered = engine.FilterTools(a.toolProv, in.toolAllow)
+			}
+			if in.depth < in.grant && in.depth < a.depthCap && a.snapFn != nil {
+				offered = append(offered, a.delegateTool(ctx, events, in))
+			}
 			var toolInfos []*schema.ToolInfo
-			for _, t := range engine.FilterTools(a.toolProv, nil) {
+			for _, t := range offered {
 				d := t.Def()
 				ti := &schema.ToolInfo{Name: d.Name, Desc: d.Description,
-					ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{})}
+					ParamsOneOf: paramsOneOfFromJSON(d.ParamsJSON)}
 				toolInfos = append(toolInfos, ti)
 			}
 			if len(toolInfos) > 0 {
@@ -257,11 +350,11 @@ func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events cha
 			if ctx.Err() != nil {
 				emit(domain.EventSession, "run cancelled")
 				_ = a.st.FinishExecution(in.execID, "cancelled", "", tokensIn, tokensOut)
-				return
+				return "", fmt.Errorf("engine: cancelled: %w", ctx.Err())
 			}
 			emit(domain.EventAgentStep, "engine: model error: "+err.Error())
 			_ = a.st.FinishExecution(in.execID, "failed", err.Error(), tokensIn, tokensOut)
-			return
+			return "", fmt.Errorf("engine: model error: %w", err)
 		}
 		if out.ResponseMeta != nil && out.ResponseMeta.Usage != nil {
 			tokensIn += int64(out.ResponseMeta.Usage.PromptTokens)
@@ -278,7 +371,7 @@ func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events cha
 			emit(domain.EventAgentStep, out.Content)
 			emit(domain.EventSession, "run completed")
 			_ = a.st.FinishExecution(in.execID, "completed", "", tokensIn, tokensOut)
-			return
+			return out.Content, nil
 		}
 
 		// Tool round: persist intent, execute, persist results.
@@ -289,9 +382,12 @@ func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events cha
 			ToolCalls: string(intentJSON), Provider: in.providerName, Model: in.modelID,
 		})
 		emit(domain.EventAgentStep, out.Content)
+		if in.isChild {
+			childMsgs = append(childMsgs, out)
+		}
 
 		for _, tc := range out.ToolCalls {
-			result := engine.ExecuteTool(ctx, a.toolProv, tc.Function.Name, tc.Function.Arguments)
+			result := execOffered(ctx, offered, tc.Function.Name, tc.Function.Arguments)
 			content := result.Output
 			if result.Err != nil {
 				content = "error: " + result.Err.Error()
@@ -302,42 +398,43 @@ func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events cha
 				ID: a.idGen(), SessionID: in.sessionID, ExecutionID: in.execID,
 				Kind: "tool_call", Payload: string(payload),
 			})
+			toolEvt := domain.TimelineEvent{
+				ID: a.idGen(), SessionID: in.sessionID, Kind: domain.EventToolCall,
+				ToolCall: &domain.ToolCallPayload{Tool: tc.Function.Name, Output: content},
+			}
+			if in.isChild || in.agentName != "" {
+				// Tool events carry the agent attribution (child runs
+				// surface them as delegation events like every step).
+				toolEvt.Agent = in.agentName
+				if in.isChild {
+					toolEvt.Kind = domain.EventDelegation
+				}
+			}
 			if a.bus != nil {
-				_ = a.bus.Publish(context.Background(), domain.TimelineEvent{ // ctx-ok: F-15
-					ID: a.idGen(), SessionID: in.sessionID, Kind: domain.EventToolCall,
-					ToolCall: &domain.ToolCallPayload{Tool: tc.Function.Name, Output: content},
-				})
+				_ = a.bus.Publish(context.Background(), toolEvt) // ctx-ok: F-15
+			}
+			select {
+			case events <- toolEvt:
+			case <-ctx.Done():
 			}
 			_, _ = a.st.Append(store.Message{
 				ID: fmt.Sprintf("msg-tool-%d", nextID()), SessionID: in.sessionID,
 				ExecutionID: in.execID, Role: "tool", Content: content,
 				ToolCallID: tc.ID, ToolName: tc.Function.Name,
 			})
+			if in.isChild {
+				childMsgs = append(childMsgs, &schema.Message{
+					Role: schema.Tool, Content: content, ToolCallID: tc.ID, ToolName: tc.Function.Name,
+				})
+			}
 		}
 	}
 
 	// Step bound reached.
 	emit(domain.EventSession, "run stopped: step bound reached")
 	_ = a.st.FinishExecution(in.execID, "failed", "step bound reached", tokensIn, tokensOut)
+	return "", fmt.Errorf("engine: step bound reached")
 }
-
-// Cancel stops a session's active run.
-func (a *Adapter) Cancel(ctx context.Context, sessionID string) error {
-	a.mu.Lock()
-	cancel, ok := a.cancels[sessionID]
-	a.mu.Unlock()
-	if ok {
-		cancel()
-	}
-	return nil // idempotent on idle sessions
-}
-
-// Resume is not yet implemented (typed not-yet).
-func (a *Adapter) Resume(ctx context.Context, sessionID string, input domain.UserInput) (<-chan domain.TimelineEvent, error) {
-	return nil, fmt.Errorf("engine: resume not yet implemented")
-}
-
-const systemPrompt = "You are Karta, a local-first assistant. Work toward the user's goal using the available tools. Be direct and useful."
 
 // hashToken produces a short stable hash for cache keying (never the
 // token itself).
@@ -345,4 +442,16 @@ func hashToken(token string) string {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(token))
 	return fmt.Sprint(h.Sum32())
+}
+
+// execOffered executes one tool call against the step's offered inventory
+// (allowlist + delegate). Unknown or non-offered names are typed errors the
+// model can see — never silent execution outside the inventory.
+func execOffered(ctx context.Context, offered []tools.Tool, name, argsJSON string) tools.Result {
+	for _, t := range offered {
+		if t.Def().Name == name {
+			return t.Exec(ctx, argsJSON)
+		}
+	}
+	return tools.Result{Err: fmt.Errorf("%w: %q", ErrToolNotOffered, name)}
 }

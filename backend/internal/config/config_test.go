@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"zbot/backend/internal/registry"
 )
 
 func tempHome(t *testing.T) (string, Paths) {
@@ -82,11 +83,19 @@ func TestBootstrapFirstRunCreatesStructureOnly(t *testing.T) {
 			t.Fatalf("%s missing or not a dir: %v", dir, err)
 		}
 	}
-	// Structure, never content: no seeded files in the registry dirs.
+	// Structure, never content — the ONE exception: agents/ seeds two
+	// EXAMPLE agent definitions (add-engine-delegation; user-owned after
+	// first bootstrap). Every other registry dir stays empty.
 	for _, dir := range paths.AllConfigDirs() {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			t.Fatalf("ReadDir %s: %v", dir, err)
+		}
+		if dir == paths.ConfigDir("agents") {
+			if len(entries) != 2 {
+				t.Fatalf("agents seed count: %d", len(entries))
+			}
+			continue
 		}
 		if len(entries) != 0 {
 			t.Fatalf("%s seeded with content: %v", dir, entries)
@@ -516,4 +525,40 @@ func TestChittaRecallValidation(t *testing.T) {
 			t.Fatalf("negative rerank_top must fail: %v", err)
 		}
 	})
+}
+
+// Bootstrap seeds the example agents once (user-owned afterward).
+func TestBootstrapSeedsExampleAgents(t *testing.T) {
+	t.Parallel()
+	paths := NewPaths(t.TempDir())
+	if err := Bootstrap(paths); err != nil {
+		t.Fatal(err)
+	}
+	dir := paths.ConfigDir("agents")
+	for _, name := range []string{"research-agent.example.md", "reviewer-agent.example.md"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Fatalf("missing seed %s: %v", name, err)
+		}
+	}
+	// The seeds load as valid agents with delegation metadata.
+	reg := registry.New()
+	snap, errs := reg.LoadAll(registry.Dirs{Agents: dir, ConfigFile: paths.ConfigFile})
+	if len(errs) != 0 {
+		t.Fatalf("seed agents do not load: %v", errs)
+	}
+	if r, ok := snap.Agents["research-agent"]; !ok || r.Description == "" || r.MaxDepth != 0 {
+		t.Fatalf("research-agent seed wrong: %+v", r)
+	}
+	// Idempotent + user-owned: editing a seed survives re-bootstrap.
+	owned := filepath.Join(dir, "research-agent.example.md")
+	if err := os.WriteFile(owned, []byte("---\nname: research-agent\ndescription: mine now\n---\nBody."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Bootstrap(paths); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(owned)
+	if !strings.Contains(string(raw), "mine now") {
+		t.Fatal("bootstrap overwrote a user-owned agent file")
+	}
 }

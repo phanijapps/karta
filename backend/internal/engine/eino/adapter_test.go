@@ -2,11 +2,13 @@ package eino
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"zbot/backend/internal/engine/contracttest"
 	"zbot/backend/internal/eventbus"
 	"zbot/backend/internal/providers"
+	"zbot/backend/internal/registry"
 	"zbot/backend/internal/store"
 	"zbot/backend/internal/tools"
 )
@@ -167,7 +170,7 @@ func newTestAdapter(t *testing.T, mf *modelFactory) *Adapter {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	a := New(fakeProviderStore{}, db, eventbus.New(), tools.BuiltinProvider{})
+	a := New(fakeProviderStore{}, db, eventbus.New(), tools.BuiltinProvider{}, nil)
 	a.newModel = mf.new
 	return a
 }
@@ -221,6 +224,48 @@ func TestContractSuite(t *testing.T) {
 			}
 		},
 		ResumeImplemented: false, // pinned: adapter returns "not yet implemented"
+		Delegation: &contracttest.DelegationFixture{
+			DelegateAgent: "researcher",
+			Engine:        suiteDelegEngine,
+			StartUnknownTarget: func(ctx context.Context, sessionID string) (<-chan domain.TimelineEvent, error) {
+				gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+					"delegate": {
+						{toolCall: "delegate_agent", args: `{"agent":"ghost","task":"x"}`},
+						{content: "recovered"},
+					},
+				}}
+				a := newDelegatingAdapter(t, gen, agentSnap)
+				return a.RunGoal(ctx, domain.GoalRequest{SessionID: sessionID, Goal: "delegate " + sessionID, Model: "prov/m1"})
+			},
+			StartDepthRefused: func(ctx context.Context, sessionID string) (<-chan domain.TimelineEvent, error) {
+				// A named agent with max_depth 0 CANNOT delegate even at
+				// depth 0 (0 < 0 false): run under such an agent with a
+				// script that tries — refusal must leave no delegation
+				// events and the run still completes.
+				gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+					"delegate": {
+						{toolCall: "delegate_agent", args: `{"agent":"researcher","task":"x"}`},
+						{content: "recovered without delegating"},
+					},
+				}}
+				snap := agentSnap() // researcher.max_depth = 0
+				a := newDelegatingAdapter(t, gen, func() registry.Snapshot { return snap })
+				return a.RunGoal(ctx, domain.GoalRequest{SessionID: sessionID, Goal: "delegate " + sessionID, Agent: "researcher", Model: "prov/m1"})
+			},
+			ChildAnswer: "research findings: X is Y",
+			StartDelegating: func(ctx context.Context, sessionID string) (<-chan domain.TimelineEvent, error) {
+				gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+					"delegate": {
+						{toolCall: "delegate_agent", args: `{"agent":"researcher","task":"child-task research X"}`},
+						{content: "root synthesized"},
+					},
+					"child-task": {{content: "research findings: X is Y"}},
+				}}
+				a := newDelegatingAdapter(t, gen, agentSnap)
+				suiteDelegEngine.eng = a
+				return a.RunGoal(ctx, domain.GoalRequest{SessionID: sessionID, Goal: "delegate " + sessionID, Model: "prov/m1"})
+			},
+		},
 		FailureEventPredicate: func(evt domain.TimelineEvent) bool {
 			return evt.Kind == domain.EventAgentStep && strings.Contains(evt.Text, "model error")
 		},
@@ -435,5 +480,458 @@ func TestAdapterEmitSurvivesClosedBus(t *testing.T) {
 	}
 	if len(events) == 0 {
 		t.Fatal("no durable events persisted on the closed-bus path")
+	}
+}
+
+// --- Delegation (add-engine-delegation) --------------------------------------
+//
+// The fake generator routes by goal marker: "delegate" rounds call the
+// delegate_agent tool; child goals ("child-task") answer directly.
+
+func agentSnap() registry.Snapshot {
+	snap := registry.Snapshot{Agents: map[string]registry.AgentSpec{}}
+	snap.Agents["researcher"] = registry.AgentSpec{
+		Name: "researcher", SystemPrompt: "You research.", Description: "Gathers evidence.",
+		Model: "prov/m-research", Tools: []string{"clock_now"}, MaxDepth: 0,
+	}
+	snap.Agents["planner"] = registry.AgentSpec{
+		Name: "planner", SystemPrompt: "You plan.", Description: "Plans work.", MaxDepth: 1,
+	}
+	return snap
+}
+
+func newDelegatingAdapter(t *testing.T, gen *routingGenerator, snapFn func() registry.Snapshot) *Adapter {
+	t.Helper()
+	db, err := store.Open(filepath.Join(t.TempDir(), "deleg.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	a := New(fakeProviderStore{}, db, eventbus.New(), tools.BuiltinProvider{}, snapFn)
+	a.newModel = func(context.Context, providers.Provider, string, string) (chatGenerator, error) {
+		return gen, nil
+	}
+	return a
+}
+
+func TestAgentNamedRunUsesAgentsWiring(t *testing.T) {
+	t.Parallel()
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{}}
+	a := newDelegatingAdapter(t, gen, agentSnap)
+	ch, err := a.RunGoal(context.Background(), domain.GoalRequest{
+		SessionID: "agent-run", Goal: "quick agent-run", Agent: "researcher",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range ch {
+	}
+	// The child's model was the agent's override and the run completed.
+	msgs, _ := a.st.Replay("agent-run", 0, 8)
+	if len(msgs) == 0 {
+		t.Fatal("no rows")
+	}
+	// System prompt used: capture via the fake is not wired; the store's
+	// provenance proves the model override instead.
+	last := msgs[len(msgs)-1]
+	if last.Model != "m-research" || last.Provider != "prov" {
+		t.Fatalf("agent model override not used: %+v", last)
+	}
+}
+
+func TestAgentNamedRunUnknownFailsTyped(t *testing.T) {
+	t.Parallel()
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{}}
+	a := newDelegatingAdapter(t, gen, agentSnap)
+	_, err := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "x", Goal: "g", Agent: "ghost"})
+	if err == nil || !strings.Contains(err.Error(), "researcher") {
+		t.Fatalf("unknown agent must fail typed listing configured agents: %v", err)
+	}
+}
+
+func TestDelegateAndFoldBack(t *testing.T) {
+	t.Parallel()
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{}}
+	a := newDelegatingAdapter(t, gen, agentSnap)
+
+	// Root ("delegate ...") delegates to researcher; the child goal
+	// ("child-task ...") answers directly.
+	childAnswer := "research findings: X is Y"
+	gen.scripts = map[string][]fakeGenStep{
+		"delegate": {
+			{toolCall: "delegate_agent", args: `{"agent":"researcher","task":"child-task research X"}`},
+			{content: "root synthesized: " + childAnswer},
+		},
+		"child-task": {{content: childAnswer}},
+	}
+
+	ch, err := a.RunGoal(context.Background(), domain.GoalRequest{
+		SessionID: "deleg-1", Goal: "delegate root goal", Model: "prov/m1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawDelegation, sawAnswer bool
+	for evt := range ch {
+		if evt.Kind == domain.EventDelegation {
+			sawDelegation = true
+		}
+		if evt.Kind == domain.EventAgentStep && strings.Contains(evt.Text, childAnswer) {
+			sawAnswer = true
+		}
+	}
+	if !sawDelegation {
+		t.Fatal("no delegation events in the parent stream")
+	}
+	if !sawAnswer {
+		t.Fatal("child answer did not fold back into the parent stream")
+	}
+	// The child execution exists with parent linkage.
+	var childExecs int
+	rows, _ := store.QueryChildExecutions(a.st, "deleg-1")
+	childExecs = len(rows)
+	if childExecs != 1 {
+		t.Fatalf("want 1 child execution, got %d", childExecs)
+	}
+}
+
+func TestDelegateUnknownAgentIsTypedToolError(t *testing.T) {
+	t.Parallel()
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{}}
+	a := newDelegatingAdapter(t, gen, agentSnap)
+	gen.scripts = map[string][]fakeGenStep{
+		"delegate": {
+			{toolCall: "delegate_agent", args: `{"agent":"ghost","task":"anything"}`},
+			{content: "recovered"},
+		},
+	}
+	ch, err := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "deleg-2", Goal: "delegate unknown", Model: "prov/m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainUntilClosed(ch, 5*time.Second)
+	// The run recovered (final answer recorded despite the typed error).
+	msgs, _ := a.st.Replay("deleg-2", 0, 16)
+	found := false
+	for _, m := range msgs {
+		if m.Role == "assistant" && m.Content == "recovered" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("parent run did not continue past the unknown-agent tool error")
+	}
+}
+
+func TestDelegationDepthGrantAndCap(t *testing.T) {
+	t.Parallel()
+	// Grant semantics: canDelegate = depth < spec.MaxDepth. Root (depth 0,
+	// grant = cap 2) delegates to planner; planner (MaxDepth 2) at depth 1
+	// MAY delegate once (1 < 2, and 1 < cap 2); the grandchild researcher
+	// (MaxDepth 0) at depth 2 cannot (2 < 0 false, 2 < cap false) — and the
+	// researcher spec in agentSnap is what enforces depth refusal.
+	snap := agentSnap()
+	snap.Agents["planner"] = registry.AgentSpec{
+		Name: "planner", SystemPrompt: "You plan.", Description: "Plans work.", MaxDepth: 2,
+	}
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{}}
+	a := newDelegatingAdapter(t, gen, func() registry.Snapshot { return snap })
+	gen.scripts = map[string][]fakeGenStep{
+		"delegate": {
+			{toolCall: "delegate_agent", args: `{"agent":"planner","task":"plan it now"}`},
+			{content: "root done"},
+		},
+		"plan it": {
+			{toolCall: "delegate_agent", args: `{"agent":"researcher","task":"child-task deep"}`},
+			{content: "planner done"},
+		},
+		"child-task": {{content: "deep answer"}},
+	}
+	ch, err := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "deleg-3", Goal: "delegate nested", Model: "prov/m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainUntilClosed(ch, 10*time.Second)
+	rows, _ := store.QueryChildExecutions(a.st, "deleg-3")
+	if len(rows) != 2 {
+		t.Fatalf("want 2 child executions (planner + researcher), got %d", len(rows))
+	}
+}
+
+// fakeGenStep is one scripted generator turn: a final answer (content) or
+// a tool call (toolCall+args).
+type fakeGenStep struct {
+	content  string
+	toolCall string
+	args     string
+}
+
+// routingGenerator scripts completions BY GOAL MARKER: the first user
+// message's content picks the script; steps play in order, the last
+// repeats. Parent/child flows route naturally ("delegate ...", "plan it",
+// "child-task ...").
+type routingGenerator struct {
+	mu      sync.Mutex
+	scripts map[string][]fakeGenStep
+	calls   map[string]int // per-marker call index (advances the script)
+}
+
+func (g *routingGenerator) Generate(_ context.Context, msgs []*schema.Message, _ ...model.Option) (*schema.Message, error) {
+	marker := ""
+	for _, m := range msgs {
+		if m.Role == schema.User {
+			marker = m.Content
+			break
+		}
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	script := g.scripts["*"]
+	for prefix, sc := range g.scripts {
+		if prefix != "*" && strings.HasPrefix(marker, prefix) {
+			script = sc
+			break
+		}
+	}
+	if len(script) == 0 {
+		return &schema.Message{Role: schema.Assistant, Content: "done"}, nil
+	}
+	if g.calls == nil {
+		g.calls = map[string]int{}
+	}
+	idx := g.calls[marker]
+	g.calls[marker] = idx + 1
+	if idx >= len(script) {
+		idx = len(script) - 1
+	}
+	step := script[idx]
+	if step.toolCall != "" {
+		msg := &schema.Message{Role: schema.Assistant}
+		msg.ToolCalls = []schema.ToolCall{{
+			ID: fmt.Sprintf("call-%d", nextFakeCallID.Add(1)), Type: "function",
+			Function: schema.FunctionCall{Name: step.toolCall, Arguments: step.args},
+		}}
+		return msg, nil
+	}
+	return &schema.Message{Role: schema.Assistant, Content: step.content}, nil
+}
+
+var nextFakeCallID atomic.Int64
+
+// suiteDelegEngine is the delegation fixture's engine holder (set on
+// first StartDelegating).
+var suiteDelegEngine = &delegEngineHolder{}
+
+// delegEngineHolder lets the delegation fixture's Cancel case reach the
+// adapter built inside StartDelegating (set on first start).
+type delegEngineHolder struct{ eng *Adapter }
+
+func (h *delegEngineHolder) Name() string { return "eino-deleg" }
+func (h *delegEngineHolder) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan domain.TimelineEvent, error) {
+	return h.eng.RunGoal(ctx, req)
+}
+func (h *delegEngineHolder) Resume(ctx context.Context, sessionID string, input domain.UserInput) (<-chan domain.TimelineEvent, error) {
+	return h.eng.Resume(ctx, sessionID, input)
+}
+func (h *delegEngineHolder) Cancel(ctx context.Context, sessionID string) error {
+	return h.eng.Cancel(ctx, sessionID)
+}
+
+// --- Gate-fix tests (P1/P2 from the delegation review) -----------------------
+
+// P1-1: offered tool defs carry REAL parameter schemas — a provider sees
+// delegate_agent's required agent/task properties.
+func TestDelegateToolParamsExposed(t *testing.T) {
+	t.Parallel()
+	ti := &capturedToolInfos{}
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+		"delegate": {
+			{toolCall: "delegate_agent", args: `{"agent":"researcher","task":"child-task x"}`},
+			{content: "done"},
+		},
+		"child-task": {{content: "child answer"}},
+	}}
+	a := newDelegatingAdapter(t, gen, agentSnap)
+	a.newModel = func(context.Context, providers.Provider, string, string) (chatGenerator, error) {
+		return ti, nil
+	}
+	ch, _ := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "params", Goal: "delegate params", Model: "prov/m1"})
+	drainUntilClosed(ch, 5*time.Second)
+	ti.mu.Lock()
+	defer ti.mu.Unlock()
+	var delegate *schema.ToolInfo
+	for _, info := range ti.infos {
+		if info.Name == "delegate_agent" {
+			delegate = info
+		}
+	}
+	if delegate == nil {
+		t.Fatal("delegate_agent not offered")
+	}
+	if delegate.ParamsOneOf == nil {
+		t.Fatal("no params on delegate_agent")
+	}
+	// The JSON-schema conversion: agent + task present.
+	js, err := delegate.ToJSONSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(js.Properties)
+	if !strings.Contains(string(raw), "agent") || !strings.Contains(string(raw), "task") {
+		t.Fatalf("delegate params missing agent/task: %s", raw)
+	}
+}
+
+// capturedToolInfos records offered tool infos (the fake generator that
+// OBSERVES options — proving what a provider would receive).
+type capturedToolInfos struct {
+	mu      sync.Mutex
+	infos   []*schema.ToolInfo
+	sawCall bool
+}
+
+func (c *capturedToolInfos) Generate(_ context.Context, _ []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	o := model.GetCommonOptions(&model.Options{}, opts...)
+	c.mu.Lock()
+	c.sawCall = true
+	if o != nil {
+		c.infos = o.Tools // nil (no WithTools) or the offered slice
+	}
+	c.mu.Unlock()
+	// Delegate immediately (routing by first user message not available
+	// here): answer directly; the offering capture is what this fake is for.
+	return &schema.Message{Role: schema.Assistant, Content: "captured"}, nil
+}
+
+// P1-4: tools: [] is an explicit NO-TOOLS inventory.
+func TestExplicitEmptyAllowlistGrantsNoTools(t *testing.T) {
+	t.Parallel()
+	gen := &capturedToolInfos{}
+	snap := agentSnap()
+	noTools := registry.AgentSpec{Name: "bare", SystemPrompt: "No tools.", Description: "Bare.", Tools: []string{}, MaxDepth: 0}
+	snap.Agents["bare"] = noTools
+	a := newDelegatingAdapter(t, &routingGenerator{scripts: map[string][]fakeGenStep{}}, func() registry.Snapshot { return snap })
+	a.newModel = func(context.Context, providers.Provider, string, string) (chatGenerator, error) {
+		return gen, nil
+	}
+	ch, _ := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "bare", Goal: "bare run", Agent: "bare", Model: "prov/m1"})
+	drainUntilClosed(ch, 5*time.Second)
+	gen.mu.Lock()
+	defer gen.mu.Unlock()
+	if !gen.sawCall {
+		t.Fatal("no generation observed — test broken")
+	}
+	if len(gen.infos) != 0 {
+		t.Fatalf("tools: [] must offer NO inventory tools, got %d", len(gen.infos))
+	}
+	// INTENDED semantics: delegate is depth-granted MACHINERY, not
+	// inventory — tools:[] + max_depth>0 is a pure delegating orchestrator
+	// (the planner pattern). Pin it.
+	orch := registry.AgentSpec{Name: "orchestrator", SystemPrompt: "Delegate everything.",
+		Description: "Pure orchestrator.", Tools: []string{}, MaxDepth: 1}
+	snapO := agentSnap()
+	snapO.Agents["orchestrator"] = orch
+	genO := &capturedToolInfos{}
+	aO := newDelegatingAdapter(t, &routingGenerator{scripts: map[string][]fakeGenStep{}}, func() registry.Snapshot { return snapO })
+	aO.newModel = func(context.Context, providers.Provider, string, string) (chatGenerator, error) {
+		return genO, nil
+	}
+	chO, _ := aO.RunGoal(context.Background(), domain.GoalRequest{SessionID: "orch", Goal: "orchestrate", Agent: "orchestrator", Model: "prov/m1"})
+	drainUntilClosed(chO, 5*time.Second)
+	genO.mu.Lock()
+	defer genO.mu.Unlock()
+	if len(genO.infos) != 1 || genO.infos[0].Name != "delegate_agent" {
+		var names []string
+		for _, ti := range genO.infos {
+			names = append(names, ti.Name)
+		}
+		t.Fatalf("orchestrator (tools:[], max_depth:1) must be offered ONLY delegate_agent, got %v", names)
+	}
+}
+
+// P1-2: a child that must USE a tool result to answer — the child's
+// conversation feeds results back across steps.
+func TestChildUsesToolResult(t *testing.T) {
+	t.Parallel()
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+		"delegate": {
+			{toolCall: "delegate_agent", args: `{"agent":"researcher","task":"child-task use tools"}`},
+			{content: "root done"},
+		},
+		"child-task": {
+			{toolCall: "clock_now", args: "{}"},
+			{content: "the tool said something"},
+		},
+	}}
+	// The researcher's allowlist includes clock_now; the routing generator
+	// answers with content referencing the round — proving the loop advanced
+	// (the tool result was consumed, not repeated to the step bound).
+	a := newDelegatingAdapter(t, gen, agentSnap)
+	ch, _ := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "child-tool", Goal: "delegate now", Model: "prov/m1"})
+	drainUntilClosed(ch, 5*time.Second)
+	msgs, _ := a.st.Replay("child-tool", 0, 32)
+	var childToolRows, childFinal int
+	for _, m := range msgs {
+		if strings.Contains(m.Content, "the tool said something") && m.Role == "assistant" {
+			childFinal++
+		}
+		if m.ToolName == "clock_now" {
+			childToolRows++
+		}
+	}
+	if childToolRows == 0 || childFinal == 0 {
+		t.Fatalf("child must execute the tool AND answer after: toolRows=%d finals=%d", childToolRows, childFinal)
+	}
+}
+
+// P2-5: description-less agents refuse delegation at invocation.
+func TestDescriptionlessAgentRefusesDelegation(t *testing.T) {
+	t.Parallel()
+	snap := agentSnap()
+	snap.Agents["quiet"] = registry.AgentSpec{Name: "quiet", SystemPrompt: "Shh."} // no description
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+		"delegate": {
+			{toolCall: "delegate_agent", args: `{"agent":"quiet","task":"x"}`},
+			{content: "recovered"},
+		},
+	}}
+	a := newDelegatingAdapter(t, gen, func() registry.Snapshot { return snap })
+	ch, _ := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "quiet", Goal: "delegate quiet", Model: "prov/m1"})
+	var refused bool
+	for evt := range ch {
+		if evt.ToolCall != nil && strings.Contains(evt.ToolCall.Output, "not delegatable") {
+			refused = true
+		}
+	}
+	if !refused {
+		t.Fatal("description-less agent must refuse delegation at invocation")
+	}
+}
+
+// P1-3: the PARENT's provider context excludes child transcripts.
+func TestParentContextExcludesChildMessages(t *testing.T) {
+	t.Parallel()
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+		"delegate": {
+			{toolCall: "delegate_agent", args: `{"agent":"researcher","task":"child-task secret work"}`},
+			{content: "root done"},
+		},
+		"child-task": {{content: "CHILD-TRANSCRIPT-MARKER"}},
+	}}
+	a := newDelegatingAdapter(t, gen, agentSnap)
+	ch, _ := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "ctx", Goal: "delegate ctx", Model: "prov/m1"})
+	drainUntilClosed(ch, 5*time.Second)
+	// The parent's ROOT window contains ONLY root-execution rows.
+	rows, err := a.st.RootWindow("ctx", "exec-root-ctx", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range rows {
+		if m.ExecutionID != "exec-root-ctx" {
+			t.Fatalf("root window leaked execution %s", m.ExecutionID)
+		}
+		if m.Role == "user" && strings.Contains(m.Content, "secret work") {
+			t.Fatal("child task leaked into the parent's provider context")
+		}
 	}
 }

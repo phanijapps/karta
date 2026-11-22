@@ -219,3 +219,34 @@ func TestExecuteTool(t *testing.T) {
 		t.Fatal("unknown tool must return an error result")
 	}
 }
+
+// TestConformanceCatchesBrokenDelegation proves the suite's delegation
+// group has teeth: an engine whose answers fold back but which DROPS
+// delegation events fails the FoldBack case (attribution missing).
+func TestConformanceCatchesBrokenDelegation(t *testing.T) {
+	t.Parallel()
+	// The suite's fold-back rule as a pure check: broken streams (answer
+	// without attribution, attribution without the answer) are REJECTED;
+	// a correct stream passes. This proves the delegation group's teeth
+	// without spawning a nested suite run.
+	good := []domain.TimelineEvent{
+		{ID: "1", Kind: domain.EventDelegation, Agent: "researcher", Text: "thinking..."},
+		{ID: "2", Kind: domain.EventDelegation, Agent: "researcher", Text: "the answer"},
+		{ID: "3", Kind: domain.EventAgentStep, Text: "synthesized: the answer"},
+	}
+	if err := contracttest.CheckFoldBack(good, "researcher", "the answer"); err != nil {
+		t.Fatalf("correct stream rejected: %v", err)
+	}
+	noAttribution := []domain.TimelineEvent{
+		{ID: "1", Kind: domain.EventAgentStep, Text: "the answer"},
+	}
+	if err := contracttest.CheckFoldBack(noAttribution, "researcher", "the answer"); err == nil {
+		t.Fatal("stream without delegation attribution must be rejected")
+	}
+	noAnswer := []domain.TimelineEvent{
+		{ID: "1", Kind: domain.EventDelegation, Agent: "researcher", Text: "work"},
+	}
+	if err := contracttest.CheckFoldBack(noAnswer, "researcher", "the answer"); err == nil {
+		t.Fatal("stream without the folded answer must be rejected")
+	}
+}

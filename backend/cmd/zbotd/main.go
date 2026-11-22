@@ -156,7 +156,9 @@ func run(homeFlag string) error {
 	chatSvc := chat.NewStoreBacked(db, provStore, providers.NewChatClient(), allTools, bus, nil)
 
 	// Engine: eino adapter over the provider plane + store + builtins.
-	eng := einoengine.New(provStore, db, bus, allTools)
+	// Engine: eino adapter over the provider plane + store + builtins;
+	// the registry snapshot supplies agent definitions (delegation).
+	eng := einoengine.New(provStore, db, bus, allTools, reg.Snapshot)
 
 	// Model catalog: load persisted entries (no provider requests), then
 	// persist every future refresh so restarts keep the catalog warm.

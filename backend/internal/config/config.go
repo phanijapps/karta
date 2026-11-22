@@ -170,6 +170,9 @@ func Bootstrap(paths Paths) error {
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("config: close %s: %w", paths.ConfigFile, err)
 	}
+	if err := seedExampleAgents(paths); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -326,3 +329,52 @@ func validateProviders(cfg Config, file string) error {
 }
 
 func boolPtrLocal(b bool) *bool { return &b }
+
+// seedExampleAgents writes two EXAMPLE agent definitions (Claude-style
+// frontmatter markdown) into config/agents on first bootstrap — files are
+// user-owned afterward (never overwritten). Delegation is usable out of
+// the box; the examples document the format.
+func seedExampleAgents(paths Paths) error {
+	dir := paths.ConfigDir("agents")
+	if dir == "" {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("config: seed agents dir: %w", err)
+	}
+	files := map[string]string{
+		"research-agent.example.md": `---
+name: research-agent
+description: Gathers, evaluates, and synthesizes evidence for a self-contained research task.
+model: ""            # optional provider/model-id override; empty = the caller's model
+tools: []            # optional allowlist; empty = all tools
+max_depth: 0         # delegation grant (this agent delegates to nobody)
+---
+You research assigned tasks. Establish the question and evidence bar,
+use available tools, prefer primary sources, cross-check claims, and
+return a concise synthesis with sources and stated uncertainty. You run
+delegated: act on the task, return the answer — do not attempt workspace
+mutations beyond your tools.
+`,
+		"reviewer-agent.example.md": `---
+name: reviewer-agent
+description: Adversarially reviews a completed artifact or plan and reports defects with severity.
+max_depth: 0
+---
+You review the supplied artifact against its stated intent. Hunt for
+defects, missing cases, and unproven claims; report each finding with
+severity (P0/P1/P2) and evidence. Be adversarial about correctness and
+honest about uncertainty; conclude with a verdict line.
+`,
+	}
+	for name, content := range files {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			if errors.Is(err, os.ErrExist) {
+				continue
+			}
+			return fmt.Errorf("config: seed %s: %w", name, err)
+		}
+	}
+	return nil
+}

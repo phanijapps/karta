@@ -18,6 +18,16 @@ type AgentSpec struct {
 	Prompt       string   `yaml:"prompt"`
 	Model        string   `yaml:"model,omitempty"`
 	Tools        []string `yaml:"tools,omitempty"`
+	// Description is the when-to-delegate hint surfaced in the delegate
+	// tool's description; an agent without one is not offered for
+	// delegation (it stays usable via goal requests).
+	Description string `yaml:"description,omitempty"`
+	// DisplayName is an optional UI label.
+	DisplayName string `yaml:"display_name,omitempty"`
+	// MaxDepth grants delegation: the agent MAY spawn children while its
+	// depth stays below MaxDepth (0 = may not delegate). A config hard cap
+	// bounds the tree regardless.
+	MaxDepth int `yaml:"max_depth,omitempty"`
 
 	Path string `yaml:"-"`
 }

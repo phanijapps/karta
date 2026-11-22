@@ -70,6 +70,61 @@ func (s *Store) HistoryWindow(sessionID, executionID string, bound int) (History
 	return hw, nil
 }
 
+// RootWindow returns the ROOT execution's own rows for provider context,
+// compaction-aware: the session's latest root marker (base_seq + summary)
+// applies as the window floor, and only rows of the ROOT execution above
+// it are returned (child transcripts excluded). The summary rides on the
+// returned slice's Summary field via RootWindowFull when callers want it.
+func (s *Store) RootWindow(sessionID, rootExecID string, bound int) ([]Message, error) {
+	hw, err := s.RootWindowFull(sessionID, rootExecID, bound)
+	if err != nil {
+		return nil, err
+	}
+	return hw.Rows, nil
+}
+
+// RootWindowFull is RootWindow with the compaction summary attached.
+func (s *Store) RootWindowFull(sessionID, rootExecID string, bound int) (HistoryWindow, error) {
+	hw := HistoryWindow{Bound: bound}
+	var baseSeq int64
+	var summaryID string
+	err := s.db.QueryRow(`SELECT base_seq, summary_message_id FROM compactions
+		WHERE session_id = ? AND execution_id IS NULL ORDER BY base_seq DESC LIMIT 1`, sessionID).
+		Scan(&baseSeq, &summaryID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return hw, fmt.Errorf("store: root window marker: %w", err)
+	}
+	if summaryID != "" {
+		sum, err := s.messageByID(summaryID)
+		if err != nil {
+			// A marker whose summary row is unreadable would silently
+			// DROP compacted context — surface it instead.
+			return hw, fmt.Errorf("store: root window summary %s: %w", summaryID, err)
+		}
+		hw.Summary = &sum
+	}
+	rows, err := s.db.Query(`SELECT id, session_id, execution_id, seq, role, content,
+		COALESCE(reasoning, ''), COALESCE(tool_calls, ''), COALESCE(tool_call_id, ''), COALESCE(tool_name, ''),
+		COALESCE(provider, ''), COALESCE(model, ''), prompt_tokens, completion_tokens, created_at
+		FROM messages WHERE session_id = ? AND execution_id = ? AND role != 'summary' AND seq > ?
+		ORDER BY seq DESC LIMIT ?`, sessionID, rootExecID, baseSeq, bound)
+	if err != nil {
+		return hw, fmt.Errorf("store: root window: %w", err)
+	}
+	tail, err := scanMessages(rows)
+	if err != nil {
+		return hw, err
+	}
+	// scan order is DESC (tail selection); reverse to chronological, then
+	// trim the front to an exchange boundary (no orphan tool results at
+	// the context start).
+	for i, j := 0, len(tail)-1; i < j; i, j = i+1, j-1 {
+		tail[i], tail[j] = tail[j], tail[i]
+	}
+	hw.Rows = trimToExchangeBoundary(tail)
+	return hw, nil
+}
+
 // replaySince returns non-summary rows with seq > afterSeq in order.
 func (s *Store) replaySince(sessionID string, afterSeq int64, limit int) ([]Message, error) {
 	rows, err := s.db.Query(`SELECT id, session_id, execution_id, seq, role, content,
