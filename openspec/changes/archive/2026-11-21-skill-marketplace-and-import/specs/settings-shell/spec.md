@@ -1,8 +1,19 @@
 # Spec Delta
 
-## MODIFIED Requirements
+## REMOVED Requirements
 
 ### Requirement: Live MCP and skill management
+
+Replaced wholesale by the ADDED block below: the manual-create flow is
+not the workflow (skills arrive by import/marketplace — user refinement,
+evidence.md), so the "Create and edit a skill" scenario becomes "Edit a
+skill" and the marketplace scenarios join the same requirement. Expressed
+as REMOVED+ADDED (not MODIFIED) so the scenario rename is an explicit,
+visible replacement rather than a silent drop.
+
+## ADDED Requirements
+
+### Requirement: Live MCP and skill management and marketplace import
 
 MCP and Skills SHALL load their registries from the daemon and present them as live managed views. Each SHALL offer create, edit, delete with confirmation, per-file load-error display, and a daemon-connection state when unreachable — never fixture data or mock badges.
 
