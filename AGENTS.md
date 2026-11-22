@@ -83,7 +83,10 @@ Run the checks relevant to what you touched. Never claim a task is complete base
 - **Frontend (`frontend/`):**
   - `task check:frontend` (`pnpm check` / `svelte-check` + `pnpm build`) — zero TypeScript, Svelte 5 rune, or static build errors.
 - **Desktop (`desktop/`, if shell or build config changed):**
-  - `task build:desktop` — Wails v3 compiles cleanly with embedded `frontend/dist`.
+  - The Wails v3 shell has not landed yet; when it does, its build task
+    (compiling with embedded `frontend/dist`) joins this list — added here
+    only then, not before (reviewer finding: this bullet previously named a
+    `task build:desktop` that does not exist).
 - **Full repo (before opening a PR or closing an OpenSpec change):**
   - `task verify` — gates, codegen (+ contract-drift regenerate-and-compare), lint, tests (incl. real-LadybugDB suite), runtime budget, and build end-to-end. A contract change runs with `CONTRACT_CHANGE=1` declared and the diff recorded in its change.
 

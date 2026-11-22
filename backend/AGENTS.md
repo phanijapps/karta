@@ -73,8 +73,10 @@ naming and file-size budgets, error/context discipline (including the
 `ctx-ok:` marker convention for documented `context.Background()` sites),
 concurrency ownership, test floors and the runtime budget, and review
 gates. They are enforced mechanically — `backend/.golangci.yml` plus
-`scripts/backend-gates.sh` wired into `task verify` — so a rule change
-updates that document and its enforcement in the same change. Known
+`scripts/backend-gates.sh` wired into `task verify`, with the residual
+judgment checks (rules keyed `[reviewer]`/`[test]` in that document)
+owned by zbot-reviewer and the suites — so a rule change updates that
+document and its enforcement in the same change. Known
 defects whose fix is deferred are pinned by characterization tests that
 name their owning follow-up, never left as silent comments.
 
