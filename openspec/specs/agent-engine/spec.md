@@ -50,7 +50,7 @@ The engine SHALL consume tools exclusively via `ToolProvider` (enumerate tool de
 
 ### Requirement: Agent definitions come from the registry
 
-A goal MAY name a registry agent (`config/agents`); its system prompt, optional model override, and tool allowlist SHALL shape the run. With no agent named and none configured, a minimal wiring prompt is used. Model precedence: the request's model, else the agent's, else the run is refused with guidance to select one. No agent is hardcoded in code.
+A goal MAY name a registry agent (`~/.zbot/agents`); its system prompt, optional model override, and tool allowlist SHALL shape the run. With no agent named and none configured, a minimal wiring prompt is used. Model precedence: the request's model, else the agent's, else the run is refused with guidance to select one. No agent is hardcoded in code.
 
 #### Scenario: A configured agent shapes its run
 
