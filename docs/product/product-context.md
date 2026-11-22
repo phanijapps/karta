@@ -1,7 +1,8 @@
 # Karta Product Context
 
 > The single maintained source of product truth for Karta. Every agent making a
-> product-level decision consults this document first. The founding architecture
+> product-level decision consults this document first; the forward capability
+> queue lives in [`backlog.md`](backlog.md). The founding architecture
 > brief is preserved at [`docs/architecture/architecture-brief.md`](../architecture/architecture-brief.md);
 > where later evolution makes the two disagree on a product matter, this document wins.
 
