@@ -77,7 +77,7 @@ recall), knowledge (the ward).
 | agentzero concept | Karta equivalent today | Gap |
 |---|---|---|
 | Intent analysis middleware | — | new pre-execution step for goal runs |
-| Intent agent + resource search | — (registry snapshot exists) | small search tool over agents/skills/wards |
+| Intent agent + resource search | — (registry snapshot + chitta embedder exist) | semantic index over skills/MCP tools/agents (chitta-kind records; embedding via the existing ONNX seam) |
 | JSON intent contract | — | new domain type + prompt injection |
 | Root orchestrator + delegation | **`add-engine-delegation` shipped**: depth grants, delegate_agent, per-agent inventory | exists |
 | Specialists (planner/writer/reviewer) | `~/.zbot/agents/` frontmatter agents | exists; add ward-disciplined prompts |
@@ -171,6 +171,20 @@ The operator's refinement of the execution strategy:
   enabled MCP index) lets the model see what exists and orchestrate
   programmatic tool calls (call an MCP tool by name with args), instead
   of Karta hardwiring tool inventories per surface.
+- **Semantic discovery over the resource index (operator refinement).**
+  Skills, MCP tools, and agents are INDEXED with embeddings — chitta's
+  local ONNX embedder (EmbedPassages/EmbedQuery seam, already proven in
+  recalleval) embeds each resource's name+description (skill SKILL.md
+  frontmatter; each MCP server's probed tool list; agent descriptions;
+  ward canonical pages later) into a resource index, and intent
+  analysis recalls semantically (Recall-style vector+keyword fusion)
+  instead of receiving full listings. The listing stays the fallback
+  (small registries, cold cache); the index scales discovery when
+  rosters grow. Key shape decision for the spec: resources as chitta
+  records of a reserved kind (reuse Remember/Recall wholesale, filtered
+  by kind) vs a dedicated index collection — leaning chitta-kind to
+  avoid a second embedding pipeline; the recall floor findings (F-30:
+  BM25-dominated floors) must be re-verified for this corpus.
 - **Docker sandbox stays EXPERIMENTAL.** The eino-ext DockerSandbox
   operator is the isolation upgrade path (Code Wards convergence) but
   ships behind a config flag, off by default. First test target: the
