@@ -125,6 +125,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List configured schedules
+         * @description Every schedule from the registry snapshot (config/schedules),
+         *     ordered by name, each with its next fire time and the scheduler's
+         *     last recorded decision. Broken hand edits surface via the
+         *     registry's load-error surface.
+         */
+        get: operations["listSchedules"];
+        put?: never;
+        /**
+         * Create a schedule
+         * @description Installs a schedule definition atomically. Invalid cron
+         *     expressions, names, or shapes are typed 400s naming the cause;
+         *     nothing is written on failure.
+         */
+        post: operations["createSchedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/schedules/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one schedule */
+        get: operations["getSchedule"];
+        /** Update a schedule (rename-aware) */
+        put: operations["updateSchedule"];
+        post?: never;
+        /** Delete a schedule */
+        delete: operations["deleteSchedule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents": {
         parameters: {
             query?: never;
@@ -1023,6 +1071,44 @@ export interface components {
             kind: "mcp" | "skill";
             message: string;
         };
+        Schedule: {
+            name: string;
+            /** @description Cron expression (5-field or @descriptor). */
+            schedule: string;
+            goal: string;
+            agent?: string;
+            model?: string;
+            /** @enum {string} */
+            missed_policy?: "skip" | "catch_up";
+            source?: string;
+            /**
+             * Format: date-time
+             * @description The next fire time after now.
+             */
+            next_fire?: string;
+            /**
+             * @description The scheduler's most recent decision.
+             * @enum {string}
+             */
+            last_outcome?: "fired" | "skipped_overlapping" | "skipped_missed" | "catch_up_fired";
+            /** Format: date-time */
+            last_outcome_at?: string;
+        };
+        ScheduleCreate: {
+            name: string;
+            schedule: string;
+            goal: string;
+            agent?: string;
+            model?: string;
+            /** @enum {string} */
+            missed_policy?: "skip" | "catch_up";
+        };
+        ScheduleList: {
+            schedules: components["schemas"]["Schedule"][];
+        };
+        ScheduleDeleted: {
+            deleted: string;
+        };
         Agent: {
             name: string;
             display_name?: string;
@@ -1474,6 +1560,124 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelCatalog"];
+                };
+            };
+        };
+    };
+    listSchedules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The schedule roster. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleList"];
+                };
+            };
+        };
+    };
+    createSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleCreate"];
+            };
+        };
+        responses: {
+            /** @description The created schedule. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Schedule"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    getSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The schedule. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Schedule"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleCreate"];
+            };
+        };
+        responses: {
+            /** @description The updated schedule. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Schedule"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deletion confirmed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleDeleted"];
                 };
             };
         };

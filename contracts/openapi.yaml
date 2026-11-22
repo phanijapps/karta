@@ -185,6 +185,110 @@ paths:
               schema:
                 $ref: '#/components/schemas/ModelCatalog'
 
+  /api/schedules:
+    get:
+      operationId: listSchedules
+      summary: List configured schedules
+      description: |
+        Every schedule from the registry snapshot (config/schedules),
+        ordered by name, each with its next fire time and the scheduler's
+        last recorded decision. Broken hand edits surface via the
+        registry's load-error surface.
+      responses:
+        '200':
+          description: The schedule roster.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleList'
+    post:
+      operationId: createSchedule
+      summary: Create a schedule
+      description: |
+        Installs a schedule definition atomically. Invalid cron
+        expressions, names, or shapes are typed 400s naming the cause;
+        nothing is written on failure.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleCreate'
+      responses:
+        '200':
+          description: The created schedule.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/schedules/{name}:
+    get:
+      operationId: getSchedule
+      summary: Read one schedule
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        '200':
+          description: The schedule.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: updateSchedule
+      summary: Update a schedule (rename-aware)
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleCreate'
+      responses:
+        '200':
+          description: The updated schedule.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    delete:
+      operationId: deleteSchedule
+      summary: Delete a schedule
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        '200':
+          description: Deletion confirmed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleDeleted'
+
   /api/agents:
     get:
       operationId: listAgents
@@ -1851,6 +1955,91 @@ components:
         message:
           type: string
           maxLength: 1024
+
+    Schedule:
+      type: object
+      additionalProperties: false
+      required: [name, schedule, goal]
+      properties:
+        name:
+          type: string
+          maxLength: 128
+        schedule:
+          type: string
+          maxLength: 128
+          description: Cron expression (5-field or @descriptor).
+        goal:
+          type: string
+          maxLength: 8192
+        agent:
+          type: string
+          maxLength: 128
+        model:
+          type: string
+          maxLength: 384
+        missed_policy:
+          type: string
+          enum: [skip, catch_up]
+        source:
+          type: string
+          maxLength: 1024
+        next_fire:
+          type: string
+          format: date-time
+          description: The next fire time after now.
+        last_outcome:
+          type: string
+          enum: [fired, skipped_overlapping, skipped_missed, catch_up_fired]
+          description: The scheduler's most recent decision.
+        last_outcome_at:
+          type: string
+          format: date-time
+
+    ScheduleCreate:
+      type: object
+      additionalProperties: false
+      required: [name, schedule, goal]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[a-z0-9][a-z0-9-]{0,127}$'
+        schedule:
+          type: string
+          minLength: 3
+          maxLength: 128
+        goal:
+          type: string
+          minLength: 1
+          maxLength: 8192
+        agent:
+          type: string
+          maxLength: 128
+        model:
+          type: string
+          maxLength: 384
+        missed_policy:
+          type: string
+          enum: [skip, catch_up]
+
+    ScheduleList:
+      type: object
+      additionalProperties: false
+      required: [schedules]
+      properties:
+        schedules:
+          type: array
+          items:
+            $ref: '#/components/schemas/Schedule'
+
+    ScheduleDeleted:
+      type: object
+      additionalProperties: false
+      required: [deleted]
+      properties:
+        deleted:
+          type: string
 
     Agent:
       type: object

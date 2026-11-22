@@ -83,6 +83,8 @@ func (r *Registry) reloadKindLocked(kind Kind) Snapshot {
 		next.Hooks = fresh.Hooks
 	case KindMCP:
 		next.MCPs = fresh.MCPs
+	case KindSchedules:
+		next.Schedules = fresh.Schedules
 	}
 	r.snap.Store(next)
 	r.storeErrorsLocked(kind, errs)

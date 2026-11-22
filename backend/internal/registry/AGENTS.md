@@ -26,7 +26,7 @@ imports config.
   mcps, skills) are reported and the lexicographically first file wins.
   Kinds are capacity-bounded (mcps 128, skills 256): overflow files get
   load errors, so API lists are complete within the bound.
-- Write paths (mutate.go + mutate_mcp.go / mutate_skill.go /
+- Write paths (mutate.go + mutate_mcp.go / mutate_skill.go / schedules.go /
   mutate_files.go): `Create/Update/Delete` for MCPs and skills
   under the reload mutex, serialized with watcher flushes. All file
   writes are atomic (temp+rename, never truncating in place); creates
@@ -59,3 +59,4 @@ imports config.
 - Key entrypoints: `New`, `LoadAll`, `Snapshot`, `Errors`, `Subscribe`,
   `Watch`, `CreateMCP`/`UpdateMCP`/`DeleteMCP`,
   `CreateSkill`/`UpdateSkill`/`DeleteSkill`/`SkillDetail`.
+- Schedules (schedules kind): cron-expressed goal runs under config/schedules — loader + CRUD in schedules.go; capacity 128

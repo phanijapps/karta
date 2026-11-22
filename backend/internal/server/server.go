@@ -39,6 +39,7 @@ type Server struct {
 	db      *zbotstore.Store
 	reg     *registry.Registry
 	prober  mcpclient.Prober
+	sched   ScheduleSource
 	hub     *skillHub
 	version string
 }
@@ -55,8 +56,8 @@ type ChatService interface {
 // control-plane registry (MCP + skill management) with its MCP prober.
 // version lands in /healthz (zbotd injects its build version; "dev" in
 // development).
-func New(store *providers.Store, client *providers.Client, catalog *providers.Catalog, chatSvc ChatService, eng domain.AgentEngine, bus *eventbus.Bus, db *zbotstore.Store, reg *registry.Registry, prober mcpclient.Prober, version string) *Server {
-	return &Server{store: store, client: client, catalog: catalog, chat: chatSvc, engine: eng, bus: bus, db: db, reg: reg, prober: prober, version: version}
+func New(store *providers.Store, client *providers.Client, catalog *providers.Catalog, chatSvc ChatService, eng domain.AgentEngine, bus *eventbus.Bus, db *zbotstore.Store, reg *registry.Registry, prober mcpclient.Prober, sched ScheduleSource, version string) *Server {
+	return &Server{store: store, client: client, catalog: catalog, chat: chatSvc, engine: eng, bus: bus, db: db, reg: reg, prober: prober, sched: sched, version: version}
 }
 
 // Routes mounts every contract operation (paths stay in lockstep with

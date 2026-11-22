@@ -473,6 +473,66 @@ func (e RegistryLoadErrorKind) Valid() bool {
 	}
 }
 
+// Defines values for ScheduleLastOutcome.
+const (
+	CatchUpFired       ScheduleLastOutcome = "catch_up_fired"
+	Fired              ScheduleLastOutcome = "fired"
+	SkippedMissed      ScheduleLastOutcome = "skipped_missed"
+	SkippedOverlapping ScheduleLastOutcome = "skipped_overlapping"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleLastOutcome enum.
+func (e ScheduleLastOutcome) Valid() bool {
+	switch e {
+	case CatchUpFired:
+		return true
+	case Fired:
+		return true
+	case SkippedMissed:
+		return true
+	case SkippedOverlapping:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleMissedPolicy.
+const (
+	ScheduleMissedPolicyCatchUp ScheduleMissedPolicy = "catch_up"
+	ScheduleMissedPolicySkip    ScheduleMissedPolicy = "skip"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleMissedPolicy enum.
+func (e ScheduleMissedPolicy) Valid() bool {
+	switch e {
+	case ScheduleMissedPolicyCatchUp:
+		return true
+	case ScheduleMissedPolicySkip:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleCreateMissedPolicy.
+const (
+	ScheduleCreateMissedPolicyCatchUp ScheduleCreateMissedPolicy = "catch_up"
+	ScheduleCreateMissedPolicySkip    ScheduleCreateMissedPolicy = "skip"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleCreateMissedPolicy enum.
+func (e ScheduleCreateMissedPolicy) Valid() bool {
+	switch e {
+	case ScheduleCreateMissedPolicyCatchUp:
+		return true
+	case ScheduleCreateMissedPolicySkip:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SessionStatus.
 const (
 	SessionStatusCancelled SessionStatus = "cancelled"
@@ -1109,6 +1169,55 @@ type RegistryLoadError struct {
 // RegistryLoadErrorKind defines model for RegistryLoadError.Kind.
 type RegistryLoadErrorKind string
 
+// Schedule defines model for Schedule.
+type Schedule struct {
+	Agent *string `json:"agent,omitempty"`
+	Goal  string  `json:"goal"`
+
+	// LastOutcome The scheduler's most recent decision.
+	LastOutcome   *ScheduleLastOutcome  `json:"last_outcome,omitempty"`
+	LastOutcomeAt *time.Time            `json:"last_outcome_at,omitempty"`
+	MissedPolicy  *ScheduleMissedPolicy `json:"missed_policy,omitempty"`
+	Model         *string               `json:"model,omitempty"`
+	Name          string                `json:"name"`
+
+	// NextFire The next fire time after now.
+	NextFire *time.Time `json:"next_fire,omitempty"`
+
+	// Schedule Cron expression (5-field or @descriptor).
+	Schedule string  `json:"schedule"`
+	Source   *string `json:"source,omitempty"`
+}
+
+// ScheduleLastOutcome The scheduler's most recent decision.
+type ScheduleLastOutcome string
+
+// ScheduleMissedPolicy defines model for Schedule.MissedPolicy.
+type ScheduleMissedPolicy string
+
+// ScheduleCreate defines model for ScheduleCreate.
+type ScheduleCreate struct {
+	Agent        *string                     `json:"agent,omitempty"`
+	Goal         string                      `json:"goal"`
+	MissedPolicy *ScheduleCreateMissedPolicy `json:"missed_policy,omitempty"`
+	Model        *string                     `json:"model,omitempty"`
+	Name         string                      `json:"name"`
+	Schedule     string                      `json:"schedule"`
+}
+
+// ScheduleCreateMissedPolicy defines model for ScheduleCreate.MissedPolicy.
+type ScheduleCreateMissedPolicy string
+
+// ScheduleDeleted defines model for ScheduleDeleted.
+type ScheduleDeleted struct {
+	Deleted string `json:"deleted"`
+}
+
+// ScheduleList defines model for ScheduleList.
+type ScheduleList struct {
+	Schedules []Schedule `json:"schedules"`
+}
+
 // Session defines model for Session.
 type Session struct {
 	Agent     *string       `json:"agent,omitempty"`
@@ -1416,6 +1525,12 @@ type CreateProviderJSONRequestBody = ProviderCreate
 // UpdateProviderJSONRequestBody defines body for UpdateProvider for application/json ContentType.
 type UpdateProviderJSONRequestBody = ProviderUpdate
 
+// CreateScheduleJSONRequestBody defines body for CreateSchedule for application/json ContentType.
+type CreateScheduleJSONRequestBody = ScheduleCreate
+
+// UpdateScheduleJSONRequestBody defines body for UpdateSchedule for application/json ContentType.
+type UpdateScheduleJSONRequestBody = ScheduleCreate
+
 // ResumeSessionJSONRequestBody defines body for ResumeSession for application/json ContentType.
 type ResumeSessionJSONRequestBody = UserInput
 
@@ -1499,6 +1614,21 @@ type ServerInterface interface {
 	// RefreshProviderModels Refresh one provider's models (manual)
 	// (POST /api/providers/{name}/models/refresh)
 	RefreshProviderModels(w http.ResponseWriter, r *http.Request, name ProviderName)
+	// ListSchedules List configured schedules
+	// (GET /api/schedules)
+	ListSchedules(w http.ResponseWriter, r *http.Request)
+	// CreateSchedule Create a schedule
+	// (POST /api/schedules)
+	CreateSchedule(w http.ResponseWriter, r *http.Request)
+	// DeleteSchedule Delete a schedule
+	// (DELETE /api/schedules/{name})
+	DeleteSchedule(w http.ResponseWriter, r *http.Request, name string)
+	// GetSchedule Read one schedule
+	// (GET /api/schedules/{name})
+	GetSchedule(w http.ResponseWriter, r *http.Request, name string)
+	// UpdateSchedule Update a schedule (rename-aware)
+	// (PUT /api/schedules/{name})
+	UpdateSchedule(w http.ResponseWriter, r *http.Request, name string)
 	// ListSessions List sessions (bounded, explicit truncation)
 	// (GET /api/sessions)
 	ListSessions(w http.ResponseWriter, r *http.Request, params ListSessionsParams)
@@ -1670,6 +1800,36 @@ func (_ Unimplemented) ListProviderModels(w http.ResponseWriter, r *http.Request
 // RefreshProviderModels Refresh one provider's models (manual)
 // (POST /api/providers/{name}/models/refresh)
 func (_ Unimplemented) RefreshProviderModels(w http.ResponseWriter, r *http.Request, name ProviderName) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListSchedules List configured schedules
+// (GET /api/schedules)
+func (_ Unimplemented) ListSchedules(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateSchedule Create a schedule
+// (POST /api/schedules)
+func (_ Unimplemented) CreateSchedule(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteSchedule Delete a schedule
+// (DELETE /api/schedules/{name})
+func (_ Unimplemented) DeleteSchedule(w http.ResponseWriter, r *http.Request, name string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSchedule Read one schedule
+// (GET /api/schedules/{name})
+func (_ Unimplemented) GetSchedule(w http.ResponseWriter, r *http.Request, name string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdateSchedule Update a schedule (rename-aware)
+// (PUT /api/schedules/{name})
+func (_ Unimplemented) UpdateSchedule(w http.ResponseWriter, r *http.Request, name string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2174,6 +2334,112 @@ func (siw *ServerInterfaceWrapper) RefreshProviderModels(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// ListSchedules operation middleware
+func (siw *ServerInterfaceWrapper) ListSchedules(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSchedules(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSchedule operation middleware
+func (siw *ServerInterfaceWrapper) CreateSchedule(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSchedule(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSchedule operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", chi.URLParam(r, "name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSchedule(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSchedule operation middleware
+func (siw *ServerInterfaceWrapper) GetSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", chi.URLParam(r, "name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSchedule(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSchedule operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", chi.URLParam(r, "name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSchedule(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListSessions operation middleware
 func (siw *ServerInterfaceWrapper) ListSessions(w http.ResponseWriter, r *http.Request) {
 
@@ -2666,6 +2932,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/models", wrapper.ListModels)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/schedules", wrapper.ListSchedules)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/schedules", wrapper.CreateSchedule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/schedules/{name}", wrapper.DeleteSchedule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/schedules/{name}", wrapper.GetSchedule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/schedules/{name}", wrapper.UpdateSchedule)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/agents", wrapper.ListAgents)

@@ -637,3 +637,63 @@ export async function listAgents(): Promise<AgentEntry[]> {
     return [];
   }
 }
+
+/** One schedule — the generated schema type. */
+export type Schedule = components['schemas']['Schedule'];
+
+export interface ScheduleInput {
+  name: string;
+  schedule: string;
+  goal: string;
+  agent?: string;
+  model?: string;
+  missed_policy?: 'skip' | 'catch_up';
+}
+
+export async function listSchedules(): Promise<Schedule[]> {
+  try {
+    const res = await fetch(`${BASE}/api/schedules`);
+    if (!res.ok) return [];
+    const body = (await res.json().catch(() => null)) as { schedules?: Schedule[] } | null;
+    return body?.schedules ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function createSchedule(input: ScheduleInput): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${BASE}/api/schedules`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (res.ok) return { ok: true };
+    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+    return { ok: false, error: body?.message ?? `daemon answered ${res.status}` };
+  } catch {
+    return { ok: false, error: 'daemon unreachable' };
+  }
+}
+
+export async function updateSchedule(name: string, input: ScheduleInput): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${BASE}/api/schedules/${encodeURIComponent(name)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (res.ok) return { ok: true };
+    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+    return { ok: false, error: body?.message ?? `daemon answered ${res.status}` };
+  } catch {
+    return { ok: false, error: 'daemon unreachable' };
+  }
+}
+
+export async function deleteSchedule(name: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/api/schedules/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

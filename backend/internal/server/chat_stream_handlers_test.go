@@ -44,7 +44,7 @@ func (s *scriptedStreamChat) Sync(afterSeq int64, limit int) ([]zbotstore.Messag
 func newStreamDaemon(t *testing.T, svc ChatService) *httptest.Server {
 	t.Helper()
 	// Chat endpoints need no providers store; nil keeps the test minimal.
-	return httptest.NewServer(New(nil, providers.NewClient(), nil, svc, nil, nil, nil, nil, nil, "test").Routes())
+	return httptest.NewServer(New(nil, providers.NewClient(), nil, svc, nil, nil, nil, nil, nil, nil, "test").Routes())
 }
 
 func readSSE(t *testing.T, url, body string) (string, int, string) {

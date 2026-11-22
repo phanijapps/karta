@@ -10,7 +10,7 @@ import (
 )
 
 // Subdirs are the control-plane registry directories under <home>/config/.
-var Subdirs = []string{"prompts", "skills", "hooks", "mcps", "providers"}
+var Subdirs = []string{"prompts", "skills", "hooks", "mcps", "schedules", "providers"}
 
 // ResolveHome resolves the z-Bot home root with strict precedence: a
 // non-empty flagOverride, then the ZBOT_HOME environment variable, then

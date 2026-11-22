@@ -44,7 +44,7 @@ func newTestDaemon(t *testing.T, providerHandler http.HandlerFunc, cfgProviders 
 	}
 	t.Cleanup(store.Close)
 	catalog := providers.NewCatalog()
-	daemon := httptest.NewServer(New(store, providers.NewClient(), catalog, newFakeChatService(), nil, nil, nil, nil, nil, "test").Routes())
+	daemon := httptest.NewServer(New(store, providers.NewClient(), catalog, newFakeChatService(), nil, nil, nil, nil, nil, nil, "test").Routes())
 	t.Cleanup(daemon.Close)
 	return daemon, store, &fakeSecretsHarness{fake: fake, secrets: secrets, paths: paths, catalog: catalog}
 }

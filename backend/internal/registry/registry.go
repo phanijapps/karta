@@ -26,13 +26,16 @@ const (
 	KindHook Kind = "hooks"
 	// KindMCP — one of the Kind values.
 	KindMCP Kind = "mcps"
+	// KindSchedules — the cron schedule kind.
+	KindSchedules Kind = "schedules"
+
 	// KindConfigFile names config.yaml change notifications (notify only;
 	// the daemon reloads configuration itself).
 	KindConfigFile Kind = "config-file"
 )
 
 // Kinds lists every file-loading registry kind in canonical order.
-var Kinds = []Kind{KindPrompt, KindAgent, KindSkill, KindHook, KindMCP}
+var Kinds = []Kind{KindPrompt, KindAgent, KindSkill, KindHook, KindMCP, KindSchedules}
 
 // LoadError isolates one file's failure; it never aborts a load.
 type LoadError struct {
@@ -53,36 +56,40 @@ type Dirs struct {
 	Skills     string
 	Hooks      string
 	MCPs       string
+	Schedules  string
 	ConfigFile string // watched for notifications only
 }
 
 func (d Dirs) byKind() map[Kind]string {
 	return map[Kind]string{
-		KindPrompt: d.Prompts,
-		KindAgent:  d.Agents,
-		KindSkill:  d.Skills,
-		KindHook:   d.Hooks,
-		KindMCP:    d.MCPs,
+		KindPrompt:    d.Prompts,
+		KindAgent:     d.Agents,
+		KindSkill:     d.Skills,
+		KindHook:      d.Hooks,
+		KindMCP:       d.MCPs,
+		KindSchedules: d.Schedules,
 	}
 }
 
 // Snapshot is an immutable registry state; readers receive it whole and
 // reloads swap it atomically, so no reader ever sees partial state.
 type Snapshot struct {
-	Prompts map[string]Prompt
-	Agents  map[string]AgentSpec
-	Skills  map[string]SkillSpec
-	Hooks   map[string]HookSpec
-	MCPs    map[string]MCPSpec
+	Prompts   map[string]Prompt
+	Agents    map[string]AgentSpec
+	Skills    map[string]SkillSpec
+	Hooks     map[string]HookSpec
+	MCPs      map[string]MCPSpec
+	Schedules map[string]ScheduleSpec
 }
 
 func emptySnapshot() *Snapshot {
 	return &Snapshot{
-		Prompts: map[string]Prompt{},
-		Agents:  map[string]AgentSpec{},
-		Skills:  map[string]SkillSpec{},
-		Hooks:   map[string]HookSpec{},
-		MCPs:    map[string]MCPSpec{},
+		Prompts:   map[string]Prompt{},
+		Agents:    map[string]AgentSpec{},
+		Skills:    map[string]SkillSpec{},
+		Hooks:     map[string]HookSpec{},
+		MCPs:      map[string]MCPSpec{},
+		Schedules: map[string]ScheduleSpec{},
 	}
 }
 
@@ -207,6 +214,8 @@ func loadKind(snap *Snapshot, dir string, kind Kind, errs *[]LoadError) {
 		loadHooks(snap, dir, errs)
 	case KindMCP:
 		loadMCPs(snap, dir, errs)
+	case KindSchedules:
+		loadSchedules(snap, dir, errs)
 	}
 }
 

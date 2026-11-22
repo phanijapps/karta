@@ -245,7 +245,7 @@ func TestImportHandlerUnconfiguredPreflight(t *testing.T) {
 	// A registry never LoadAll'd: document-level 500 before any entry.
 	dirs := lastTestDirs
 	fresh := registry.New()
-	srv := New(nil, providers.NewClient(), providers.NewCatalog(), newFakeChatService(), nil, nil, nil, fresh, nil, "test")
+	srv := New(nil, providers.NewClient(), providers.NewCatalog(), newFakeChatService(), nil, nil, nil, fresh, nil, nil, "test")
 	daemon := httptest.NewServer(srv.Routes())
 	defer daemon.Close()
 	_ = dirs

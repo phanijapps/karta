@@ -28,6 +28,7 @@ import (
 	"zbot/backend/internal/mcpclient"
 	"zbot/backend/internal/providers"
 	"zbot/backend/internal/registry"
+	"zbot/backend/internal/scheduler"
 	"zbot/backend/internal/server"
 	"zbot/backend/internal/skillhub"
 	zbotstore "zbot/backend/internal/store"
@@ -87,6 +88,7 @@ func run(homeFlag string) error {
 		Skills:     paths.ConfigDir("skills"),
 		Hooks:      paths.ConfigDir("hooks"),
 		MCPs:       paths.ConfigDir("mcps"),
+		Schedules:  paths.ConfigDir("schedules"),
 		ConfigFile: paths.ConfigFile,
 	}); len(errs) > 0 {
 		for _, e := range errs {
@@ -191,7 +193,9 @@ func run(homeFlag string) error {
 		server.SetExposedBind(exposed)
 	}
 
-	daemonSrv := server.New(provStore, providers.NewClient(), catalog, chatSvc, eng, bus, db, reg, mcpclient.GoSDKProber{}, version)
+	// Scheduler: cron-fired goal runs over the registry + engine.
+	sched := scheduler.New(reg, eng, bus, func() string { return fmt.Sprintf("evt-sched-%d", time.Now().UnixNano()) }, nil, filepath.Join(paths.DataDir, "scheduler-state.json"))
+	daemonSrv := server.New(provStore, providers.NewClient(), catalog, chatSvc, eng, bus, db, reg, mcpclient.GoSDKProber{}, sched, version)
 	daemonSrv.SetSkillHub(skillhub.NewHTTPIndexClient(), skillhub.NewGitHubRepoFetcher(), skillStore)
 
 	srv := &http.Server{
@@ -206,6 +210,7 @@ func run(homeFlag string) error {
 	// then the daemon exits. Provider config changes apply on restart.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go sched.Run(ctx)
 
 	// Distiller: sessions → chitta (trusted seam, source: distiller).
 	// Settings re-read each pass from the daemon-managed
@@ -222,6 +227,7 @@ func run(homeFlag string) error {
 		Skills:     paths.ConfigDir("skills"),
 		Hooks:      paths.ConfigDir("hooks"),
 		MCPs:       paths.ConfigDir("mcps"),
+		Schedules:  paths.ConfigDir("schedules"),
 		ConfigFile: paths.ConfigFile,
 	}); err != nil {
 		return fmt.Errorf("registry watch: %w", err)

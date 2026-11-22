@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { SquarePen, Folder, SlidersHorizontal, Settings, PanelLeftClose, MessageSquare, ChevronDown } from '@lucide/svelte';
+  import { SquarePen, Folder, SlidersHorizontal, Settings, PanelLeftClose, MessageSquare, ChevronDown, CalendarClock } from '@lucide/svelte';
   import type { Sessions } from '../entities/session/session.svelte';
-  let { sessions, rail = false, ontoggle, onselect, onplaceholder, onsettings }: {
+  let { sessions, rail = false, ontoggle, onselect, onplaceholder, onsettings, onschedules }: {
     sessions: Sessions; rail?: boolean; ontoggle: () => void; onselect: () => void;
-    onplaceholder: (name: string) => void; onsettings: () => void;
+    onplaceholder: (name: string) => void; onsettings: () => void; onschedules: () => void;
   } = $props();
   
 </script>
@@ -13,6 +13,7 @@
   <div class="primary">
     <button class="nav-row" onclick={onselect} title="Conversation"><SquarePen size={18} /><span>Conversation</span></button>
     <button class="nav-row" onclick={() => onplaceholder('Code Wards')} title="Code Wards — coming soon"><Folder size={18} /><span>Code Wards</span><span class="todo">TODO</span></button>
+    <button class="nav-row" onclick={onschedules} title="Schedules"><CalendarClock size={18} /><span>Schedules</span></button>
     <button class="nav-row" onclick={() => onplaceholder('Configuration')} title="Configuration — coming soon"><SlidersHorizontal size={18} /><span>Configuration</span><span class="todo">TODO</span></button>
   </div>
   <div class="history"><p class="history-label">One persistent conversation <span class="badge">Live</span></p>
