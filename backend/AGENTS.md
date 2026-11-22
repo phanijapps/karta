@@ -60,7 +60,23 @@ what it may import.
 
 Table-driven unit tests. In-memory SQLite (`:memory:`) for store tests. Fake
 LLM/engine stubs for engine and middleware tests. **Never hit live APIs in
-unit tests.**
+unit tests.** Every `domain.AgentEngine` implementation runs the shared
+conformance suite (`internal/engine/contracttest`) against fakes AND the
+real adapter — an engine swap that breaks the streaming contract fails
+its own tests.
+
+## Engineering Rules and Enforcement
+
+The authoritative backend engineering rules live in
+[`../docs/development/go-rules.md`](../docs/development/go-rules.md):
+naming and file-size budgets, error/context discipline (including the
+`ctx-ok:` marker convention for documented `context.Background()` sites),
+concurrency ownership, test floors and the runtime budget, and review
+gates. They are enforced mechanically — `backend/.golangci.yml` plus
+`scripts/backend-gates.sh` wired into `task verify` — so a rule change
+updates that document and its enforcement in the same change. Known
+defects whose fix is deferred are pinned by characterization tests that
+name their owning follow-up, never left as silent comments.
 
 ## Other
 

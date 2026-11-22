@@ -76,14 +76,16 @@ Run the checks relevant to what you touched. Never claim a task is complete base
   - `task codegen` — regenerate Go server types and TS client; verify zero uncommitted drift.
 - **Backend (`backend/`):**
   - `task test:backend` (or `go test -race ./...`) — all unit/integration tests pass using in-memory SQLite and fake LLM/engine stubs (zero live API calls).
-  - `task lint:backend` (`golangci-lint run`) — zero lint errors.
-  - **Boundary check:** confirm `github.com/cloudwego/eino` is not imported outside `backend/internal/engine/eino/`, and no `backend/internal/` package imports `frontend/`, `desktop/`, or `cmd/`.
+  - `task lint:backend` (`golangci-lint run`, configured by `backend/.golangci.yml` — errcheck blank-discard, revive exported, errorlint) — zero lint errors.
+  - `task gates:backend` (`scripts/backend-gates.sh`) — mechanical engineering gates: 500-LOC file budget with named grandfathers, banned generic names, `ctx-ok:` context markers, test floor, AGENTS.md coverage, and the constitution boundaries (eino isolation, channel-agnostic core) — these replaced the hand-run greps.
+  - `task budget:backend` — suite runtime budget (machine-qualified, see go-rules 4.3).
+  - The backend engineering rules these enforce live in [`docs/development/go-rules.md`](docs/development/go-rules.md) — every rule states its rationale and enforcement; a rule without enforcement does not belong there.
 - **Frontend (`frontend/`):**
   - `task check:frontend` (`pnpm check` / `svelte-check` + `pnpm build`) — zero TypeScript, Svelte 5 rune, or static build errors.
 - **Desktop (`desktop/`, if shell or build config changed):**
   - `task build:desktop` — Wails v3 compiles cleanly with embedded `frontend/dist`.
 - **Full repo (before opening a PR or closing an OpenSpec change):**
-  - `task verify` — runs codegen check, lint, tests, and build end-to-end.
+  - `task verify` — gates, codegen (+ contract-drift regenerate-and-compare), lint, tests (incl. real-LadybugDB suite), runtime budget, and build end-to-end. A contract change runs with `CONTRACT_CHANGE=1` declared and the diff recorded in its change.
 
 - **Documents Updated:**
   - Documents in `docs/` need to be updated as implemenation changes. (product, architecture or guidelines)
