@@ -1,0 +1,57 @@
+# golangci-lint v2 config — enforces go-rules.md 1.3, 2.1, 2.3.
+# Grandfathered/excluded items must carry a reason (rule 2.1).
+version: "2"
+
+linters:
+  # Defaults (errcheck, govet, ineffassign, staticcheck, unused) plus the
+  # rules-doc enforcers.
+  default: standard
+  enable:
+    - revive
+    - errorlint
+  settings:
+    errcheck:
+      # Rule 2.1: blank discards (`_ = f()`) are findings unless excluded
+      # below with a reason. Three shipped defects were this exact pattern.
+      check-blank: true
+    revive:
+      rules:
+        # Rule 1.3: exported symbols need doc comments starting with the name.
+        - name: exported
+    errorlint:
+      # Rule 2.3: %w wrapping discipline.
+      errorf: true
+
+  exclusions:
+    rules:
+      # Tests may ignore errors when asserting around them; test doubles
+      # are exempt from rule 2.1 by definition.
+      - path: _test\.go
+        linters: [errcheck]
+      # --- Intentional, documented discards (rule 2.1). Each pattern is a
+      # tolerated class; the suspicious individual sites are tracked as
+      # ledger finding F-31 in the owning change / follow-up. ---
+      # Fire-and-forget durable-first emits; semantics pinned by
+      # characterization tests; policy owned by follow-up
+      # backend-engine-run-ownership (F-15).
+      - linters: [errcheck]
+        source: '(a|s)\.(bus\.Publish|st\.Append|st\.AppendEvent|st\.FinishExecution)'
+      # Deferred/best-effort cleanup: failing to clean up must not mask the
+      # primary result (bodies, rows, files, dirs, embedders, sessions).
+      - linters: [errcheck]
+        source: '\.Close\(|os\.Remove(All)?\(|RemoveAll\(|filepath\.(Glob|WalkDir)|removeProviderFile|\.Add\('
+      # json Marshal/Unmarshal/Encode of internally-built shapes (cannot
+      # fail in practice; unknown tool args surface as tool errors instead)
+      # and SSE writes to a possibly-dying connection.
+      - linters: [errcheck]
+        source: 'json\.(Marshal|Unmarshal|NewEncoder)|fmt\.Fprintf'
+      # ROLLBACK on an already-failing tx path: the original error wins.
+      - linters: [errcheck]
+        source: 'ROLLBACK'
+      # Non-critical best-effort metadata on decided paths (F-31 tracks the
+      # follow-up for secrets.Set / Reload / MarkDistilled hardening):
+      # backup-restore, post-mutation reload, distillation bookkeeping,
+      # optional timestamp parses, cache warm/default-model writes,
+      # home-dir fallback.
+      - linters: [errcheck]
+        source: 'secrets\.Set|\.Reload\(\)|MarkDistilled|time\.Parse|storeSessionList|SetDefaultModel|UserHomeDir'
