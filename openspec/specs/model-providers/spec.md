@@ -22,7 +22,7 @@ The system SHALL resolve the provider list from `config.yaml` at daemon startup.
 
 ### Requirement: Credential values are referenced, never stored or exposed
 
-A provider MAY reference a credential by environment-variable name (`api_key_env`). The variable's value SHALL be read from the daemon environment only in memory and only for an outbound request, and SHALL NOT be written under `~/.zbot/`, returned by any API response, or included in error messages or logs. When the variable is unset or empty, requests SHALL be sent without credentials and the provider's listing SHALL report the credential as not configured.
+A provider MAY reference a credential by environment-variable name (`api_key_env`) or, for file-declared providers, the keyring marker (`api_key: keyring`). The value SHALL be read only in memory, for request or status use, and SHALL NOT be written under `~/.zbot/`, returned in any response, or logged. An unset source sends no credential and reports the credential missing; an unavailable keyring fails with a typed credential-unavailable outcome, never a silent unauthenticated request.
 
 #### Scenario: Credential value never leaves the process boundary
 
@@ -31,8 +31,13 @@ A provider MAY reference a credential by environment-variable name (`api_key_env
 
 #### Scenario: Referenced credential is missing
 
-- **WHEN** a provider references an environment variable that is unset and model discovery is requested
-- **THEN** the request is sent without credentials and the provider listing shows the credential as not configured
+- **WHEN** a provider references an environment variable that is unset, or a keyring item that is absent, and model discovery is requested
+- **THEN** the request is sent without credentials and the provider listing shows the credential as missing
+
+#### Scenario: Keyring unavailable during discovery
+
+- **WHEN** discovery runs for a keyring-credential provider while the keyring cannot be reached within its deadline
+- **THEN** the daemon reports a typed credential-unavailable failure instead of sending an unauthenticated request upstream
 
 ### Requirement: OpenAI-compatible model discovery with typed failures
 

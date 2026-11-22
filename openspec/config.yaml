@@ -4,7 +4,8 @@ schema: spec-driven
 context: |
   z-Bot: local-first, autonomous, goal-oriented multi-agent desktop system.
   Locked stack: Go 1.26+ daemon (zbotd) + Bubbletea CLI; Svelte 5 TS Vite SPA
-  (pure, zero SSR); Wails v3 shell; SQLite + sqlite-vec + FTS5 + local ONNX;
+  (pure, zero SSR); Wails v3 shell; zbot.db (SQLite) for sessions/Timeline
+  + chitta (LadybugDB: memory + knowledge graph, cgo) with local ONNX embeddings;
   CloudWeGo Eino behind the domain.AgentEngine seam.
   Authoritative rules live in AGENTS.md (root), backend/AGENTS.md,
   frontend/AGENTS.md — read them before planning. Product truth:

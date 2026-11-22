@@ -56,3 +56,14 @@ Verdict: **BLOCK — 3 P1, 3 P2**. All six findings fixed (none deferred):
 Post-fix verification (task 6.2): `task verify` green — codegen
 byte-stable, golangci-lint 0 issues, race tests green, svelte-check 0/0,
 build clean, 30/30 Playwright tests.
+
+## Archive-time note (2026-11-21)
+
+The `specs/mock-chat/` delta was removed at archive time: its target
+requirement ("Model and action previews are honest") was retired by
+add-simple-chat's archive minutes earlier (the mock chat was superseded by
+the real chat; mock-chat main spec deleted). The delta's surviving intent
+lives in `openspec/specs/simple-chat/spec.md` ("Chat renders safely and
+honestly"); the header model-picker/catalog UX belongs to the settings-shell
+deltas of the not-yet-archived later changes. Order-dependency recorded here
+so the history explains the gap.

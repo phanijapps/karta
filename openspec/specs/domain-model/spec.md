@@ -22,17 +22,22 @@ The domain package SHALL contain types and interfaces only, import no other inte
 
 ### Requirement: AgentEngine seam
 
-The domain SHALL define the `AgentEngine` interface with `Name()`, `RunGoal(ctx, GoalRequest) (<-chan TimelineEvent, error)`, `Resume(ctx, sessionID, UserInput) (<-chan TimelineEvent, error)`, and `Cancel(ctx, sessionID) error`, plus the `GoalRequest` and `UserInput` types they exchange.
+`domain.AgentEngine` SHALL remain the single engine seam (Name, RunGoal, Resume, Cancel) with engine implementations selected by configuration and isolated in `internal/engine/<name>/`; only the active engine's package imports its framework. `GoalRequest` SHALL carry an optional qualified model reference (`provider/model-id`) that implementations use for model resolution; implementations that cannot resolve a model SHALL fail the run with guidance rather than inventing a default.
 
 #### Scenario: Engine integrates via the seam
 
-- **WHEN** an engine adapter implements the four methods with the domain types
-- **THEN** it compiles against the domain package alone and is a valid `AgentEngine`
+- **WHEN** an engine implementation is selected by configuration
+- **THEN** every consumer depends only on the domain seam and the implementation's framework imports stay inside its package
 
 #### Scenario: Goal run streams events
 
-- **WHEN** `RunGoal` is called with a goal request
-- **THEN** the returned channel delivers `TimelineEvent` values for that run's lifetime
+- **WHEN** a goal run executes
+- **THEN** every agent step, tool call, and lifecycle transition reaches consumers as a TimelineEvent through the seam
+
+#### Scenario: No model resolvable
+
+- **WHEN** RunGoal is called with no model and no agent-level model
+- **THEN** the run fails fast with guidance to select a model
 
 ### Requirement: Compactor seam
 
@@ -83,3 +88,33 @@ The domain SHALL define the `TimelineEvent` type carrying session identity, even
 
 - **WHEN** a TimelineEvent is constructed
 - **THEN** it identifies the session it belongs to
+
+### Requirement: Memory and knowledge-graph seams
+
+The domain SHALL define the `MemoryStore` and `KnowledgeGraph` interfaces
+together with the pure record types they exchange, as the seams every
+chitta consumer depends on, implemented outside the domain package (by
+the chitta capability), using `context.Context` for cancellation,
+mirroring the existing `Compactor`/`AgentEngine` seam style.
+
+#### Scenario: Interfaces carry the record types
+- **WHEN** the seam interfaces are compiled
+- **THEN** their method signatures reference only the pure contract record types and `context.Context`
+
+### Requirement: Trusted host operations on the seam
+
+The seams SHALL expose trusted host operations that are never
+agent-facing: distiller writes carrying host-stamped provenance,
+embedding writes, and query embedding injection.
+
+#### Scenario: Distiller write is not a tool
+- **WHEN** a future distiller writes observations through the seam
+- **THEN** provenance is host-stamped (`source: distiller`) and no agent-facing tool exposes the operation
+
+#### Scenario: Consumers depend only on the seam
+- **WHEN** a package outside the chitta capability needs to save or recall memories
+- **THEN** it does so against the `domain.MemoryStore` / `domain.KnowledgeGraph` interfaces without importing the chitta implementation package
+
+#### Scenario: Domain purity holds
+- **WHEN** domain purity checks run over `internal/domain`
+- **THEN** the new seam types introduce zero imports from other internal packages and no storage-driver types leak into the interfaces

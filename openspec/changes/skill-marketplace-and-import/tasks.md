@@ -1,0 +1,38 @@
+# Tasks
+
+## 1. Preflight hard gate and contract (contract-first)
+
+- [x] 1.1 HARD GATE — pin the skills.sh index API: read the vercel-labs/skills CLI source for the endpoint, then exercise it live from the daemon's HTTP client (URL, response schema, timeout, rate behavior; capture fixtures); record findings in the design notes. If unusable, STOP: validate the GitHub-search fallback live and update proposal/spec/API/UI expectations for re-review before proceeding; verify the findings (or the stop decision) are recorded and no contract work began before the gate closed
+- [x] 1.2 Add the endpoints to `contracts/openapi.yaml` — search; preview returning the immutable commit + opaque capability + per-skill digests; install by capability + chosen subset with per-skill outcomes; two-step archive import (multipart preview: one `archive` file part only, ≤10 MiB body, the sole JSON-rule exemption documented with its Host+Origin protection; commit by staging id with replay/TTL 404s and the busy bound); origin/provenance fields; the full typed failure matrix (index-unreachable, upstream-unreachable, upstream-rate-limited with retry guidance, repo-not-found, no-skills-found, archive violations naming the violation, invalid-skill, changed-upstream, duplicate, capacity, io_error); verify `npx @redocly/cli lint` passes
+- [x] 1.3 Regenerate Go types and the TS client via codegen; verify zero drift on a second run and `task check:frontend` passes
+
+## 2. Skill hub (index client, fetcher, safe-bundle, staging)
+
+- [x] 2.1 Build `internal/skillhub`: the `IndexClient` seam (pinned endpoint, five-minute cache with defined freshness — fresh serves, expired re-queries synchronously, no background refresh; typed unreachable); verify unit tests run entirely against fake index fixtures (zero network) covering results mapping, cache freshness/expiry, and the typed failure
+- [x] 2.2 Build the shared `SafeBundle` policy + path validator (raw-name validation: absolute/drive/UNC, `..`, backslash, NUL; separator-aware containment vs sibling-prefix escapes; normalized-name duplicates and file/dir collisions; reserved provenance path) and the `RepoFetcher` seam (canonical GitHub identity parsing from pastes — never arbitrary URLs; default-branch → immutable commit resolution; codeload tarball fetch under the ONE envelope: 50 MiB download + decompression with deadline, 512 entries, 10 MiB per file, headers AND streaming enforcement, regular-files/dirs only rejecting symlink/hardlink/special entries, nested archives opaque); verify httptest tarball fixtures cover: both skill layouts, multi-skill repos, symlink-entry rejection, `../` rejection, lying-header bombs, stale-index (skill gone), rate-limited, and zero live GitHub in `go test`
+- [x] 2.3 Build the archive importer + staging: zip parsing under the same envelope, `.skill`/`.zip` equivalence, SKILL.md-at-root-or-one-dir validation, staging as 256-bit bearer capabilities resolved through an in-memory map (never path-joined), synchronous expiry at commit, one-shot commits, startup reclamation of orphaned stage dirs, ≤8 concurrent stages with typed busy; verify unit tests cover every violation (traversal, symlink, bomb headers lying and streaming-caught, corrupt, no SKILL.md, nested-two-dir, extra multipart parts, reserved provenance path), replay/TTL commits, restart cleanup, eviction, and the happy-path round-trip with executable-bit preservation
+- [x] 2.4 Write `internal/skillhub/AGENTS.md` (seams, the one envelope, capability lifecycle, graph placement: imports registry types only, below server, never engine)
+- [x] 2.5 Registry primitive `InstallSkill(bundle)`: validate every path+mode (0o644/0o755 subset only) with the shared validator, loader-exact SKILL.md validation (accepted frontmatter exactly name/description/path-sink) applied AT PREVIEW TOO, private `.stage-<rand>/` build (0o700), atomic directory no-clobber rename install, provenance sidecar (versioned schema, reserved path, payload-tree hash EXCLUDING the sidecar, malformed → origin local), per-skill outcomes; verify registry tests: bundle intact, executable bit survives, frontmatter-name duplicate AND distinct-name/same-slug AND snapshot-invisible occupant refusals, invalid-frontmatter rejection, provenance durable across restart, forged-sidecar upload rejection, hash recomputation after local edits, failure-injection leaving disk truth
+
+## 3. Handlers
+
+- [x] 3.1 Implement the marketplace handlers (search passthrough, preview issuing capabilities with the 15-minute digest cache, install consuming capabilities with pinned-commit re-fetch + digest verify on expiry → typed changed-upstream on mismatch) and the import handlers (multipart with the single-`archive`-part rule and pre-parse size bound, commit by capability); verify handler tests with fakes cover every contract scenario including rate-limit guidance, branch-moved-after-preview, expired-capability digest mismatch, and hostile multipart (extra parts, oversized, wrong content type)
+- [x] 3.2 Extend the guard for the single multipart exemption (trusted-Host unchanged + Origin enforced on that route) WITHOUT loosening any other route; verify guard tests: hostile Origin, rebound Host, absent-Origin curl passes, `text/plain` form post still 415, JSON mutations unchanged
+- [x] 3.3 Update `backend/internal/server/AGENTS.md` (new surfaces, the exemption, dial-out rule); verify `go vet ./...`, `golangci-lint run`, and `go test -race ./...` pass
+
+## 4. Frontend
+
+- [x] 4.1 Extend `shared/api/client.ts` with operation-checked bindings for the five endpoints and the capability/outcome/provenance types; verify `pnpm check` passes with no hand-rolled fetches outside the client
+- [x] 4.2 Rework Skills into Installed | Browse views: origin badges, search box (debounced), result cards, GitHub paste entry, Import file picker (accept `.skill,.zip`); verify the search/browse scenarios are demonstrable against the dev daemon
+- [x] 4.3 The mandatory preview dialog: INERT markdown rendering (no raw HTML, no remote resource loading, safe-scheme links only, untrusted label), complete file list with sizes, license, pinned commit, multi-skill subset selection, per-skill outcome rows; keyboard modality inherited (focus/Tab/Escape) and async responses bound to the initiating dialog with installs reconciling after dismissal; verify the preview scenarios (including the hostile-markdown fixture rendering inertly) are demonstrable
+- [x] 4.4 Playwright flows BY NAME (route-mocked, zero network): search-renders-results, index-down-typed-state, preview-then-install, multi-skill-subset-outcomes, duplicate-refusal, changed-upstream-on-expired-capability, import-preview-commit, every archive violation surfaced, staging-expired-commit, hostile-markdown-inert, dialog-escape-closes-only-preview, delayed-install-reconciles-after-dismissal; verify `pnpm test` passes with each named test present
+- [x] 4.5 Update `frontend/README.md` (marketplace, import, safety posture); verify the documented commands run as written
+
+## 5. Review and hardening
+
+- [x] 5.1 Run the read-only `zbot-reviewer` subagent over the change scope, artifacts, and the five constitution boundaries; fix every P0/P1 finding and fix P2s or record in the change summary why not; verify findings are resolved with targeted tests
+- [x] 5.2 Re-run `task verify` green after the final fixes; verify no generated drift or unrelated files
+
+## Workflow follow-up
+
+- Archive only after both predecessors have archived and the D10 rebase is done: compare this delta's MODIFIED requirement against the then-current main spec, reconcile, re-validate, then archive after the review gate is complete.
