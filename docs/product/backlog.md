@@ -79,15 +79,20 @@ Vault root outside ~/.zbot (config, default ~/karta-wards); internal/wards
 read-only; Wards sidebar surface replacing the Code Wards placeholder.
 Constitution gets a scoped ~/.zbot exception for the user-chosen vault.
 
-### add-intent-analysis — SLICE 2 (after 1)
+### add-intent-analysis — SLICE 2 (after 1; FULL ARTIFACTS READY)
 
-Pre-execution middleware for goal runs: cheap router (trivial bypass,
-procedure pin) + intent agent writing a typed JSON contract (primary/
-hidden intents, solution path, complexity S/M/L/XL → step budget,
-recommended skills/agents/wards, ward_recommendation, execution
-strategy). Injected as a Task Analysis prompt section; emitted as
-events; non-fatal on failure. Depends on slice 1's ward index for ward
-recommendation; skills/agents recommendation uses the registry snapshot.
+Pre-execution middleware for goal runs: deterministic router (trivial
+bypass) + one small-model intent call writing the typed contract
+(primary/hidden intents, solution path, complexity S/M/L/XL → step
+budgets 4/8/16/24, index-validated skill/agent/MCP-tool
+recommendations with drop-and-warn, ward_recommendation with exact-
+match + reusable-domain naming, simple/graph approach gating). Semantic
+resource index (chitta reserved kinds via the ONNX seam; listing
+fallback). Task Analysis prompt section (fast-path instructions);
+prompts seeded from the operator's ~/Documents/zbot/config/ set
+(quality bar recorded in the exploration doc). Non-fatal degradation
+everywhere; config kill-switch. Artifacts: proposal/specs/design/tasks
+— validate green.
 
 ### add-ward-hosting — SLICE 3 (after 1; parallel with 2)
 
