@@ -678,3 +678,27 @@ func TestBootstrapMigratesLegacyAgentsOnExistingInstall(t *testing.T) {
 		t.Fatal("Load resurrected the legacy config/agents dir")
 	}
 }
+
+// An absent intent_analysis key (config files predating the change)
+// means ON — a plain bool would silently disable analysis on every
+// existing install (live-smoke finding); explicit false is the only
+// kill-switch.
+func TestIntentAbsentKeyMeansOn(t *testing.T) {
+	_, paths := tempHome(t)
+	writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\n")
+	cfg, err := Load(paths)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Intent.On() {
+		t.Fatal("absent intent_analysis key must default ON")
+	}
+	writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nintent_analysis:\n    enabled: false\n")
+	cfg, err = Load(paths)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Intent.On() {
+		t.Fatal("explicit enabled:false must be the kill-switch")
+	}
+}

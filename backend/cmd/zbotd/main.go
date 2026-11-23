@@ -213,7 +213,7 @@ func run(ctx context.Context, homeFlag string) error {
 	// analysis → composed prompt + step budget; children/chat/Resume
 	// pass through). Disabled by config → the plain engine.
 	runEngine := domain.AgentEngine(eng)
-	if cfg.Intent.Enabled {
+	if cfg.Intent.On() {
 		// The analysis model: cfg intent_analysis.model as "provider/model"
 		// when set; otherwise the completer's default provider (absent
 		// one, analysis degrades non-fatally with the reason in the event).
@@ -283,7 +283,7 @@ func run(ctx context.Context, homeFlag string) error {
 				return memOnly, knowledge
 			},
 			Cfg: intent.Config{
-				Enabled:        cfg.Intent.Enabled,
+				Enabled:        cfg.Intent.On(),
 				AnalysisModel:  cfg.Intent.Model,
 				ComposePersona: composePersona,
 				Persist: func(ev domain.TimelineEvent) {

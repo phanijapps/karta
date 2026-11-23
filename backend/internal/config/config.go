@@ -42,12 +42,17 @@ type SystemPromptConfig struct {
 }
 
 // IntentConfig gates the pre-execution intent middleware for goal
-// runs (chat is never analyzed). Enabled is the kill-switch: off
-// restores the exact pre-analysis behavior.
+// runs (chat is never analyzed). Enabled is a POINTER: an absent key
+// (config files predating this change) means ON — the default — while
+// an explicit `enabled: false` is the kill-switch. A plain bool would
+// silently disable analysis on every existing install.
 type IntentConfig struct {
-	Enabled bool   `yaml:"enabled"`
+	Enabled *bool  `yaml:"enabled,omitempty"`
 	Model   string `yaml:"model,omitempty"` // optional qualified provider/model for the analysis call; empty = the run's model
 }
+
+// On reports whether intent analysis is enabled (absent key = on).
+func (c IntentConfig) On() bool { return c.Enabled == nil || *c.Enabled }
 
 // ServerConfig is the daemon's HTTP listen address.
 type ServerConfig struct {
@@ -159,7 +164,7 @@ func Default() Config {
 		Compaction:   CompactionConfig{MaxContextTokens: 128000, ReserveOutputTokens: 8192},
 		Wards:        WardsConfig{VaultRoot: ""}, // empty = OS-aware ~/Documents/wards (wards.ResolveVaultRoot)
 		SystemPrompt: SystemPromptConfig{Role: "role", Soul: "soul", OS: "auto", Tools: "tools"},
-		Intent:       IntentConfig{Enabled: true},
+		Intent:       IntentConfig{Enabled: boolPtrLocal(true)},
 		Providers:    []ProviderConfig{}, // marshals as `providers: []` so the key is discoverable
 		Chitta: ChittaConfig{
 			Provider:  "local",
