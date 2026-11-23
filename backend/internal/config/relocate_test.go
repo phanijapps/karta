@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"zbot/backend/internal/registry"
 )
 
 // The hand-move-aware migration (relocate-skills-hooks).
@@ -43,15 +41,40 @@ func TestMigrateLegacySkillsHooks(t *testing.T) {
 
 	t.Run("hand-moved home is a no-op", func(t *testing.T) {
 		_, paths := tempHome(t)
-		// Top-level populated by the user, legacy empty — nothing to do.
-		if err := os.MkdirAll(filepath.Join(paths.SkillsDir, "operators"), 0o755); err != nil {
+		// The operator's real state: BOTH seed markers present, a REAL
+		// user skill at the top level, an EMPTY legacy root — the
+		// migration moves nothing and the user skill survives
+		// byte-for-byte.
+		if err := os.MkdirAll(paths.Home, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(paths.Home, exampleRosterMarker), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(paths.Home, personaSeedMarker), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		userSkill := filepath.Join(paths.SkillsDir, "mine", "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(userSkill), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		const userBody = "---\nname: mine\ndescription: mine\n---\nmy body"
+		if err := os.WriteFile(userSkill, []byte(userBody), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(paths.ConfigDir("skills"), 0o755); err != nil { // empty legacy root
 			t.Fatal(err)
 		}
 		if err := Bootstrap(ctxBG(t), paths); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := os.Stat(filepath.Join(paths.SkillsDir, "operators")); err != nil {
-			t.Fatalf("user tree disturbed: %v", err)
+		got, err := os.ReadFile(userSkill)
+		if err != nil || string(got) != userBody {
+			t.Fatalf("user skill disturbed: %q %v", got, err)
+		}
+		// No example seeds resurrected alongside the user tree.
+		if _, err := os.Stat(filepath.Join(paths.SkillsDir, "clean-code")); !os.IsNotExist(err) {
+			t.Fatal("marked hand-moved home must not gain example seeds")
 		}
 	})
 
@@ -83,20 +106,6 @@ func TestMigrateLegacySkillsHooks(t *testing.T) {
 		}
 	})
 
-	t.Run("registry loads the top-level root", func(t *testing.T) {
-		_, paths := tempHome(t)
-		if err := Bootstrap(ctxBG(t), paths); err != nil {
-			t.Fatal(err)
-		}
-		reg := registry.New()
-		snap, errs := reg.LoadAll(registry.Dirs{Agents: paths.AgentsDir, Skills: paths.SkillsDir, Hooks: paths.HooksDir})
-		if len(errs) > 0 {
-			t.Fatalf("load errors: %+v", errs)
-		}
-		if len(snap.Skills) != 5 {
-			t.Fatalf("seeded skills at the new root: %d", len(snap.Skills))
-		}
-	})
 }
 
 func ctxBG(t *testing.T) context.Context {

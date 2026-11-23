@@ -25,6 +25,28 @@ tolerated via the sink keys.
 Verification after fixes: full backend suite green; golangci-lint 0;
 gates OK; CONTRACT_CHANGE=1 task verify exit 0.
 
-## Final review
+## Final review (2026-11-24)
 
-- PENDING (task 3.2).
+- zbot-reviewer (default model): FAIL — 1×P1 + 5×P2, then PASS after
+  fixes:
+  - F-P1: spec-coverage gap — the main specs still asserted the OLD
+    roots in requirements this change invalidates, and the proposal's
+    promised skill-management delta did not exist. FIXED: deltas added
+    for config-registry (skill/hook load roots), skill-management
+    (root + sink keys), skill-marketplace (install target + accepted
+    frontmatter set), and config-plane's roster-seeding requirement
+    (seed root). Validate green.
+  - F-P2a: the duplicate registry subtest + sibling import REMAINED
+    (an earlier edit batch had asserted out before applying — the
+    ledger claimed a fix the tree lacked; the roster lesson repeated).
+    FIXED for real: subtest deleted, import gone, external test covers
+    the load.
+  - F-P2b: hand-move test lacked markers/real content; fresh-home
+    lacked the no-legacy-hooks assert. FIXED: marked home + real
+    SKILL.md + no-resurrection assert; (hooks root is created by
+    ensureDirs by design — layout symmetry — recorded).
+  - F-P2c/d/e: stale AGENTS.md seed path, UI/README/contract
+    description strings, registry comment paths. FIXED: all updated;
+    contract description-only change, codegen zero drift.
+- Status: WAITING FOR HUMAN REVIEW (task verify exit 0 after the final
+  edit).

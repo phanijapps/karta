@@ -330,7 +330,7 @@
   <div class="section-head">
     <div>
       <h3>Workspace skills</h3>
-      <p class="muted">Managed directories in <code>~/.zbot/config/skills/</code> — changes apply immediately, no restart.</p>
+      <p class="muted">Managed directories in <code>~/.zbot/skills/</code> — changes apply immediately, no restart.</p>
     </div>
     <div class="view-switch" role="tablist" aria-label="Skills views">
       <button role="tab" aria-selected={view === 'installed'} class:active={view === 'installed'} onclick={() => (view = 'installed')}>Installed</button>
@@ -457,7 +457,7 @@
         <label>Name<input bind:value={formName} placeholder="Code review" /></label>
         <label class="full">Description<input bind:value={formDescription} placeholder="Review a change for correctness and maintainability." /></label>
         <label class="full">Body (markdown)<textarea class="mono" bind:value={formBody} rows="10" placeholder={'# Code review\n\nChecklist…'}></textarea></label>
-        <p class="muted hint">Saving writes <code>SKILL.md</code> (frontmatter + body) under <code>~/.zbot/config/skills/&lt;slug&gt;/</code>. Renaming moves the directory; bundled files travel with it.</p>
+        <p class="muted hint">Saving writes <code>SKILL.md</code> (frontmatter + body) under <code>~/.zbot/skills/&lt;slug&gt;/</code>. Renaming moves the directory; bundled files travel with it.</p>
         {#if formError}
           <p class="form-error" role="alert">{formError.message}</p>
         {/if}

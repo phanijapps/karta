@@ -7,7 +7,8 @@ import (
 )
 
 // SkillSpec is a skill directory (Agent Skills layout) loaded from
-// config/skills/<name>/SKILL.md with optional bundled files.
+// <skills-root>/<name>/SKILL.md (top-level ~/.zbot/skills) with
+// optional bundled files.
 type SkillSpec struct {
 	Name        string
 	Description string

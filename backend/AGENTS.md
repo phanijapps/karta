@@ -84,7 +84,7 @@ name their owning follow-up, never left as silent comments.
 
 - Domain layer (`internal/domain/`) stays pure: types and interfaces only,
   zero imports from other internal packages.
-- The registry (`internal/registry/`) loads `~/.zbot/config/**` with `fsnotify`
+- The registry (`internal/registry/`) loads `~/.zbot/config/**` plus the top-level skills/hooks roots with `fsnotify`
   hot-reload; zero hardcoded agents, prompts, skills, hooks, or MCPs.
 - Hook execution (`internal/hooks/`, implementing `domain.HookRunner`) follows
   the exit-code contract: 0 allow, 2 block (stderr → agent as recoverable

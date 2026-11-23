@@ -546,7 +546,7 @@ export interface paths {
         put?: never;
         /**
          * Create a skill (managed directory)
-         * @description Writes `config/skills/<slug>/SKILL.md` (slug derived from the
+         * @description Writes `skills/<slug>/SKILL.md` (top-level root) (slug derived from the
          *     name, managed-name form). No-clobber: an occupied directory
          *     fails with `duplicate_name` whatever occupies it. Applies
          *     immediately — no restart.

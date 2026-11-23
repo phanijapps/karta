@@ -51,7 +51,7 @@ func renderSkillMD(name, description, body string) ([]byte, error) {
 // skillDirFor returns the managed directory for slug under the skills root.
 func skillDirFor(root, slug string) string { return filepath.Join(root, slug) }
 
-// CreateSkill writes config/skills/<slug>/SKILL.md (no-clobber directory,
+// CreateSkill writes skills/<slug>/SKILL.md (top-level root (no-clobber directory,
 // atomic file) and publishes it.
 func (r *Registry) CreateSkill(name, description, body string) (SkillSpec, error) {
 	if err := validateSkill(name, description); err != nil {

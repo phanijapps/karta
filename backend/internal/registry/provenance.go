@@ -229,7 +229,7 @@ func renderProvenance(p *ProvenanceInput, hash string, at time.Time) ([]byte, er
 }
 
 // InstallSkill atomically installs a validated bundle under
-// config/skills/<slug>/: build in a private hidden staging sibling
+// skills/<slug>/ (top-level root): build in a private hidden staging sibling
 // (0o700), then the directory no-clobber rename (frontmatter-name
 // duplicates and occupied slug paths — snapshot-invisible occupants
 // included — refuse), publish, notify. Disk truth wins on failure.
