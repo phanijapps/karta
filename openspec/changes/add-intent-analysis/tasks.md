@@ -12,11 +12,25 @@
   one retry, then degrade). Verify: fake-completer tests (full
   contract, malformed JSON, model failure → typed degrade).
 - [ ] 1.3 The intent prompt seeded to
-  `~/.zbot/config/prompts/intent-analysis.md` (operator's version +
-  Karta deltas: complexity, solution_path, mcp_tools, resource-slot
-  markers); runtime validates the file's shape, falls back to the
-  embedded default. Verify: seeded-file load + malformed-file fallback
-  tests.
+  `~/.zbot/config/prompts/intent-analysis.md` (operator's version with
+  the design's adaptation table applied: Karta tool names
+  (delegate_agent, no load_skill — skills are runtime provisions),
+  complexity + solution_path + mcp_tools restored/added,
+  subdirectory/structure/graph fields dropped, no 'coding' skill —
+  graph runs recommend a builder/orchestrator agent, resource lists as
+  template slots {{.Skills}}/{{.Agents}}/{{.Wards}}); runtime
+  validates the file's shape, falls back to the embedded default.
+  Verify: seeded-file load + malformed-file fallback tests.
+
+- [ ] 1.4 `system-prompt` capability (specs/system-prompt delta):
+  config surface (`system_prompt.role/soul/os/tools/custom`, os=auto by
+  GOOS), strict typed resolution (missing role/unresolvable section =
+  load error naming file+section; optional missing = skipped),
+  back-compat (absent key = defaults), persona seeds (role, soul,
+  os-linux/windows/darwin, tools) write-once under the roster marker.
+  Verify: config tests (surface, back-compat, typed errors) + seed
+  tests (fresh/seeds, edit survives) + assembly table tests (order,
+  auto-OS pick, optional skip).
 
 ## 2. Resource index
 
@@ -44,6 +58,13 @@
   Failed emitted and the result on the execution record. Verify: event
   tests (all four paths; rule 4 holds).
 
+- [ ] 3.4 Composition wired into both surfaces: chat prepends the
+  composed static sections as the system message (no dynamic sections
+  in chat this change); the goal wrapper composes static + `## Context`
+  (chitta recall: memory + knowledge graph, fused) + `## Task Analysis`
+  + `## Skills` (validated bodies inlined; no load_skill tool — the
+  drop-and-warn path emits events). Verify: chat tests assert the
+  system message; wrapper tests assert section order + budget.
 ## 4. Config + UI (light)
 
 - [ ] 4.1 Config: `intent_analysis.enabled` (default true) +

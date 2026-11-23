@@ -53,6 +53,13 @@ recommendations.
 - `intent-analysis`: pre-execution classification of goal runs — the
   JSON contract, resource recommendations from the semantic index,
   complexity budgets, approach gating, events, non-fatal degradation.
+- `system-prompt`: the composed system prompt — static registry
+  sections (role/soul/os/tools/custom, os=auto per platform) +
+  per-surface dynamic sections (Task Analysis, Skills, Context),
+  runtime skill provisioning (no load_skill tool), typed load
+  failures, seeded default persona. Serves chat (static-only this
+  change; its Context recall is a recorded follow-up) and goal runs
+  (full stack).
 
 ### Modified Capabilities
 
