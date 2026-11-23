@@ -3,7 +3,7 @@ package domain
 import "context"
 
 // HookRunner executes Claude Code-style lifecycle hooks declared in
-// ~/.zbot/config/hooks/*.yaml. The executor lives in internal/hooks/.
+// ~/.zbot/hooks/*.yaml (top-level root). The executor lives in internal/hooks/.
 type HookRunner interface {
 	// Run executes the hooks matching event and returns the combined
 	// decision. Exit-code semantics: 0 -> allow (optionally modifying input

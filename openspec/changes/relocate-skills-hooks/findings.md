@@ -50,3 +50,12 @@ gates OK; CONTRACT_CHANGE=1 task verify exit 0.
     contract description-only change, codegen zero drift.
 - Status: WAITING FOR HUMAN REVIEW (task verify exit 0 after the final
   edit).
+
+## Re-check (run 42b3cca3): FINAL_REVIEW: PASS
+
+All six findings verified fixed with evidence. One residual class it
+observed (P2, non-blocking): three stale hooks/test comments
+(registry/hooks.go, domain/hooks.go, config_test.go) + cosmetic
+Playwright mock-path strings — the comments are FIXED on the spot
+(commit below); the mock strings are arbitrary fixture data with no
+behavior tie (recorded, not churned).

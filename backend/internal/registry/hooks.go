@@ -23,7 +23,7 @@ var hookEvents = map[domain.HookEventName]bool{
 }
 
 // HookSpec is a Claude Code-style lifecycle hook manifest loaded from
-// config/hooks/*.yaml.
+// hooks/*.yaml (top-level root).
 type HookSpec struct {
 	Event      domain.HookEventName
 	Matcher    *regexp.Regexp // nil when the manifest has no matcher
@@ -42,7 +42,7 @@ type hookWire struct {
 	TimeoutMS int    `yaml:"timeout_ms"`
 }
 
-// loadHooks loads config/hooks/*.yaml manifests keyed by file stem. The
+// loadHooks loads hooks/*.yaml (top-level root) manifests keyed by file stem. The
 // event must be one of the six lifecycle names, the optional matcher must
 // compile, and the command is required.
 func loadHooks(snap *Snapshot, dir string, errs *[]LoadError) {

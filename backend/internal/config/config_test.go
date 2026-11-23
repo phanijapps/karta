@@ -88,7 +88,7 @@ func TestBootstrapFirstRunCreatesStructureOnly(t *testing.T) {
 	}
 	// Structure, never content — the ONE exception is the EXAMPLE
 	// roster (seed-operator-roster): agents/ seeds six agent examples
-	// and config/skills/ seeds five prompt-craft skills (user-owned
+	// and the top-level skills root seeds five prompt-craft skills (user-owned
 	// after first bootstrap; deleted examples do not resurrect). Every
 	// other registry dir stays empty.
 	for _, dir := range paths.AllConfigDirs() {
