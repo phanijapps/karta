@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -997,3 +998,30 @@ func (c *countingEmbedder) EmbedPassages(ctx context.Context, texts []string) ([
 	return out, nil
 }
 func (c *countingEmbedder) Close() error { return nil }
+
+// Reserved resource-index kinds never surface through the agent tools
+// (recall or history), even when queried broadly.
+func TestResourceKindsInvisibleToAgents(t *testing.T) {
+	s := newTestSystem(t)
+	host := agentHost()
+	// Write a resource record through the System API (as the indexer does).
+	_, err := s.Remember(context.Background(), []domain.Observation{
+		{Kind: domain.MemoryKindResourceSkill, Subject: "resource:skill:x", Content: "x — a skill", Tags: []string{"resource-index"}},
+	}, domain.ChittaHostContext{Source: domain.SourceDistiller, AgentID: "resource-index"})
+	if err != nil {
+		t.Fatalf("Remember resource: %v", err)
+	}
+	for _, tool := range []string{ToolRecall, ToolHistory} {
+		args := `{"query":"x","limit":10}`
+		if tool == ToolHistory {
+			args = `{"limit":10}`
+		}
+		raw, err := s.Dispatch(context.Background(), tool, json.RawMessage(args), host)
+		if err != nil {
+			t.Fatalf("%s: %v", tool, err)
+		}
+		if strings.Contains(string(raw), "resource_skill") || strings.Contains(string(raw), "x — a skill") {
+			t.Fatalf("%s leaked a resource-index record: %s", tool, raw)
+		}
+	}
+}

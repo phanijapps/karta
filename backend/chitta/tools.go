@@ -205,6 +205,9 @@ func (s *System) Dispatch(ctx context.Context, tool string, args json.RawMessage
 		if err != nil {
 			return fail(err)
 		}
+		// Reserved resource-index kinds never surface to agents — the
+		// index is daemon-internal (internal/resourceindex).
+		page.Items = dropResourceHits(page.Items)
 		return marshal(page)
 
 	case ToolRevise:
@@ -228,6 +231,8 @@ func (s *System) Dispatch(ctx context.Context, tool string, args json.RawMessage
 		if err != nil {
 			return fail(err)
 		}
+		// Resource-index records are invisible to agents here too.
+		page.Items = dropResourceRecords(page.Items)
 		return marshal(page)
 
 	case ToolConnect:
@@ -326,3 +331,28 @@ var (
 	_ domain.MemoryStore    = (*System)(nil)
 	_ domain.KnowledgeGraph = (*System)(nil)
 )
+
+// dropResourceHits filters reserved resource-index kinds out of a
+// recall page (agent-facing surface; the daemon's indexer reads the
+// System API directly).
+func dropResourceHits(items []domain.RecallHit) []domain.RecallHit {
+	out := items[:0]
+	for _, h := range items {
+		if !h.Record.Kind.IsResourceKind() {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+// dropResourceRecords filters reserved resource-index kinds out of a
+// history page (agent-facing surface).
+func dropResourceRecords(items []domain.MemoryRecord) []domain.MemoryRecord {
+	out := items[:0]
+	for _, r := range items {
+		if !r.Kind.IsResourceKind() {
+			out = append(out, r)
+		}
+	}
+	return out
+}
