@@ -67,6 +67,62 @@ Agentzero's gateway has two chat modes (verified in source):
    skipped; emitting a "bypassed" event for every chat message would
    be noise.
 
+## The research-mode execution path (the unification core)
+
+Chat mode and research mode run through DIFFERENT execution paths on
+the same surface:
+
+```
+chat-send(mode=chat)     → chat service → completer (lean prompt,
+                            no delegation, no skills provision)
+chat-send(mode=research) → the intent wrapper → engine adapter
+                            (full pipeline: analysis, skills
+                            provision, ward tools, delegate_agent,
+                            progress budgets) → the result lands in
+                            the same conversation
+```
+
+The chat service grows a `researchPath` seam: when the mode is
+research, the send routes through the WRAPPED engine (the same
+RunGoal path the /api/goals endpoint uses), with the conversation's
+messages as context. The result streams back into the same chat
+session. This is the unification: the chat surface IS the goal
+surface in research mode.
+
+**Skills in research mode**: the wrapper's ## Skills section already
+provisions intent-recommended skills for goal runs — the same
+mechanism serves research-mode chat (the wrapper composes the full
+stack). No new code path: the wrapper handles it.
+
+**Agents in research mode**: the engine adapter already offers
+delegate_agent on goal runs — research-mode chat IS a goal run
+routed through the chat surface. Children get the ward guard. No new
+delegation code: the adapter handles it.
+
+**What changes in the chat service**: a mode branch at send time —
+chat mode = the current lean path; research mode = construct a
+GoalRequest (the message as goal, the session's model) → call the
+wrapped engine → relay the events into the chat timeline. The
+service does NOT grow its own analysis/skills/delegation — it ROUTES
+to the machinery that already has them.
+
+## The UI
+
+- **Mode toggle**: a segmented control in the composer (Chat |
+  Research). State persists per session. Research mode visually
+  distinct (accent color, badge).
+- **Task Analysis card**: renders on the exchange's first event when
+  an intent_analysis event arrives (approach, complexity, ward,
+  recommendations) — the Timeline already streams it.
+- **Ward context footer**: when a ward is active, the composer shows
+  the ward name + a "leave" affordance.
+- **Continue button**: when a research exchange is near its budget
+  (the progress tracker's soft limit), a Continue button appears
+  offering +25 iterations.
+- **Skills shown**: research mode surfaces the provisioned skills
+  (chips in the Task Analysis card — "provisioned: clean-code,
+  pdf").
+
 ## Risks / Trade-offs
 
 - [Mode thrash] — a user flipping modes per message pays the analysis

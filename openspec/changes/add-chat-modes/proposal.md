@@ -20,15 +20,28 @@ that lets a user extend a live run.
   prompt (Role + Soul + OS + Tools + Context — no research protocol,
   no ward tools); thinking off; temperature raised. Memory recall and
   builtin tools still run.
-- **Research mode** on the chat surface = the full pipeline (currently
+- **Research mode** on the chat surface = the FULL pipeline (currently
   goal-run-only): intent analysis, Task Analysis, ward tools,
   delegation, progress-aware budgets. This UNIFIES chat and goal runs
   into one surface with two depths.
+- **Skills provision in research mode**: the ## Skills section
+  composes on research-mode chat exchanges — intent-recommended or
+  user-pinned skills load into context (the same runtime-provisioning
+  mechanism goal runs use; no load_skill tool).
+- **Delegation in research mode**: the delegate_agent tool is offered
+  on research-mode chat exchanges (the full agent roster; children
+  get the ward guard). The chat service grows an engine-backed
+  execution path for research mode.
 - **Continue protocol**: `POST /api/sessions/{id}/continue` grants
   additional iterations to a live run (default 25); consumed by the
   progress tracker's extension mechanism.
 - **Session mode lifecycle**: the session record carries its current
   mode; the session API exposes it; mode changes apply next-invoke.
+- **UI: the mode switcher** — a Chat/Research toggle in the composer
+  (persisted per session, visually distinct states); the research
+  state surfaces a Task Analysis card on the exchange's first event,
+  ward context in the composer footer, and a Continue button when a
+  run approaches its budget.
 - Contract: chat-send gains `mode`; sessions gain `mode`; the continue
   endpoint. Codegen.
 
@@ -40,8 +53,11 @@ that lets a user extend a live run.
 
 ### Modified Capabilities
 - `simple-chat`: the chat-send request gains `mode`; the chat service
-  branches on it.
+  branches on it; research mode provisions skills and offers
+  delegation.
 - `api-contract`: the mode field + continue endpoint (additive).
+- `settings-shell` (or nav): the chat composer gains the mode toggle;
+  the research state surfaces Task Analysis and ward context.
 
 ## Impact
 
