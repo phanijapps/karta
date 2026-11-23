@@ -43,6 +43,15 @@ type Server struct {
 	wards   WardIndex
 	hub     *skillHub
 	version string
+	// indexMCPTools feeds successful probe results to the daemon's
+	// resource index (nil = indexing off, e.g. tests).
+	indexMCPTools func(server string, tools []mcpclient.Tool)
+}
+
+// SetMCPToolIndexer wires the resource-index feed for probed MCP tools
+// (the daemon owns the indexer).
+func (s *Server) SetMCPToolIndexer(fn func(server string, tools []mcpclient.Tool)) {
+	s.indexMCPTools = fn
 }
 
 // ChatService is the seam the chat handlers consume (the concrete

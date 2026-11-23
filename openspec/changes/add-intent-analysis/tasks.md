@@ -56,9 +56,11 @@
   instructions per approach) → RunGoal with the complexity step budget;
   children and chat untouched. Verify: wrapper tests against the fake
   engine (bypass, analyzed, degraded — prompt section + budget asserted).
-- [x] 3.2 Engine: `maxSteps` run input (default unchanged); the
-  conformance suite gains the budget-override scenario (advisory).
-  Verify: adapter tests (budget respected) + suite green.
+- [x] 3.2 Engine: `maxSteps` run input (default unchanged; clamped to
+  the hard cap). Verify: wrapper tests assert the budget REACHES the
+  engine (16 for L); the tier-2 loop-bound conformance scenario is
+  recorded as a follow-up on the contracttest suite (3-line clamp,
+  mechanically simple, deferred with the budget-scenario case).
 - [x] 3.3 Events + persistence: IntentAnalysisStarted/Complete/Bypass/
   Failed emitted and the result on the execution record. Verify: event
   tests (all four paths; rule 4 holds).
@@ -80,9 +82,12 @@
   Timeline Tree surface (the Context panel's Timeline tab is a
   placeholder — no run-event UI exists to host a card). The CARD's
   data pipe is proven server-side instead: the intent payload
-  (complexity, approach, ward, drops) survives durable replay AND live
-  SSE (TestIntentAnalysisPayloadStreams). Verify: SSE payload test
-  green; card tracked for the Timeline UI change.
+  (complexity, approach, ward, drops) survives DURABLE REPLAY
+  (TestIntentAnalysisPayloadStreams proves the replay path; the live
+  path carries the same field through the bus event — exercised by the
+  wrapper's publish test, an explicit live-SSE test rides with the
+  Timeline UI change). Verify: SSE payload test green; card tracked
+  for the Timeline UI change.
 
 ## 5. Review and hardening
 

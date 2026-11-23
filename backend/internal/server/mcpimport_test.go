@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"zbot/backend/internal/mcpclient"
 	"zbot/backend/internal/mcpimport"
@@ -628,4 +629,47 @@ func buildZip(t *testing.T) []byte {
 	_, _ = w.Write([]byte(sampleBody()))
 	_ = zw.Close()
 	return buf.Bytes()
+}
+
+// A successful probe feeds the resource index (the daemon's MCP-tool
+// lane — phase-5 final-review P1); a failed probe does not.
+func TestMcpProbeFeedsResourceIndex(t *testing.T) {
+	t.Parallel()
+	var fed []mcpclient.Tool
+	var fedServer string
+	done := make(chan struct{})
+	srv := newTestServerWithProber(nil, nil, &scriptedProber{result: mcpclient.ProbeResult{Results: []mcpclient.TransportResult{{
+		Transport: "stdio", Status: mcpclient.StatusOK,
+		Tools: []mcpclient.Tool{{Name: "web_search", Description: "search the web"}},
+	}}}})
+	srv.SetMCPToolIndexer(func(server string, tools []mcpclient.Tool) {
+		fedServer, fed = server, tools
+		close(done)
+	})
+	daemon := httptest.NewServer(srv.Routes())
+	defer daemon.Close()
+	mustDo(t, daemon, "POST", "/api/mcps", map[string]any{"name": "ddg", "stdio": map[string]any{"command": "x"}})
+	code, _ := mustDo(t, daemon, "POST", "/api/mcps/ddg/test", map[string]any{})
+	if code != http.StatusOK {
+		t.Fatalf("probe: %d", code)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("indexer never fed")
+	}
+	if fedServer != "ddg" || len(fed) != 1 || fed[0].Name != "web_search" {
+		t.Fatalf("fed: %s %+v", fedServer, fed)
+	}
+}
+
+// scriptedProber returns a fixed result (fakeProber has no tools field).
+type scriptedProber struct {
+	result mcpclient.ProbeResult
+	spec   registry.MCPSpec
+}
+
+func (p *scriptedProber) Test(_ context.Context, spec registry.MCPSpec) mcpclient.ProbeResult {
+	p.spec = spec
+	return p.result
 }

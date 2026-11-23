@@ -362,6 +362,19 @@ func run(ctx context.Context, homeFlag string) error {
 	sched := scheduler.New(reg, runEngine, bus, func() string { return fmt.Sprintf("evt-sched-%d", time.Now().UnixNano()) }, nil, filepath.Join(paths.DataDir, "scheduler-state.json"))
 	daemonSrv := server.New(provStore, providers.NewClient(), catalog, chatSvc, runEngine, bus, db, reg, mcpclient.GoSDKProber{}, sched, wardVault, version)
 	daemonSrv.SetSkillHub(skillhub.NewHTTPIndexClient(), skillhub.NewGitHubRepoFetcher(), skillStore)
+	// Probed MCP tools flow into the resource index (bounded context:
+	// indexing is best-effort, never blocks the probe response).
+	daemonSrv.SetMCPToolIndexer(func(server string, tools []mcpclient.Tool) {
+		infos := make([]resourceindex.ToolInfo, len(tools))
+		for i, t := range tools {
+			infos[i] = resourceindex.ToolInfo{Name: t.Name, Description: t.Description}
+		}
+		indexCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if err := resIndex.IndexTools(indexCtx, server, infos); err != nil {
+			log.Printf("zbotd: mcp tool index failed for %s: %v", server, err)
+		}
+	})
 
 	srv := &http.Server{
 		Addr:              cfg.Server.Address,

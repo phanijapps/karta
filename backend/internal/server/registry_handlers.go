@@ -99,6 +99,17 @@ func (s *Server) TestMcp(w http.ResponseWriter, r *http.Request, name apigen.Mcp
 		return
 	}
 	res := s.prober.Test(r.Context(), spec)
+	// Successful probes feed the semantic resource index (the only
+	// place probed tool lists become durable — phase-5 gate finding).
+	if s.indexMCPTools != nil {
+		for _, tr := range res.Results {
+			if tr.Status == mcpclient.StatusOK && !tr.Truncated {
+				tools := make([]mcpclient.Tool, len(tr.Tools))
+				copy(tools, tr.Tools)
+				s.indexMCPTools(string(name), tools)
+			}
+		}
+	}
 	out := make([]apigen.McpTransportTest, 0, len(res.Results))
 	for _, tr := range res.Results {
 		item := apigen.McpTransportTest{

@@ -35,7 +35,8 @@ recommendations.
 - **Prompt injection**: the analysis renders as a `## Task Analysis`
   section in the run's system prompt (root only) — the model follows
   recommendations; fast-path (approach=simple) instructions ride along.
-- **Observability**: IntentAnalysisStarted/Complete events (streamed +
+- **Observability**: ONE intent_analysis outcome event per run —
+  analyzed / bypassed / failed, with the contract summary, streamed +
   persisted); analysis result on the execution record; failures are
   non-fatal (the run proceeds without analysis, event says why).
 - **Ward recommendation is advisory in this slice**: the field is
