@@ -106,8 +106,16 @@ resource index (chitta reserved kinds via the ONNX seam; listing
 fallback). Task Analysis prompt section (fast-path instructions);
 prompts seeded from the operator's ~/Documents/zbot/config/ set
 (quality bar recorded in the exploration doc). Non-fatal degradation
-everywhere; config kill-switch. Artifacts: proposal/specs/design/tasks
-— validate green.
+everywhere; config kill-switch. OPERATOR REFINEMENTS (2026-11-24,
+recorded in the change design): the composable system prompt folds in
+as a new system-prompt capability (Role/Soul/OS/Tools/Custom + dynamic
+Context/Task-Analysis/Skills sections; chat = static + memory only,
+goals = full stack with memory AND knowledge recall); skills are
+runtime-provisioned into ## Skills (no load_skill tool); the intent
+prompt seeds per the adaptation table (Karta names, no 'coding' skill,
+subdirectory/structure/graph fields dropped). Artifacts:
+proposal/specs/design/tasks — validate green; apply after amending
+tasks for the folded prompt-composition + provisioning work.
 
 ### add-ward-hosting — SLICE 3 (after 1; parallel with 2)
 
