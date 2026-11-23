@@ -103,6 +103,33 @@ kill-switch config defaults ON; flip to OFF restores today's behavior
 exactly. No contract break (the analysis rides events + the execution
 record's existing payload surface).
 
+## Operator refinement (2026-11-24): composable system prompt
+
+The chat/research system prompt is COMPOSED from markdown section
+files in the prompt registry (`~/.zbot/config/prompts/`, existing
+kind — hot-reloaded, API-listed). config.yaml selects them:
+
+```yaml
+system_prompt:
+  role:   role          # REQUIRED — identity, capabilities, bounds
+  soul:   soul          # optional — voice, principles
+  os:     auto          # auto|linux|windows|darwin|none → os-<name>.md
+  tools:  tools         # optional — tool-use discipline
+  custom: [house-rules] # optional, ORDERED extras
+```
+
+Assembly order: Role, Soul, OS, Tools, Custom — then DYNAMIC sections
+appended by machinery at run time: `## Task Analysis` (this change's
+middleware), `## Active Ward` (slice 3: the ward's OWN constitution —
+its AGENTS.md + layout template; the "ward = mini bot with its own
+constitution" model), `## Context` (chitta recall). `AGENTS.md` is
+ deliberately NOT a static section: it is the ward-level constitution
+and composes only when a run is hosted. One template serves chat and
+research; surface differences ride the dynamic sections. Failure
+semantics: missing role or unresolvable section = typed load error
+naming file+section; missing optional = skipped. Seeded from the
+operator's set: SOUL.md→soul, OS.md→os packs, tooling-skills.md→tools.
+
 ## Open Questions
 
 - Surface the analysis in the UI (a Task Analysis card on the run's
