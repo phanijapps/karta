@@ -130,6 +130,31 @@ semantics: missing role or unresolvable section = typed load error
 naming file+section; missing optional = skipped. Seeded from the
 operator's set: SOUL.md→soul, OS.md→os packs, tooling-skills.md→tools.
 
+## Operator refinement 2 (2026-11-24): the intent-analysis prompt
+
+Checked against the operator's actual file
+(`~/Documents/zbot/config/intent-analysis-prompt.md`). Kept verbatim
+in spirit: the analyzer identity (no tools, no browsing, no prose,
+runtime-supplied schema, flat JSON no envelope), skills-vs-agents
+never-mixed discipline, ward naming rules (reusable domain categories,
+GOOD/BAD examples), exact-match against the Existing Wards list, and
+the simple/graph approach gating with its anti-pattern callout.
+Adaptations when seeding `config/prompts/intent-analysis.md`:
+
+| Operator field/rule | Karta v1 disposition |
+|---|---|
+| `subdirectory`, `structure` in ward_recommendation | DROP from the contract — creation-shape details belong to slice 3's `ward_create` args; v1 keeps `{action, ward_name, reason}` |
+| `execution_strategy.graph` (executable graph object, "prefer null") | DROP — Karta's engine is a bounded loop, no planner builds graphs in v1; `approach` + `explanation` stay |
+| `complexity`, `solution_path` | RESTORED from agentzero's contract (this change's step budgets 4/8/16/24 + plan seeding) — the operator's prompt dropped them |
+| `mcp_tools` | ADDED (this change's MCP-plane recommendations) |
+| "Agents = delegate_to_agent()" | Karta's tool is `delegate_agent` — seeded prompt uses Karta's names |
+| "ALWAYS include 'coding' in recommended_skills" (ward structure + task runner) | NO such skill in Karta — v1 rule: graph runs must recommend a builder/orchestrator agent (the seeded builder-agent); the flow-skill form returns with slice 4 |
+| "Relevant Skills/Agents" + "Existing Wards" lists | Template slots ({{.Skills}}/{{.Agents}}/{{.Wards}}) — the registry already parses prompts as Go templates, so the seeded file is hot-editable and the runtime injects index hits; Existing Wards = slice 1's Vault.Index (name, archetype, canonical title as scope) |
+
+The composable chat/research prompt (previous refinement) is a
+SEPARATE surface: analysis runs on this dedicated prompt alone — no
+role/soul/os/tools composition, exactly like the operator's file.
+
 ## Open Questions
 
 - Surface the analysis in the UI (a Task Analysis card on the run's
