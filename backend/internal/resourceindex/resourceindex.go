@@ -81,16 +81,27 @@ type entry struct {
 
 func (e entry) content() string { return e.name + " — " + e.description }
 
-// Sync reconciles the whole index to the registry snapshot: new and
-// changed resources are remembered (content-keyed merges bump
-// unchanged ones), removed resources are superseded with tombstones.
+// batchLimit mirrors chitta's remember-batch cap; writes are chunked.
+const batchLimit = 64
+
+// pageLimit stays within chitta's History limit clamp (limits above
+// RecallMaxLimit fall back to the default 10 — the pagination trap the
+// phase-2 gate caught).
+const pageLimit = 100
+
+// Sync reconciles the SKILL and AGENT parts of the index to the
+// registry snapshot. MCP tool records are reconciled ONLY by
+// IndexTools (the registry does not know probed tools; a Sync here
+// must never retire them). New and changed resources are
+// remembered/revised; removed resources are superseded with
+// tombstones (chitta has no hard delete); an already-tombstoned record
+// is left alone, so repeated syncs are true no-ops.
 func (ix *Indexer) Sync(ctx context.Context, snap registry.Snapshot) error {
 	want := wantEntries(snap)
-	have, err := ix.activeResourceRecords(ctx)
+	have, err := ix.activeResourceRecords(ctx, []domain.MemoryKind{KindSkill, KindAgent})
 	if err != nil {
 		return fmt.Errorf("resourceindex: list: %w", err)
 	}
-	// Diff by subject.
 	haveBySubject := map[string]domain.MemoryRecord{}
 	for _, r := range have {
 		haveBySubject[r.Subject] = r
@@ -100,37 +111,61 @@ func (ix *Indexer) Sync(ctx context.Context, snap registry.Snapshot) error {
 		wantBySubject[e.subject] = e
 	}
 	var observations []domain.Observation
-	for _, e := range want {
-		rec, exists := haveBySubject[e.subject]
-		if exists && rec.Content == e.content() {
+	for subject, rec := range haveBySubject {
+		if strings.HasPrefix(rec.Content, tombstonePrefix) {
+			continue // already retired: never revise a tombstone again
+		}
+		e, still := wantBySubject[subject]
+		if still && rec.Content == e.content() {
 			continue // unchanged
 		}
-		if exists {
+		if still {
 			// changed: supersede the stale content with the new one
 			if _, err := ix.Sys.Revise(ctx, domain.ReviseRequest{Supersedes: rec.ID, Content: e.content(), Tags: []string{indexTag}}, ix.Host); err != nil {
-				return fmt.Errorf("resourceindex: revise %s: %w", e.subject, err)
+				return fmt.Errorf("resourceindex: revise %s: %w", subject, err)
 			}
 			continue
 		}
-		observations = append(observations, domain.Observation{
-			Kind: e.kind, Subject: e.subject, Content: e.content(), Tags: []string{indexTag},
-		})
-	}
-	for subject, rec := range haveBySubject {
-		if _, still := wantBySubject[subject]; still {
-			continue
-		}
-		// removed: tombstone-supersede (chitta has no hard delete)
+		// removed: tombstone-supersede
 		if _, err := ix.Sys.Revise(ctx, domain.ReviseRequest{
 			Supersedes: rec.ID, Content: tombstonePrefix + subject, Tags: []string{indexTag, "retired"},
 		}, ix.Host); err != nil {
 			return fmt.Errorf("resourceindex: retire %s: %w", subject, err)
 		}
 	}
-	if len(observations) > 0 {
-		if _, err := ix.Sys.Remember(ctx, observations, ix.Host); err != nil {
+	for _, e := range want {
+		rec, exists := haveBySubject[e.subject]
+		if !exists {
+			observations = append(observations, domain.Observation{
+				Kind: e.kind, Subject: e.subject, Content: e.content(), Tags: []string{indexTag},
+			})
+			continue
+		}
+		if !strings.HasPrefix(rec.Content, tombstonePrefix) {
+			continue // handled above (unchanged or revised)
+		}
+		// REVIVAL: the subject returned while its tombstone is active.
+		// chitta ignores replayed content whose record is superseded,
+		// so revival must revise the tombstone back to live content.
+		if _, err := ix.Sys.Revise(ctx, domain.ReviseRequest{Supersedes: rec.ID, Content: e.content(), Tags: []string{indexTag}}, ix.Host); err != nil {
+			return fmt.Errorf("resourceindex: revive %s: %w", e.subject, err)
+		}
+	}
+	return ix.rememberBatched(ctx, observations)
+}
+
+// rememberBatched writes observations in chitta-sized batches (a
+// single oversized Remember call is rejected outright).
+func (ix *Indexer) rememberBatched(ctx context.Context, observations []domain.Observation) error {
+	for len(observations) > 0 {
+		n := len(observations)
+		if n > batchLimit {
+			n = batchLimit
+		}
+		if _, err := ix.Sys.Remember(ctx, observations[:n], ix.Host); err != nil {
 			return fmt.Errorf("resourceindex: remember: %w", err)
 		}
+		observations = observations[n:]
 	}
 	return nil
 }
@@ -142,26 +177,66 @@ type ToolInfo struct {
 	Description string
 }
 
-// IndexTools upserts one enabled server's probed tool list (the prober
-// output is not persisted anywhere else; probes feed the index).
-// Tools that vanish from a later probe are tombstoned by the next Sync
-// pass over the same subjects.
+// IndexTools reconciles one server's probed tool list: new tools are
+// remembered, changed descriptions supersede the stale actives, tools
+// missing from the probe are tombstoned, and an EMPTY probe retires
+// the whole server (a disabled server probes nothing). Re-probing
+// identical content is a no-op.
 func (ix *Indexer) IndexTools(ctx context.Context, server string, tools []ToolInfo) error {
-	var observations []domain.Observation
+	prefix := fmt.Sprintf("%smcp:%s/", SubjectPfx, server)
+	have, err := ix.activeResourceRecords(ctx, []domain.MemoryKind{KindMCP})
+	if err != nil {
+		return fmt.Errorf("resourceindex: list tools: %w", err)
+	}
+	wantBySubject := map[string]string{}
 	for _, t := range tools {
-		subject := fmt.Sprintf("%smcp:%s/%s", SubjectPfx, server, t.Name)
+		wantBySubject[prefix+t.Name] = t.Name + " — " + t.Description
+	}
+	haveBySubject := map[string]domain.MemoryRecord{}
+	for _, rec := range have {
+		haveBySubject[rec.Subject] = rec
+	}
+	var observations []domain.Observation
+	for subject, rec := range haveBySubject {
+		if !strings.HasPrefix(subject, prefix) {
+			continue // another server's tool
+		}
+		want, still := wantBySubject[subject]
+		if strings.HasPrefix(rec.Content, tombstonePrefix) {
+			if still {
+				// REVIVAL: the tool returned after retirement. chitta
+				// ignores replayed content whose record is superseded,
+				// so revival revises the tombstone.
+				if _, err := ix.Sys.Revise(ctx, domain.ReviseRequest{Supersedes: rec.ID, Content: want, Tags: []string{indexTag}}, ix.Host); err != nil {
+					return fmt.Errorf("resourceindex: revive tool %s: %w", subject, err)
+				}
+			}
+			continue
+		}
+		if still && want == rec.Content {
+			continue // unchanged
+		}
+		if still {
+			if _, err := ix.Sys.Revise(ctx, domain.ReviseRequest{Supersedes: rec.ID, Content: want, Tags: []string{indexTag}}, ix.Host); err != nil {
+				return fmt.Errorf("resourceindex: revise tool %s: %w", subject, err)
+			}
+			continue
+		}
+		if _, err := ix.Sys.Revise(ctx, domain.ReviseRequest{
+			Supersedes: rec.ID, Content: tombstonePrefix + subject, Tags: []string{indexTag, "retired"},
+		}, ix.Host); err != nil {
+			return fmt.Errorf("resourceindex: retire tool %s: %w", subject, err)
+		}
+	}
+	for subject, content := range wantBySubject {
+		if _, exists := haveBySubject[subject]; exists {
+			continue // handled above (unchanged, revised, or revived)
+		}
 		observations = append(observations, domain.Observation{
-			Kind: KindMCP, Subject: subject,
-			Content: t.Name + " — " + t.Description, Tags: []string{indexTag},
+			Kind: KindMCP, Subject: subject, Content: content, Tags: []string{indexTag},
 		})
 	}
-	if len(observations) == 0 {
-		return nil
-	}
-	if _, err := ix.Sys.Remember(ctx, observations, ix.Host); err != nil {
-		return fmt.Errorf("resourceindex: index tools: %w", err)
-	}
-	return nil
+	return ix.rememberBatched(ctx, observations)
 }
 
 // Relevant recalls the resource kinds for a goal (semantic lanes; the
@@ -192,19 +267,33 @@ func (ix *Indexer) Relevant(ctx context.Context, goal string, limit int) ([]Hit,
 	return hits, nil
 }
 
-// activeResourceRecords lists the index's active records (all three
-// reserved kinds, tagged) for the sync diff.
-func (ix *Indexer) activeResourceRecords(ctx context.Context) ([]domain.MemoryRecord, error) {
-	page, err := ix.Sys.History(ctx, domain.HistoryRequest{
-		Kinds:      []domain.MemoryKind{KindSkill, KindAgent, KindMCP},
-		Tags:       []string{indexTag},
-		ActiveOnly: true,
-		Limit:      512,
-	})
-	if err != nil {
-		return nil, err
+// activeResourceRecords lists the index's active records for the sync
+// diff, cursor-walking the WHOLE set at chitta's supported page size
+// (a limit above the clamp silently shrinks to the default — the
+// pagination trap the phase-2 gate caught).
+func (ix *Indexer) activeResourceRecords(ctx context.Context, kinds []domain.MemoryKind) ([]domain.MemoryRecord, error) {
+	var all []domain.MemoryRecord
+	cursor := ""
+	for {
+		req := domain.HistoryRequest{
+			Kinds:      kinds,
+			Tags:       []string{indexTag},
+			ActiveOnly: true,
+			Limit:      pageLimit,
+		}
+		if cursor != "" {
+			req.Cursor = cursor
+		}
+		page, err := ix.Sys.History(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page.Items...)
+		if page.NextCursor == "" || len(page.Items) == 0 {
+			return all, nil
+		}
+		cursor = page.NextCursor
 	}
-	return page.Items, nil
 }
 
 // wantEntries derives the want-state from the registry snapshot:

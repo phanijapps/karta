@@ -185,6 +185,9 @@ func (s *System) Dispatch(ctx context.Context, tool string, args json.RawMessage
 		if err := domain.DecodeChittaWrite(args, &in); err != nil {
 			return fail(err)
 		}
+		if err := rejectResourceKinds(in.Observations); err != nil {
+			return fail(err)
+		}
 		results, err := s.Remember(ctx, in.Observations, host)
 		if err != nil {
 			return fail(err)
@@ -214,6 +217,9 @@ func (s *System) Dispatch(ctx context.Context, tool string, args json.RawMessage
 		var req domain.ReviseRequest
 		if err := domain.DecodeChittaWrite(args, &req); err != nil {
 			return fail(err)
+		}
+		if req.Kind != nil && req.Kind.IsResourceKind() {
+			return fail(domain.NewChittaError(domain.ErrInvalidInput, "kind %q is reserved for the daemon resource index", *req.Kind))
 		}
 		rec, err := s.Revise(ctx, req, host)
 		if err != nil {
@@ -331,6 +337,18 @@ var (
 	_ domain.MemoryStore    = (*System)(nil)
 	_ domain.KnowledgeGraph = (*System)(nil)
 )
+
+// rejectResourceKinds blocks agent writes that claim a reserved
+// resource-index kind (the index is daemon-internal; agents cannot
+// forge records into it).
+func rejectResourceKinds(obs []domain.Observation) error {
+	for _, o := range obs {
+		if o.Kind.IsResourceKind() {
+			return domain.NewChittaError(domain.ErrInvalidInput, "kind %q is reserved for the daemon resource index", o.Kind)
+		}
+	}
+	return nil
+}
 
 // dropResourceHits filters reserved resource-index kinds out of a
 // recall page (agent-facing surface; the daemon's indexer reads the

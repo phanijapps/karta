@@ -35,9 +35,14 @@
 ## 2. Resource index
 
 - [x] 2.1 Reserved-kind chitta records (resource_skill /
-  resource_mcp_tool / resource_agent): upsert on registry watch diff,
-  delete on removal, reconcile pass on boot. Verify: fake-system tests
-  (watch event → indexed, removal → deleted, boot re-sync).
+  resource_mcp_tool / resource_agent): Sync reconciles skills+agents to
+  the snapshot (new/changed/tombstoned-on-removal, revived-on-return;
+  MCP tools reconciled only by IndexTools); watch/boot WIRING is task
+  3.1's daemon work. Verify: OpenInMemory tests — lifecycle incl.
+  pagination beyond the History clamp (>10 records), batches beyond
+  the 64-observation cap, tombstone no-op re-sync, revival, tool
+  lifecycle (changed/reduced/empty probe), registry Sync preserving
+  tools, agent-tool invisibility + write rejection (chitta side).
 - [x] 2.2 Semantic recall for the intent context: EmbedQuery(goal) →
   kind-filtered Recall limit ~12; listing fallback when the embedder is
   off or the index is empty. Verify: deterministic-embedder tests

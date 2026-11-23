@@ -56,7 +56,13 @@ resources (recommendations are advisory; slice 3 wires loading).
    through the trusted-host seam on registry watch events; recall by
    EmbedQuery(goal) filtered to resource kinds, limit ~12. Listing
    fallback when the embedder is off (cold cache) or the index is
-   empty. Deletions remove the record (the watcher knows the diff).
+   empty. Deletions TOMBSTONE (chitta has no hard delete): a removed
+   resource is superseded with a `retired resource:` record that the
+   recall path post-filters; a resource that returns REVISES its
+   tombstone (chitta ignores replayed content on superseded records).
+   Reserved kinds are invisible to agents: the memory tools filter
+   them from recall/history results and reject them on writes; the
+   indexer reads the System API directly.
    F-30 caveat recorded: vector discrimination must be re-verified for
    this corpus in the eval harness; the listing fallback caps the
    damage if recall is weak.
