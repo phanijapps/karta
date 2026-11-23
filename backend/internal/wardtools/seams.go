@@ -32,3 +32,10 @@ var (
 
 // ExecContext exists for symmetry with future file tools.
 type ExecContext = context.Context
+
+// compile-time: the file tools satisfy the engine tool interface.
+var (
+	_ tools.Tool = ReadTool{}
+	_ tools.Tool = WriteTool{}
+	_ tools.Tool = ListTool{}
+)

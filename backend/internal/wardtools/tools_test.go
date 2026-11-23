@@ -165,3 +165,66 @@ func TestDigestChange(t *testing.T) {
 	}
 	var _ = errors.New // reserved
 }
+
+// The ward-scoped file plane: bounded reads/writes/lists, typed
+// escapes, no-ward refusal, lint-voiced write warnings.
+func TestFileTools(t *testing.T) {
+	host, vault := newTestHost(t)
+	ctx := context.Background()
+	use := UseTool{Host: host, Vault: vault}
+	files := FileTools{Host: host}
+	read, write, list := ReadTool{F: files}, WriteTool{F: files}, ListTool{F: files}
+
+	t.Run("no active ward refuses typed", func(t *testing.T) {
+		res := read.Exec(ctx, `{"path":"x"}`)
+		if res.Err == nil || !strings.Contains(res.Err.Error(), "no active ward") {
+			t.Fatalf("want no-ward error, got %v", res.Err)
+		}
+	})
+
+	if res := use.Exec(ctx, `{"name":"stock-analysis"}`); res.Err != nil {
+		t.Fatal(res.Err)
+	}
+
+	t.Run("read/write/list round-trip", func(t *testing.T) {
+		if res := write.Exec(ctx, `{"path":"tasks/t1.md","content":"# Task one\ndo the thing\n"}`); res.Err != nil {
+			t.Fatalf("write: %v", res.Err)
+		}
+		if res := read.Exec(ctx, `{"path":"tasks/t1.md"}`); res.Err != nil || !strings.Contains(res.Output, "do the thing") {
+			t.Fatalf("read: %q %v", res.Output, res.Err)
+		}
+		if res := list.Exec(ctx, `{}`); res.Err != nil || !strings.Contains(res.Output, "tasks/t1.md") {
+			t.Fatalf("list: %q %v", res.Output, res.Err)
+		}
+	})
+
+	t.Run("layout-conforming write is silent; breaking write warns", func(t *testing.T) {
+		if res := write.Exec(ctx, `{"path":"log.md","content":"log line\n"}`); res.Err != nil || strings.Contains(res.Output, "WARNING") {
+			t.Fatalf("conforming write must not warn: %q %v", res.Output, res.Err)
+		}
+		if res := write.Exec(ctx, `{"path":"stray.txt","content":"x"}`); res.Err != nil {
+			t.Fatalf("write stands: %v", res.Err)
+		} else if !strings.Contains(res.Output, "unexpected_entry") || !strings.Contains(res.Output, "stray.txt") {
+			t.Fatalf("breaking write must carry the lint warning: %q", res.Output)
+		}
+	})
+
+	t.Run("escapes refused typed", func(t *testing.T) {
+		for _, p := range []string{"../outside.md", "a/../../escape", "/etc/passwd"} {
+			if res := write.Exec(ctx, `{"path":"`+p+`","content":"x"}`); res.Err == nil {
+				t.Fatalf("path %q must refuse", p)
+			}
+		}
+	})
+
+	t.Run("symlinked directory refused", func(t *testing.T) {
+		outside := t.TempDir()
+		link := filepath.Join(vault.Root(), "stock-analysis", "linked")
+		if err := os.Symlink(outside, link); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		if res := write.Exec(ctx, `{"path":"linked/x.md","content":"x"}`); res.Err == nil || !strings.Contains(res.Err.Error(), "symlink") {
+			t.Fatalf("want symlink refusal, got %v", res.Err)
+		}
+	})
+}

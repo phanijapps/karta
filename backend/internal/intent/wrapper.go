@@ -214,6 +214,20 @@ func (w *Wrapper) composePrompt(ctx context.Context, goal, persona string, a dom
 		if s := sysprompt.TaskAnalysis(a); s != "" {
 			b.WriteString("\n\n" + s)
 		}
+		// The ward recommendation is ACTIONABLE: instruct the root to
+		// call the ward tool as its first structural step. The analysis
+		// stays advisory — the MODEL calls the tool; the middleware
+		// never enters a ward itself.
+		switch a.WardRecommendation.Action {
+		case domain.WardUseExisting:
+			fmt.Fprintf(&b, "\nWard step: call ward_use(name=%q) to host this run in the recommended ward.\n", a.WardRecommendation.WardName)
+		case domain.WardCreateNew:
+			arch := a.WardRecommendation.Archetype
+			if arch == "" {
+				arch = "generic"
+			}
+			fmt.Fprintf(&b, "\nWard step: call ward_create(name=%q, archetype=%q) to host this run in a new ward.\n", a.WardRecommendation.WardName, arch)
+		}
 		if s := sysprompt.Skills(w.skillBodies(a.RecommendedSkills)); s != "" {
 			b.WriteString("\n\n" + s)
 		}

@@ -190,3 +190,10 @@ func renderTree(n wards.Node, depth int) string {
 	}
 	return b.String()
 }
+
+// Vault returns the host's vault (nil when unwired).
+func (h *Host) Vault() *wards.Vault {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.vault
+}

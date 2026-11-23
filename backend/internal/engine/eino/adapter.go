@@ -27,6 +27,8 @@ import (
 	"zbot/backend/internal/registry"
 	"zbot/backend/internal/store"
 	"zbot/backend/internal/tools"
+	"zbot/backend/internal/wards"
+	"zbot/backend/internal/wardtools"
 )
 
 // MaxSteps bounds one goal run's model calls.
@@ -63,7 +65,11 @@ type Adapter struct {
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc // sessionID → cancel
-	models  map[string]chatGenerator      // cache: provider/model/key → model
+	// wardVault builds the ward tool plane for a session (nil = wards
+	// off, e.g. no vault configured). Sticky per session.
+	wardVault func() *wards.Vault
+	wardHosts map[string]*wardtools.Host // sessionID → sticky ward host
+	models    map[string]chatGenerator   // cache: provider/model/key → model
 }
 
 // DefaultDepthCap bounds delegation depth unless configured lower.
@@ -164,6 +170,9 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 	a.cancels[sessionID] = cancel
 	a.mu.Unlock()
 
+	if a.wardVault != nil && !in.isChild {
+		in.wardHost = a.wardHost(sessionID)
+	}
 	in.sessionID, in.execID, in.goal, in.token, in.prov = sessionID, rootExec, req.Goal, token, prov
 	events := make(chan domain.TimelineEvent, 64)
 	go a.run(runCtx, cancel, events, in)
@@ -183,6 +192,11 @@ type runInput struct {
 	depth        int      // 0 = root
 	grant        int      // may delegate while depth < grant (agent max_depth; root = cap)
 	isChild      bool     // children surface steps as delegation events
+
+	// Ward hosting (slice 3): the session's sticky host; nil = wards
+	// off. Root runs get the ward tools; children get the file tools +
+	// the Active Ward packet on their prompt (read + declared roles).
+	wardHost *wardtools.Host
 }
 
 // run is the ROOT wrapper: cleanup, cancellation registration, channel
@@ -347,6 +361,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 			if in.depth < in.grant && in.depth < a.depthCap && a.snapFn != nil {
 				offered = append(offered, a.delegateTool(ctx, events, in))
 			}
+			offered = append(offered, wardToolSet(in)...)
 			var toolInfos []*schema.ToolInfo
 			for _, t := range offered {
 				d := t.Def()

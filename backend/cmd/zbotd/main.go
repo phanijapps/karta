@@ -209,6 +209,11 @@ func run(ctx context.Context, homeFlag string) error {
 	// the registry snapshot supplies agent definitions (delegation).
 	eng := einoengine.New(provStore, db, bus, allTools, reg.Snapshot)
 
+	// Ward hosting (slice 3): root goal runs gain the ward tool plane
+	// (ward_use/ward_create + ward-scoped file tools) with a sticky
+	// per-session active ward.
+	eng.SetWardVault(func() *wards.Vault { return wardVault })
+
 	// Intent middleware wraps the engine for ROOT goal runs (router →
 	// analysis → composed prompt + step budget; children/chat/Resume
 	// pass through). Disabled by config → the plain engine.
