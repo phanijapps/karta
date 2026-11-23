@@ -1,6 +1,7 @@
 package sysprompt
 
 import (
+	"context"
 	"errors"
 	"runtime"
 	"strings"
@@ -54,12 +55,32 @@ func TestCompose(t *testing.T) {
 		}
 	})
 
-	t.Run("missing role is a typed error", func(t *testing.T) {
+	t.Run("missing role is a typed error naming the file", func(t *testing.T) {
 		cfg := config.SystemPromptConfig{Role: "absent-role"}
 		_, err := Compose(cfg, snap)
 		var se *SectionError
 		if !errors.As(err, &se) || se.Name != "absent-role" || se.Section != "Role" {
 			t.Fatalf("want typed SectionError, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "config/prompts/absent-role.md") {
+			t.Fatalf("error must name the file: %v", err)
+		}
+	})
+
+	t.Run("blank role body is a typed error", func(t *testing.T) {
+		blank := snapWith(map[string]string{"role": "   \n\t"})
+		_, err := Compose(config.SystemPromptConfig{Role: "role"}, blank)
+		var se *SectionError
+		if !errors.As(err, &se) || se.Section != "Role" {
+			t.Fatalf("blank role must be a typed error, got %v", err)
+		}
+	})
+
+	t.Run("blank optional body skips", func(t *testing.T) {
+		blank := snapWith(map[string]string{"role": "I am Karta.", "soul": "  "})
+		got, err := Compose(config.SystemPromptConfig{Role: "role", Soul: "soul"}, blank)
+		if err != nil || strings.Contains(got, "## Soul") {
+			t.Fatalf("blank optional must skip: %q %v", got, err)
 		}
 	})
 
@@ -71,6 +92,24 @@ func TestCompose(t *testing.T) {
 		}
 		if !strings.Contains(got, "## Role") || strings.Contains(got, "Soul") {
 			t.Fatalf("optional skips: %q", got)
+		}
+	})
+
+	t.Run("explicit OS selection is portable", func(t *testing.T) {
+		got, err := Compose(config.SystemPromptConfig{Role: "role", OS: "linux"}, snap)
+		if err != nil || !strings.Contains(got, "Platform: Linux.") {
+			t.Fatalf("explicit linux pack: %q %v", got, err)
+		}
+	})
+
+	t.Run("custom sections keep configured order", func(t *testing.T) {
+		ordered := snapWith(map[string]string{"role": "R", "zeta": "Z body", "alpha": "A body"})
+		got, err := Compose(config.SystemPromptConfig{Role: "role", Custom: []string{"zeta", "alpha"}}, ordered)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Index(got, "Z body") > strings.Index(got, "A body") {
+			t.Fatalf("custom order not preserved: %q", got)
 		}
 	})
 
@@ -123,5 +162,37 @@ func TestSkillsAndContextSections(t *testing.T) {
 	}
 	if Context(nil, nil) != "" {
 		t.Fatal("no recall must render no section")
+	}
+}
+
+// The seeded persona composes end-to-end: a freshly bootstrapped home
+// loads through the real registry and Compose succeeds with the
+// default config (phase-1 gate finding: verify the seeds, not just
+// counts).
+func TestSeededPersonaComposes(t *testing.T) {
+	home := t.TempDir()
+	paths := config.NewPaths(home)
+	if err := config.Bootstrap(context.Background(), paths); err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	reg := registry.New()
+	snap, errs := reg.LoadAll(registry.Dirs{
+		Agents:     paths.AgentsDir,
+		Skills:     paths.ConfigDir("skills"),
+		Prompts:    paths.ConfigDir("prompts"),
+		ConfigFile: paths.ConfigFile,
+	})
+	if len(errs) > 0 {
+		t.Fatalf("load errors: %+v", errs)
+	}
+	cfg := config.Default().SystemPrompt
+	got, err := Compose(cfg, snap)
+	if err != nil {
+		t.Fatalf("seeded persona must compose: %v", err)
+	}
+	for _, want := range []string{"## Role", "## Soul", "## OS", "## Tools", "Karta"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in composed prompt:\n%.300s", want, got)
+		}
 	}
 }

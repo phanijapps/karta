@@ -80,36 +80,61 @@ func (a *Analyzer) Analyze(ctx context.Context, goal string, res Resources) (dom
 	return domain.IntentAnalysis{}, &AnalysisUnavailable{Reason: "contract parse failed twice: " + lastErr.Error()}
 }
 
+// requiredSlots are the resource-slot markers a user-owned intent
+// prompt must carry; a prompt without them cannot receive the runtime
+// resource context and is not usable.
+var requiredSlots = []string{"{{.Skills}}", "{{.Agents}}", "{{.MCPs}}", "{{.Wards}}"}
+
+// promptData is the template data for the intent prompt.
+type promptData struct{ Skills, Agents, MCPs, Wards string }
+
 // renderPrompt renders the user-owned template with the resource
-// slots; the embedded default is the fallback for an absent or
-// broken template (a broken user file never blocks analysis).
+// slots. A candidate is selected only when it parses, carries every
+// required slot, and renders successfully; ANY failure falls back to
+// the embedded default (a broken user file degrades analysis to the
+// shipped behavior — it never blocks the run).
 func (a *Analyzer) renderPrompt(res Resources) (string, error) {
-	tmplText := defaultPrompt
-	if a.Snapshot != nil {
-		snap := a.Snapshot()
-		if p, ok := snap.Prompts["intent-analysis"]; ok {
-			if _, err := template.New("intent-analysis").Parse(p.Raw); err == nil {
-				tmplText = p.Raw // user-owned prompt, validated parseable
-			}
-			// A broken user file falls back to the embedded default —
-			// analysis degrades to the shipped behavior, never blocks.
-		}
-	}
-	tmpl, err := template.New("intent").Parse(tmplText)
-	if err != nil {
-		return "", &AnalysisUnavailable{Reason: "prompt template broken"}
-	}
-	var b strings.Builder
-	data := struct{ Skills, Agents, MCPs, Wards string }{
+	data := promptData{
 		Skills: renderListBody(res.Skills),
 		Agents: renderListBody(res.Agents),
 		MCPs:   renderListBody(res.MCPs),
 		Wards:  renderListBody(res.Wards),
 	}
-	if err := tmpl.Execute(&b, data); err != nil {
-		return "", &AnalysisUnavailable{Reason: "prompt render failed: " + err.Error()}
+	render := func(text string) (string, error) {
+		tmpl, err := template.New("intent").Parse(text)
+		if err != nil {
+			return "", err
+		}
+		var b strings.Builder
+		if err := tmpl.Execute(&b, data); err != nil {
+			return "", err
+		}
+		return b.String(), nil
 	}
-	return b.String(), nil
+	if a.Snapshot != nil {
+		if p, ok := a.Snapshot().Prompts["intent-analysis"]; ok {
+			if out, err := render(p.Raw); err == nil && hasAllSlots(p.Raw) && strings.TrimSpace(out) != "" {
+				return out, nil
+			}
+			// broken/shape-invalid/empty user prompt → default below
+		}
+	}
+	out, err := render(defaultPrompt)
+	if err != nil {
+		return "", &AnalysisUnavailable{Reason: "embedded prompt broken (build bug)"}
+	}
+	return out, nil
+}
+
+// hasAllSlots reports whether the template text carries every required
+// resource-slot marker.
+func hasAllSlots(text string) bool {
+	for _, slot := range requiredSlots {
+		if !strings.Contains(text, slot) {
+			return false
+		}
+	}
+	return true
 }
 
 // renderListBody renders one slot's list body (without the section
@@ -125,24 +150,38 @@ func renderListBody(items []string) string {
 	return strings.Join(lines, "\n")
 }
 
-// extractJSON pulls the first top-level JSON object out of a model
-// response (models sometimes fence code blocks despite instructions).
+// extractJSON pulls the first complete top-level JSON object out of a
+// model response, wherever it sits (prose before/after, code fences,
+// same-line fences). Brace matching is string-literal aware so braces
+// inside JSON strings do not confuse the scan.
 func extractJSON(raw string) string {
-	s := strings.TrimSpace(raw)
-	if i := strings.Index(s, "```"); i >= 0 {
-		s = strings.TrimPrefix(s[i:], "```")
-		if j := strings.Index(s, "\n"); j >= 0 {
-			s = s[j+1:]
+	depth, start, inStr, escape := 0, -1, false, false
+	for i, r := range raw {
+		switch {
+		case escape:
+			escape = false
+		case inStr:
+			switch r {
+			case '\\':
+				escape = true
+			case '"':
+				inStr = false
+			}
+		case r == '"':
+			inStr = true
+		case r == '{':
+			if depth == 0 {
+				start = i
+			}
+			depth++
+		case r == '}':
+			if depth > 0 {
+				depth--
+				if depth == 0 && start >= 0 {
+					return raw[start : i+1]
+				}
+			}
 		}
-		if j := strings.LastIndex(s, "```"); j >= 0 {
-			s = s[:j]
-		}
-		s = strings.TrimSpace(s)
 	}
-	if i := strings.Index(s, "{"); i >= 0 {
-		if j := strings.LastIndex(s, "}"); j > i {
-			return s[i : j+1]
-		}
-	}
-	return s
+	return strings.TrimSpace(raw)
 }

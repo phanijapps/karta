@@ -25,23 +25,29 @@ import (
 type SectionError struct {
 	Section string
 	Name    string
+	File    string
 }
 
 func (e *SectionError) Error() string {
-	return fmt.Sprintf("sysprompt: section %q (prompt %q) is missing from the registry", e.Section, e.Name)
+	file := e.File
+	if file == "" {
+		file = "config/prompts/" + e.Name + ".md"
+	}
+	return fmt.Sprintf("sysprompt: section %q (file %s) is missing or empty", e.Section, file)
 }
 
 // section renders one registry prompt's raw body, or ("", nil) when
-// the section is not configured (skip) — a configured optional name
-// whose file is absent also skips, per the spec's optional-missing
-// scenario.
+// the section is not configured or its file is absent/empty (skip) —
+// per the spec's optional-missing scenario. A body that is only
+// whitespace counts as missing: a heading with no content is not a
+// section.
 func section(label, name string, snap registry.Snapshot) (string, error) {
 	if name == "" {
 		return "", nil
 	}
 	p, ok := snap.Prompts[name]
-	if !ok {
-		return "", nil // optional section absent: skip
+	if !ok || strings.TrimSpace(p.Raw) == "" {
+		return "", nil // absent or empty: skip (Compose enforces role)
 	}
 	return "## " + label + "\n\n" + strings.TrimSpace(p.Raw) + "\n", nil
 }
@@ -78,7 +84,7 @@ func Compose(cfg config.SystemPromptConfig, snap registry.Snapshot) (string, err
 		return "", err
 	}
 	if role == "" {
-		return "", &SectionError{Section: "Role", Name: cfg.Role}
+		return "", &SectionError{Section: "Role", Name: cfg.Role, File: promptPath(snap, cfg.Role)}
 	}
 	b.WriteString(role)
 
@@ -180,6 +186,15 @@ func Context(memory, knowledge []string) string {
 		}
 	}
 	return b.String()
+}
+
+// promptPath reports the on-disk path of a registry prompt when known
+// (for typed errors).
+func promptPath(snap registry.Snapshot, name string) string {
+	if p, ok := snap.Prompts[name]; ok {
+		return p.Path
+	}
+	return ""
 }
 
 func sortStrings(s []string) {

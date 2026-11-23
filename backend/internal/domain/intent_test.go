@@ -41,6 +41,25 @@ func TestParseIntentAnalysis(t *testing.T) {
 			t.Fatal("an envelope must not decode as the contract")
 		}
 	})
+
+	t.Run("empty partial null trailing all rejected", func(t *testing.T) {
+		valid := `{"primary_intent":"x","complexity":"S","recommended_skills":[],"recommended_agents":[],
+"recommended_mcp_tools":[],"ward_recommendation":{"action":"create_new","ward_name":"ok-ward"},
+"execution_strategy":{"approach":"simple"}}`
+		for name, raw := range map[string]string{
+			"empty":            "",
+			"null":             "null",
+			"empty object":     "{}",
+			"partial":          `{"primary_intent": "x"}`,
+			"missing ward":     `{"primary_intent":"x","complexity":"S","execution_strategy":{"approach":"simple"}}`,
+			"trailing value":   valid + ` {"another": 1}`,
+			"trailing garbage": valid + " !!!",
+		} {
+			if _, err := ParseIntentAnalysis(raw); err == nil {
+				t.Fatalf("%s must be rejected", name)
+			}
+		}
+	})
 }
 
 func TestComplexityBudget(t *testing.T) {

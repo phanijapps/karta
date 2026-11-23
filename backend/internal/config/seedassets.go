@@ -26,32 +26,69 @@ var seedFS embed.FS
 // edit, a concurrent writer) is left untouched, and the seedRoster
 // marker keeps deleted examples from resurrecting.
 func seedExamples(ctx context.Context, paths Paths) error {
-	targets := []struct{ srcRoot, dstRoot string }{
-		{"seedassets/agents", paths.AgentsDir},
-		{"seedassets/skills", paths.ConfigDir("skills")},
-		{"seedassets/prompts", paths.ConfigDir("prompts")},
+	// Agents+skills ride the roster marker (seed-operator-roster):
+	// one marker written after BOTH walks, so the pair seeds as a unit.
+	if markerExists(paths.Home, exampleRosterMarker) {
+		// already seeded — deletions stay deleted
+	} else if err := seedWalk(ctx, "seedassets/agents", paths.AgentsDir); err != nil {
+		return err
+	} else if err := seedWalk(ctx, "seedassets/skills", paths.ConfigDir("skills")); err != nil {
+		return err
+	} else if err := dropMarker(filepath.Join(paths.Home, exampleRosterMarker)); err != nil {
+		return err
 	}
-	for _, t := range targets {
-		if t.dstRoot == "" {
-			continue // no destination wired (unit helpers)
-		}
-		if err := fs.WalkDir(seedFS, t.srcRoot, func(p string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return fmt.Errorf("config: walk seeds: %w", err)
-			}
-			if d.IsDir() {
-				return nil
-			}
-			rel := filepath.ToSlash(p[len(t.srcRoot)+1:])
-			if err := ctx.Err(); err != nil {
-				return fmt.Errorf("config: seed examples: %w", err)
-			}
-			return seedAsset(ctx, filepath.Join(t.dstRoot, filepath.FromSlash(rel)), p)
-		}); err != nil {
-			return err
-		}
+	// The persona seeds carry their OWN marker: homes already marked by
+	// the earlier roster change still receive the persona once (upgrade
+	// path); after this marker, deletions stick like everywhere else.
+	if markerExists(paths.Home, personaSeedMarker) {
+		return nil
 	}
-	return nil
+	if err := seedWalk(ctx, "seedassets/prompts", paths.ConfigDir("prompts")); err != nil {
+		return err
+	}
+	return dropMarker(filepath.Join(paths.Home, personaSeedMarker))
+}
+
+// personaSeedMarker gates the one-time persona seeding (a later addition
+// than the example roster; separate so pre-persona installs upgrade).
+const personaSeedMarker = ".persona-seeded"
+
+func markerExists(home, name string) bool {
+	_, err := os.Stat(filepath.Join(home, name))
+	return err == nil
+}
+
+// dropMarker writes a seed marker idempotently (concurrent writer is fine).
+func dropMarker(marker string) error {
+	mf, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil
+		}
+		return fmt.Errorf("config: seed marker %s: %w", marker, err)
+	}
+	return mf.Close()
+}
+
+// seedWalk walks one embed root into dstRoot, publishing each file
+// crash-atomically (existing files untouched).
+func seedWalk(ctx context.Context, srcRoot, dstRoot string) error {
+	if dstRoot == "" {
+		return nil // no destination wired (unit helpers)
+	}
+	return fs.WalkDir(seedFS, srcRoot, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("config: walk seeds: %w", err)
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel := filepath.ToSlash(p[len(srcRoot)+1:])
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("config: seed examples: %w", err)
+		}
+		return seedAsset(ctx, filepath.Join(dstRoot, filepath.FromSlash(rel)), p)
+	})
 }
 
 // seedAsset publishes one embedded seed file at dest only when dest

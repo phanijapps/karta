@@ -254,3 +254,42 @@ func TestConcurrentBootstrap(t *testing.T) {
 		}
 	}
 }
+
+// The persona seeds carry their own marker: a home already marked by
+// the roster change still receives the persona ONCE (phase-1 gate
+// finding), and persona deletions stick after that.
+func TestPersonaSeedUpgradeAndLifecycle(t *testing.T) {
+	_, paths := tempHome(t)
+	// Simulate a pre-persona install: roster marker present, no prompts.
+	if err := os.MkdirAll(paths.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.Home, exampleRosterMarker), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Bootstrap(context.Background(), paths); err != nil {
+		t.Fatalf("upgrade Bootstrap: %v", err)
+	}
+	// The persona arrived.
+	role := filepath.Join(paths.ConfigDir("prompts"), "role.md")
+	if _, err := os.Stat(role); err != nil {
+		t.Fatalf("upgrade must seed role.md: %v", err)
+	}
+	// Edit + delete stick after the persona marker dropped.
+	if err := os.WriteFile(role, []byte("# my own role\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(paths.ConfigDir("prompts"), "soul.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Bootstrap(context.Background(), paths); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(role)
+	if string(got) != "# my own role\n" {
+		t.Fatalf("persona edit overwritten: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(paths.ConfigDir("prompts"), "soul.md")); !os.IsNotExist(err) {
+		t.Fatal("deleted persona resurrected")
+	}
+}

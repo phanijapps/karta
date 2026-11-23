@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // IntentAnalysis is the typed contract one pre-execution intent call
@@ -104,9 +105,13 @@ var wardNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,63}$`)
 // shape.
 func ValidWardName(name string) bool { return wardNamePattern.MatchString(name) }
 
-// ParseIntentAnalysis strictly decodes one flat JSON contract (no
-// envelope, no unknown fields — a conforming model output or a typed
-// error).
+// ParseIntentAnalysis strictly decodes ONE flat JSON contract: no
+// envelope, no unknown fields, no trailing values, and the required
+// semantic fields present (primary_intent, complexity, approach, ward
+// action, ward name). A response that is empty, partial, null, or
+// followed by more JSON is a typed error — the caller retries or
+// degrades; a malformed response must never influence execution as if
+// it were a valid analysis.
 func ParseIntentAnalysis(raw string) (IntentAnalysis, error) {
 	var a IntentAnalysis
 	dec := json.NewDecoder(bytes.NewReader([]byte(raw)))
@@ -114,7 +119,33 @@ func ParseIntentAnalysis(raw string) (IntentAnalysis, error) {
 	if err := dec.Decode(&a); err != nil {
 		return IntentAnalysis{}, fmt.Errorf("intent: parse contract: %w", err)
 	}
+	if dec.More() {
+		return IntentAnalysis{}, fmt.Errorf("intent: parse contract: trailing data after the JSON object")
+	}
+	if err := a.requiredFields(); err != nil {
+		return IntentAnalysis{}, err
+	}
 	return a, nil
+}
+
+// requiredFields validates the contract's mandatory semantics.
+func (a IntentAnalysis) requiredFields() error {
+	if strings.TrimSpace(a.PrimaryIntent) == "" {
+		return fmt.Errorf("intent: contract missing primary_intent")
+	}
+	if _, err := a.Complexity.StepBudget(); err != nil {
+		return fmt.Errorf("intent: contract missing/invalid complexity")
+	}
+	if a.ExecutionStrategy.Approach != ApproachSimple && a.ExecutionStrategy.Approach != ApproachGraph {
+		return fmt.Errorf("intent: contract missing/invalid execution_strategy.approach")
+	}
+	if a.WardRecommendation.Action != WardUseExisting && a.WardRecommendation.Action != WardCreateNew {
+		return fmt.Errorf("intent: contract missing/invalid ward_recommendation.action")
+	}
+	if strings.TrimSpace(a.WardRecommendation.WardName) == "" {
+		return fmt.Errorf("intent: contract missing ward_recommendation.ward_name")
+	}
+	return nil
 }
 
 // Sanitize clamps the contract to values the runtime can act on:
@@ -142,9 +173,10 @@ func (a IntentAnalysis) Sanitize(knownSkill, knownAgent, knownMCP, knownWard fun
 	switch a.WardRecommendation.Action {
 	case WardUseExisting:
 		if knownWard == nil || !knownWard(a.WardRecommendation.WardName) {
-			// Never invent a near-duplicate: degrade to create_new with
-			// the same name only if the shape is valid.
+			// Never invent a near-duplicate: degrade to create_new and
+			// REPORT the rejected recommendation.
 			a.WardRecommendation.Action = WardCreateNew
+			dropped = append(dropped, "ward(use_existing not in index):"+a.WardRecommendation.WardName)
 		}
 	case WardCreateNew:
 		// valid below

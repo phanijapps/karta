@@ -220,26 +220,7 @@ const exampleRosterMarker = ".example-roster-seeded"
 // the marker lands only after a full successful walk. A mid-walk
 // failure leaves no marker, so the next bootstrap retries.
 func seedRoster(ctx context.Context, paths Paths) error {
-	marker := filepath.Join(paths.Home, exampleRosterMarker)
-	if _, err := os.Stat(marker); err == nil {
-		return nil // already seeded — deletions stay deleted
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("config: seed marker %s: %w", marker, err)
-	}
-	if err := seedExamples(ctx, paths); err != nil {
-		return err
-	}
-	mf, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil // concurrent bootstrap seeded it — fine
-		}
-		return fmt.Errorf("config: seed marker %s: %w", marker, err)
-	}
-	if err := mf.Close(); err != nil {
-		return fmt.Errorf("config: close %s: %w", marker, err)
-	}
-	return nil
+	return seedExamples(ctx, paths)
 }
 
 // migrateLegacyAgents one-time-moves files from the legacy config/agents

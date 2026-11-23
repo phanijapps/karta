@@ -135,10 +135,10 @@ func TestAnalyzer(t *testing.T) {
 		}
 	})
 
-	t.Run("user-owned prompt with slots is used", func(t *testing.T) {
+	t.Run("user-owned prompt with all slots is used", func(t *testing.T) {
 		snap := registry.Snapshot{}
 		snap.Prompts = map[string]registry.Prompt{
-			"intent-analysis": {Name: "intent-analysis", Raw: "CUSTOM MARKER skills={{.Skills}} wards={{.Wards}}"},
+			"intent-analysis": {Name: "intent-analysis", Raw: "CUSTOM MARKER s={{.Skills}} a={{.Agents}} m={{.MCPs}} w={{.Wards}}"},
 		}
 		fc := &fakeCompleter{responses: []string{validContract}}
 		a := Analyzer{Completer: fc, Snapshot: func() registry.Snapshot { return snap }}
@@ -147,6 +147,42 @@ func TestAnalyzer(t *testing.T) {
 		}
 		if !strings.Contains(fc.lastInput, "CUSTOM MARKER") || !strings.Contains(fc.lastInput, "clean-code") {
 			t.Fatalf("custom prompt not used:\n%s", fc.lastInput)
+		}
+	})
+
+	t.Run("unusable user prompts all fall back to the embedded default", func(t *testing.T) {
+		cases := map[string]string{
+			"empty":             "",
+			"contract-free":     "just prose, no slots at all",
+			"missing slot":      "s={{.Skills}} a={{.Agents}} m={{.MCPs}}",
+			"syntax invalid":    "broken {{.Skills",
+			"execution invalid": "{{.Unknown}}",
+		}
+		for name, raw := range cases {
+			t.Run(name, func(t *testing.T) {
+				snap := registry.Snapshot{}
+				snap.Prompts = map[string]registry.Prompt{
+					"intent-analysis": {Name: "intent-analysis", Raw: raw},
+				}
+				fc := &fakeCompleter{responses: []string{validContract}}
+				a := Analyzer{Completer: fc, Snapshot: func() registry.Snapshot { return snap }}
+				if _, err := a.Analyze(context.Background(), "goal", res); err != nil {
+					t.Fatalf("unusable prompt must fall back, not fail: %v", err)
+				}
+				if !strings.Contains(fc.lastInput, "You are an intent analyzer") {
+					t.Fatalf("embedded default not used for %s:\n%s", name, fc.lastInput)
+				}
+			})
+		}
+	})
+
+	t.Run("empty model output degrades typed", func(t *testing.T) {
+		fc := &fakeCompleter{responses: []string{""}}
+		a := Analyzer{Completer: fc, Snapshot: noopSnap}
+		_, err := a.Analyze(context.Background(), "goal", res)
+		var du *AnalysisUnavailable
+		if !errors.As(err, &du) {
+			t.Fatalf("empty model output must degrade typed, got %v", err)
 		}
 	})
 }
