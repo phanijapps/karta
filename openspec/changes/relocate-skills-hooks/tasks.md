@@ -27,7 +27,7 @@
 
 ## 3. Review and hardening
 
-- [ ] 3.1 Phase gates (gpt-6.1-terra + gpt-6.1-sol read-only) after
+- [x] 3.1 Phase gates (gpt-6.1-terra + gpt-6.1-sol read-only) after
   group 1; fix P0/P1, P2s fix or record. Verify: ledger zero open
   P0/P1.
 - [ ] 3.2 zbot-reviewer over the change + `task verify` green. Verify:
