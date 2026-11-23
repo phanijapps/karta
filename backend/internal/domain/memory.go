@@ -43,12 +43,34 @@ const (
 )
 
 // Valid reports whether the kind is a member of the closed enum.
+// The three resource_* kinds are RESERVED for the daemon's semantic
+// resource index (internal/resourceindex): records the indexer owns,
+// filtered from user-facing memory surfaces by kind.
 func (k MemoryKind) Valid() bool {
 	switch k {
 	case MemoryKindFact, MemoryKindPreference, MemoryKindCorrection, MemoryKindObservation, MemoryKindProcedure:
 		return true
+	case MemoryKindResourceSkill, MemoryKindResourceAgent, MemoryKindResourceMCPTool:
+		return true
 	}
 	return false
+}
+
+// Reserved resource-index kinds (internal/resourceindex owns them).
+const (
+	// MemoryKindResourceSkill indexes a registry skill.
+	MemoryKindResourceSkill MemoryKind = "resource_skill"
+	// MemoryKindResourceAgent indexes a delegatable registry agent.
+	MemoryKindResourceAgent MemoryKind = "resource_agent"
+	// MemoryKindResourceMCPTool indexes a probed MCP tool.
+	MemoryKindResourceMCPTool MemoryKind = "resource_mcp_tool"
+)
+
+// IsResourceKind reports whether the kind belongs to the daemon's
+// resource index (used to filter resource records out of user-facing
+// memory surfaces).
+func (k MemoryKind) IsResourceKind() bool {
+	return k == MemoryKindResourceSkill || k == MemoryKindResourceAgent || k == MemoryKindResourceMCPTool
 }
 
 // MemoryStatus is the record lifecycle. active -> superseded via revise is

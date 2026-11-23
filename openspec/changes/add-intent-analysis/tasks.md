@@ -34,11 +34,11 @@
 
 ## 2. Resource index
 
-- [ ] 2.1 Reserved-kind chitta records (resource_skill /
+- [x] 2.1 Reserved-kind chitta records (resource_skill /
   resource_mcp_tool / resource_agent): upsert on registry watch diff,
   delete on removal, reconcile pass on boot. Verify: fake-system tests
   (watch event → indexed, removal → deleted, boot re-sync).
-- [ ] 2.2 Semantic recall for the intent context: EmbedQuery(goal) →
+- [x] 2.2 Semantic recall for the intent context: EmbedQuery(goal) →
   kind-filtered Recall limit ~12; listing fallback when the embedder is
   off or the index is empty. Verify: deterministic-embedder tests
   (recall hits surface the right resource; fallback path; F-30 note:
