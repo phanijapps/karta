@@ -51,20 +51,31 @@ mid-conversation.
 - **THEN** chitta recall injects the fact — the mode gates the
   pipeline, not the knowledge
 
-### Requirement: Chat mode uses a lean prompt
+### Requirement: Both modes carry the persona; research adds the pipeline
 
-In chat mode the system prompt SHALL be the composed CHAT prompt
-(Role + Soul + OS + Tools — no research protocol, no task analysis
-section, no ward instructions), with thinking disabled and temperature
-raised toward personality-forward responses. The research protocol
-and the ward tools are NOT offered in chat mode.
+BOTH modes SHALL compose the persona sections (Role + Soul + OS +
+Tools) — the agent's identity, voice, and principles never change
+with mode. Chat mode carries the persona + Context (memory recall)
+and nothing more. Research mode carries the persona + Context + the
+dynamic sections (Task Analysis, Skills, Active Ward) + the research
+protocol. The mode gates the PIPELINE (analysis, ward tools,
+delegation), never the personality.
 
-#### Scenario: Lean prompt shape
+#### Scenario: Chat mode — lean but persona-complete
 
 - **WHEN** a chat-mode exchange composes
 - **THEN** the system prompt carries Role, Soul, OS, Tools, and a
-  Context section (memory recall) — and does NOT carry
-  research-protocol, Task Analysis, Skills, or Active Ward sections
+  Context section (memory recall) — the SAME voice and identity as
+  research mode — and does NOT carry research-protocol, Task
+  Analysis, Skills, or Active Ward sections
+
+#### Scenario: Research mode — the persona plus the pipeline
+
+- **WHEN** a research-mode exchange composes
+- **THEN** the system prompt carries Role, Soul, OS, Tools (the SAME
+  persona as chat mode), the research protocol, AND the dynamic
+  sections (Context, Task Analysis, Skills, Active Ward when
+  hosting)
 
 ### Requirement: The Continue protocol extends live runs
 

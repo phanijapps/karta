@@ -37,16 +37,16 @@ Agentzero's gateway has two chat modes (verified in source):
    initial = `chat`). Aliases `fast`/`deep` accepted and normalized.
    No second endpoint — one surface, two depths.
 
-2. **The lean prompt is the composed static sections MINUS the
-   research protocol**: in chat mode, compose
-   Role + Soul + OS + Tools + Context. Do NOT include
-   research-protocol (the custom section), ward tools, Task Analysis,
-   Skills, or Active Ward. In research mode, compose the full stack
-   including research-protocol + ward tools. The research protocol's
-   custom-section entry in config becomes a research-mode-only
-   composition — the config keeps listing it; the chat-mode composer
-   skips custom sections that are mode-gated (new: the section gains
-   an optional `modes: [chat, research]` list; default = both).
+2. **The persona (Role + Soul + OS + Tools) is in BOTH modes** —
+   the agent's identity, voice, and principles never change with
+   mode. Chat mode composes persona + Context and nothing more. In
+   research mode, the wrapper's composePrompt ALREADY builds
+   persona + Context + Task Analysis + Skills + Active Ward — the
+   full stack INCLUDING the persona. The research protocol
+   (research-protocol.md) rides as the mode-gated custom section
+   (research mode only). No new composition logic: the wrapper
+   handles research mode; the chat service handles chat mode; both
+   start from the SAME static persona.
 
 3. **Thinking + temperature adapt per mode**: chat mode → thinking
    disabled, temperature 1.0 (agentzero's value). Research mode →
