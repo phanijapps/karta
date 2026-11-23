@@ -2,86 +2,60 @@
 
 ## Why
 
-Agentzero runs TWO chat modes on one surface — Chat (fast, lean,
-personality) and Research (deep, full pipeline) — with the mode
-per-invoke and a Continue protocol for live extension. Karta today
-hard-splits: chat is a separate dumb surface, goal runs are the only
-smart one. The operator's direction: the CHAT is the research surface
-(ward tools already mounted); what's missing is the mode switch that
-makes the same conversation lean OR deep, plus the Continue protocol
-that lets a user extend a live run.
+The mode-toggle model is wrong. The operator's insight: wards ARE
+sessions. Each ward bot maintains its own persistent session (like
+quick chat); research sessions start as shells and enter wards; the
+sidebar IS the workspace navigator. No toggle — the session type IS
+the mode. Mock UI:
+docs/architecture/mock-session-model.html
 
 ## What Changes
 
-- **`mode` field on chat-send** (contract: `mode: "chat" | "research"`
-  with aliases `fast`/`deep`, default = the session's last mode,
-  initial default = `chat`). Persisted on the session.
-- **Chat mode** skips the intent pipeline entirely; composes the LEAN
-  prompt (Role + Soul + OS + Tools + Context — no research protocol,
-  no ward tools); thinking off; temperature raised. Memory recall and
-  builtin tools still run.
-- **Research mode** on the chat surface = the FULL pipeline (currently
-  goal-run-only): intent analysis, Task Analysis, ward tools,
-  delegation, progress-aware budgets. This UNIFIES chat and goal runs
-  into one surface with two depths.
-- **Skills provision in research mode**: the ## Skills section
-  composes on research-mode chat exchanges — intent-recommended or
-  user-pinned skills load into context (the same runtime-provisioning
-  mechanism goal runs use; no load_skill tool).
-- **Delegation in research mode**: the delegate_agent tool is offered
-  on research-mode chat exchanges (the full agent roster; children
-  get the ward guard). The chat service grows an engine-backed
-  execution path for research mode.
+- **Session types**: `chat` (one persistent quick-chat session, always
+  exists), `research` (many, each its own conversation). A session's
+  TYPE determines its pipeline depth — no mode field on sends.
+- **Ward binding**: a research session can bind to a ward (sticky).
+  The sidebar groups sessions: Chat, Ward Bots (ward-bound sessions),
+  Research (shells without a ward yet). Each ward has ONE active
+  session (its persistent bot).
+- **Session CRUD**: list sessions (grouped by type + ward binding),
+  create a research session ("+ New Research"), switch sessions (the
+  chat surface renders the active session's transcript).
+- **Session-scoped chat-send**: the send carries the session ID; the
+  service routes by the session's type — chat sessions run lean,
+  research sessions run the full pipeline (through the engine).
+- **Ward sessions**: when a research session enters a ward (ward_use
+  or ward_create), the binding sticks; subsequent messages in that
+  session have the ward context pre-loaded (constitution, layout,
+  canonical page). The session shows in the sidebar under the ward's
+  name.
 - **Continue protocol**: `POST /api/sessions/{id}/continue` grants
-  additional iterations to a live run (default 25); consumed by the
-  progress tracker's extension mechanism.
-- **Session mode lifecycle**: the session record carries its current
-  mode; the session API exposes it; mode changes apply next-invoke.
-- **UI: the mode switcher** — a Chat/Research toggle in the composer
-  (persisted per session, visually distinct states); the research
-  state surfaces a Task Analysis card on the exchange's first event,
-  ward context in the composer footer, and a Continue button when a
-  run approaches its budget.
-- Contract: chat-send gains `mode`; sessions gain `mode`; the continue
-  endpoint. Codegen.
+  additional iterations to a live research run.
+- **Context panel**: the right sidebar shows the active session's
+  context — ward card (canonical page, files), provisioned skills,
+  agent roster with live status.
+- **UI**: sidebar redesigned as the session navigator; composer adapts
+  per session type; Task Analysis card + delegation tree + collapsed
+  tool calls in research transcripts; ward context bar.
 
 ## Capabilities
 
 ### New Capabilities
-- `chat-modes`: the two-mode chat surface, lean-prompt composition,
-  the Continue protocol, the session-mode lifecycle.
+- `chat-modes`: the session model — session types, ward binding,
+  session CRUD, session-scoped routing, the Continue protocol, the
+  context panel.
 
 ### Modified Capabilities
-- `simple-chat`: the chat-send request gains `mode`; the chat service
-  branches on it; research mode provisions skills and offers
-  delegation.
-- `api-contract`: the mode field + continue endpoint (additive).
-- `settings-shell` (or nav): the chat composer gains the mode toggle;
-  the research state surfaces Task Analysis and ward context.
+- `simple-chat`: chat-send becomes session-scoped (session_id); the
+  service routes by session type.
+- `api-contract`: session list/create endpoints, session-scoped
+  chat-send, continue endpoint (additive).
 
 ## Impact
 
-`internal/chat` (mode branch: lean vs full prompt; ward tools
-research-only), `internal/server` (chat-send mode param; the continue
-endpoint), `internal/engine/eino` (Continue wiring into the progress
-tracker), `internal/domain` (session mode type), `contracts/`
-(codegen), `internal/config/seedassets/prompts/` (the lean chat
-prompt's sections already exist — Role/Soul/OS/Tools ARE the lean
-prompt; the research protocol rides as a custom section that
-research-mode adds).
-
-## Design notes
-
-The key insight from agentzero: **memory runs in BOTH modes — the
-mode gates pipeline depth, not knowledge.** Chat mode is not a dumb
-endpoint; it's the same agent, lean prompt, no ceremony. Research mode
-is the same surface with the full engine behind it.
-
-The lean prompt is ALREADY what the composed system prompt's static
-sections give us (Role + Soul + OS + Tools). The research protocol
-(research-protocol.md) and the ward tools mount ONLY in research
-mode. No new prompt files needed — just conditional composition.
-
-The Continue protocol is the user-side extension on top of the
-progress tracker's automatic extension: productive runs extend
-themselves; the user can grant more.
+`internal/domain` (session type + ward binding), `internal/store`
+(sessions table gains type + ward columns), `internal/server`
+(session CRUD, session-scoped chat-send, continue), `internal/chat`
+(session-scoped routing), `internal/engine/eino` (Continue wiring),
+`contracts/` (codegen), frontend (sidebar + context panel +
+session-aware Chat).

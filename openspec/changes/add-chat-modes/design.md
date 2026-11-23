@@ -2,144 +2,109 @@
 
 ## Context
 
-Agentzero's gateway has two chat modes (verified in source):
-- `SessionMode::Chat` (aliases `fast`, `chat`): skips the intent
-  pipeline, lean prompt, thinking off, temperature 1.0, memory recall
-  still runs, top_k=5, 900-token nudge ceiling.
-- `SessionMode::Research` (aliases `deep`, `research`, default): the
-  full pipeline — intent analysis, planning, delegation, wards. Full
-  system prompt, thinking from config, temperature from config.
-- The mode is per-invoke on the websocket `invoke` message
-  (`mode: "deep" | "fast"`), persisted on the session, normalized by
-  `normalized_invoke_mode` (research-* conversations force research).
-- The Continue protocol: a websocket `Continue` message grants
-  `additional_iterations` (default 25) to a running session.
-- The lean prompt is loaded from `chat-instructions.md` (a DIFFERENT
-  prompt file from the research system prompt).
+The operator's model (mock:
+docs/architecture/mock-session-model.html): wards ARE sessions. Each
+ward bot has its own persistent conversation. Research sessions start
+as shells and enter wards. Quick chat is always there, untouched. The
+sidebar is the workspace navigator. No mode toggle — the session type
+determines the pipeline depth.
 
-## What Karta already has (and what maps)
+## The session model
 
-| Agentzero piece | Karta equivalent |
-|---|---|
-| `SessionMode::Chat / Research` | **new** — a `mode` field on chat-send + the session |
-| lean chat prompt (chat-instructions.md) | **already exists**: the composed static sections (Role + Soul + OS + Tools) ARE the lean prompt; research-protocol.md is the custom section that research-mode adds |
-| intent pipeline skip in chat mode | **already exists**: the chat surface never runs the middleware; the wrapper is goal-run-only |
-| memory in both modes | **already exists**: chitta recall in the chat Context section |
-| ward tools in research mode only | **already mounted on chat** — the reframe: gate them by mode |
-| Continue (additional_iterations) | **new**: wire into the progress tracker's Extend() |
-| normalized_invoke_mode | session-mode normalization (research-* sessions force research) |
-| thinking off + temp 1.0 in chat mode | **new**: the provider request adapts per mode |
+```
+SESSIONS:
+  chat          "default"          ← ONE persistent, lean pipeline
+  research      "cloud-pricing"    ← shell (no ward yet, full pipeline)
+  research      "stock-analysis"   ← ward-bound (full + ward context)
+  research      "india-analysis"   ← ward-bound
+```
+
+Sidebar groups:
+- **Chat**: the one "default" session
+- **Ward Bots**: research sessions WITH a ward binding (named by ward)
+- **Research**: research sessions WITHOUT a ward (shells)
+- **[+ New Research]**: creates a new research session
+
+## Session lifecycle
+
+```
+[+ New Research] → research session (type=research, ward=nil)
+       │
+   user sends a message → full pipeline (intent analysis → skills →
+   delegation → progress budgets)
+       │
+   intent recommends a ward → root calls ward_use("stock-analysis")
+       │
+   session WARDS: ward="stock-analysis"  ← the binding sticks
+       │
+   sidebar shows: "Stock Analysis" under Ward Bots
+   next message: ward context pre-loaded, sticky
+       │
+   ...user switches to Quick Chat → lean session, untouched
+   ...user switches back → same ward session, prior research intact
+```
+
+## What survives from the toggle implementation
+
+| Piece | Status | Change |
+|---|---|---|
+| `domain.ChatMode` | ✅ keep | becomes the session TYPE enum |
+| sessions `mode` column | ✅ keep | becomes `type` + add `ward` column |
+| `SendMode` / `researchPath` seam | ✅ keep | routes by session type, not request field |
+| Continue endpoint | ✅ keep | unchanged |
+| Task Analysis card rendering | ✅ keep | renders from intent_analysis events |
+| Ward tools / progress / delegation | ✅ keep | already session-scoped |
+
+## What's new
+
+1. **Session CRUD**: GET /api/sessions returns sessions with type +
+   ward; POST /api/sessions creates a research session; the sidebar
+   renders from this.
+2. **Session-scoped chat-send**: the send carries session_id; the
+   service looks up the session's type + ward and routes
+   accordingly.
+3. **Ward binding**: when ward_use/ward_create fires in a research
+   session, the session record's ward column updates; the sidebar
+   re-groups.
+4. **The context panel**: a third column showing the active session's
+   ward (canonical page, files), provisioned skills, agent roster.
+5. **Sidebar redesign**: sessions replace the current nav items for
+   the chat surface.
 
 ## Decisions
 
-1. **Mode on the request, not a separate endpoint**: chat-send gains
-   `mode: "chat" | "research"` (default = the session's last mode,
-   initial = `chat`). Aliases `fast`/`deep` accepted and normalized.
-   No second endpoint — one surface, two depths.
-
-2. **The persona (Role + Soul + OS + Tools) is in BOTH modes** —
-   the agent's identity, voice, and principles never change with
-   mode. Chat mode composes persona + Context and nothing more. In
-   research mode, the wrapper's composePrompt ALREADY builds
-   persona + Context + Task Analysis + Skills + Active Ward — the
-   full stack INCLUDING the persona. The research protocol
-   (research-protocol.md) rides as the mode-gated custom section
-   (research mode only). No new composition logic: the wrapper
-   handles research mode; the chat service handles chat mode; both
-   start from the SAME static persona.
-
-3. **Thinking + temperature adapt per mode**: chat mode → thinking
-   disabled, temperature 1.0 (agentzero's value). Research mode →
-   from config. The chat service's Completer call carries these.
-
-4. **Continue = the progress tracker's user-side extension**:
-   `POST /api/sessions/{id}/continue` with
-   `additional_iterations` (default 25). The engine's adapter holds a
-   reference to the run's tracker; the continue endpoint grants the
-   extension via a channel/closure. Automatic extension (productive
-   runs) already works; Continue is the manual override.
-
-5. **Session mode persistence**: the sessions table gains a `mode`
-   column (default `chat`). Mode changes apply next-invoke. The
-   session read API exposes it.
-
-6. **No intent_analysis events in chat mode** — the pipeline was
-   skipped; emitting a "bypassed" event for every chat message would
-   be noise.
-
-## The research-mode execution path (the unification core)
-
-Chat mode and research mode run through DIFFERENT execution paths on
-the same surface:
-
-```
-chat-send(mode=chat)     → chat service → completer (lean prompt,
-                            no delegation, no skills provision)
-chat-send(mode=research) → the intent wrapper → engine adapter
-                            (full pipeline: analysis, skills
-                            provision, ward tools, delegate_agent,
-                            progress budgets) → the result lands in
-                            the same conversation
-```
-
-The chat service grows a `researchPath` seam: when the mode is
-research, the send routes through the WRAPPED engine (the same
-RunGoal path the /api/goals endpoint uses), with the conversation's
-messages as context. The result streams back into the same chat
-session. This is the unification: the chat surface IS the goal
-surface in research mode.
-
-**Skills in research mode**: the wrapper's ## Skills section already
-provisions intent-recommended skills for goal runs — the same
-mechanism serves research-mode chat (the wrapper composes the full
-stack). No new code path: the wrapper handles it.
-
-**Agents in research mode**: the engine adapter already offers
-delegate_agent on goal runs — research-mode chat IS a goal run
-routed through the chat surface. Children get the ward guard. No new
-delegation code: the adapter handles it.
-
-**What changes in the chat service**: a mode branch at send time —
-chat mode = the current lean path; research mode = construct a
-GoalRequest (the message as goal, the session's model) → call the
-wrapped engine → relay the events into the chat timeline. The
-service does NOT grow its own analysis/skills/delegation — it ROUTES
-to the machinery that already has them.
-
-## The UI
-
-- **Mode toggle**: a segmented control in the composer (Chat |
-  Research). State persists per session. Research mode visually
-  distinct (accent color, badge).
-- **Task Analysis card**: renders on the exchange's first event when
-  an intent_analysis event arrives (approach, complexity, ward,
-  recommendations) — the Timeline already streams it.
-- **Ward context footer**: when a ward is active, the composer shows
-  the ward name + a "leave" affordance.
-- **Continue button**: when a research exchange is near its budget
-  (the progress tracker's soft limit), a Continue button appears
-  offering +25 iterations.
-- **Skills shown**: research mode surfaces the provisioned skills
-  (chips in the Task Analysis card — "provisioned: clean-code,
-  pdf").
+1. **Session type is immutable**: a chat session stays chat; a
+   research session stays research. Ward binding is mutable (enters/
+   leaves wards). This avoids mode-thrash entirely.
+2. **One ward session per ward**: ward_use on a session that already
+   has a ward binding SWITCHES the binding; ward_use on a DIFFERENT
+   research session that targets the same ward — both sessions can
+   work in the same ward (the vault is a shared workspace); but the
+   sidebar groups by ward, so they appear together.
+3. **The chat surface renders the ACTIVE session**: switching sessions
+   in the sidebar switches the transcript + composer context. One
+   Chat component, session-driven.
+4. **Research sessions have names**: auto-titled from the first
+   message's intent, or user-renamed. The sidebar shows the name +
+   last-activity hint.
+5. **Chat sessions are NOT deletable** (the persistent quick chat);
+   research sessions can be archived/deleted by the user.
 
 ## Risks / Trade-offs
 
-- [Mode thrash] — a user flipping modes per message pays the analysis
-  cost on each research turn. Acceptable: the mode is a deliberate
-  choice, not automatic.
-- [Chat mode without ward tools] — a chat-mode user asking about wards
-  gets a text-only answer. The mode switch IS the affordance.
-- [Continue on a finished run] — the endpoint returns 409 if the run
-  is not active; the client surfaces it.
+- [Multiple live sessions] — each research session holds engine
+  state (ward host, progress tracker). Memory-bounded by session
+  count; ward hosts are small (a few KB each).
+- [Session list growth] — many research sessions over time. Sidebar
+  caps at ~20 visible + "show all"; archived sessions hidden.
 
 ## Migration Plan
 
-Additive: the `mode` field defaults to `chat` (existing sends are
-chat-mode — no behavior change since they already run lean). The
-Continue endpoint is new. No data moves.
+Additive: the existing "default" session becomes type=chat; no other
+sessions exist yet. The mode column from the earlier toggle work
+becomes the type column. No data moves.
 
 ## Open Questions
 
-- Should chat mode eventually get a MINIMAL ward read (see the ward
-  index without entering)? Leaning no — the mode switch is cheap.
+- Should ward-bound sessions be renameable independently of the ward
+  name? (Mock shows ward name as the session name.)
