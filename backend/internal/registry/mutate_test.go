@@ -829,3 +829,19 @@ func TestMCPEnablementRoundTrip(t *testing.T) {
 		t.Fatal("rename lost disabled state")
 	}
 }
+
+// Packaging keys are sink-decoded and ignored; unknown keys still
+// error (relocate-skills-hooks).
+func TestSkillFrontmatterSinkKeys(t *testing.T) {
+	raw := "name: ddg\ndescription: searches\nlicense: Apache-2.0\nmetadata:\n  author: phani\nallowed-tools: [shell]\n"
+	name, desc, _, err := ParseSkillMD("---\n" + raw + "---\nbody")
+	if err != nil {
+		t.Fatalf("packaging keys must be tolerated: %v", err)
+	}
+	if name != "ddg" || desc != "searches" {
+		t.Fatalf("parsed: %q %q", name, desc)
+	}
+	if _, _, _, err := ParseSkillMD("---\nname: x\ndescription: d\nsurprise: 1\n---\nb"); err == nil {
+		t.Fatal("unknown key must still error")
+	}
+}

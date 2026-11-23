@@ -99,8 +99,8 @@ func run(ctx context.Context, homeFlag string) error {
 	if _, errs := reg.LoadAll(registry.Dirs{
 		Prompts:    paths.ConfigDir("prompts"),
 		Agents:     paths.AgentsDir,
-		Skills:     paths.ConfigDir("skills"),
-		Hooks:      paths.ConfigDir("hooks"),
+		Skills:     paths.SkillsDir,
+		Hooks:      paths.HooksDir,
 		MCPs:       paths.ConfigDir("mcps"),
 		Schedules:  paths.ConfigDir("schedules"),
 		ConfigFile: paths.ConfigFile,
@@ -398,8 +398,8 @@ func run(ctx context.Context, homeFlag string) error {
 	watcher, err := reg.Watch(ctx, registry.Dirs{
 		Prompts:    paths.ConfigDir("prompts"),
 		Agents:     paths.AgentsDir,
-		Skills:     paths.ConfigDir("skills"),
-		Hooks:      paths.ConfigDir("hooks"),
+		Skills:     paths.SkillsDir,
+		Hooks:      paths.HooksDir,
 		MCPs:       paths.ConfigDir("mcps"),
 		Schedules:  paths.ConfigDir("schedules"),
 		ConfigFile: paths.ConfigFile,

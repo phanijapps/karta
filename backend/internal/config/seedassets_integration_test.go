@@ -35,7 +35,7 @@ func TestSeededSkillsPassStrictLoader(t *testing.T) {
 	}
 	for _, name := range wantSeededSkills {
 		t.Run(name, func(t *testing.T) {
-			raw, err := os.ReadFile(filepath.Join(paths.ConfigDir("skills"), name, "SKILL.md"))
+			raw, err := os.ReadFile(filepath.Join(paths.SkillsDir, name, "SKILL.md"))
 			if err != nil {
 				t.Fatalf("read seeded skill: %v", err)
 			}
@@ -62,7 +62,7 @@ func TestSeedAgentsDecode(t *testing.T) {
 		t.Fatalf("Bootstrap: %v", err)
 	}
 	reg := registry.New()
-	snap, errs := reg.LoadAll(registry.Dirs{Agents: paths.AgentsDir, Skills: paths.ConfigDir("skills")})
+	snap, errs := reg.LoadAll(registry.Dirs{Agents: paths.AgentsDir, Skills: paths.SkillsDir})
 	if len(errs) > 0 {
 		t.Fatalf("load errors over a fresh home: %+v", errs)
 	}

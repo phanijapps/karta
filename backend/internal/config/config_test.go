@@ -227,7 +227,7 @@ func TestLoadSelfHealsMissingDirs(t *testing.T) {
 	if _, err := Load(paths); err != nil {
 		t.Fatalf("Load should self-heal: %v", err)
 	}
-	for _, dir := range []string{paths.ConfigDir("skills"), paths.DataDir} {
+	for _, dir := range []string{paths.SkillsDir, paths.DataDir} {
 		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 			t.Fatalf("self-heal failed for %s: %v", dir, err)
 		}

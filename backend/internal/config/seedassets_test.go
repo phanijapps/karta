@@ -44,7 +44,7 @@ func TestSeedExamplesNeverOverwrite(t *testing.T) {
 	if err := os.WriteFile(edited, []byte("# user-owned now\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	skillMD := filepath.Join(paths.ConfigDir("skills"), "clean-code", "SKILL.md")
+	skillMD := filepath.Join(paths.SkillsDir, "clean-code", "SKILL.md")
 	if err := os.WriteFile(skillMD, []byte("---\nname: clean-code\ndescription: mine now\n---\ntuned by the user\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestDeletedExampleStaysDeleted(t *testing.T) {
 	if err := os.Remove(victim); err != nil {
 		t.Fatal(err)
 	}
-	skillVictim := filepath.Join(paths.ConfigDir("skills"), "humanizer")
+	skillVictim := filepath.Join(paths.SkillsDir, "humanizer")
 	if err := os.RemoveAll(skillVictim); err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestUpgradeHomeReceivesRosterOnce(t *testing.T) {
 			t.Fatalf("upgrade missing %s: %v", name, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(paths.ConfigDir("skills"), "clean-code", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(paths.SkillsDir, "clean-code", "SKILL.md")); err != nil {
 		t.Fatalf("upgrade missing skill: %v", err)
 	}
 	// The marker dropped — and a deletion after the upgrade sticks.
@@ -165,7 +165,7 @@ func TestInterruptedSeedingRetries(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(paths.AgentsDir, "planner-agent.example.md")); err != nil {
 		t.Fatalf("retry did not seed: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(paths.ConfigDir("skills"), "eagle-eye", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(paths.SkillsDir, "eagle-eye", "SKILL.md")); err != nil {
 		t.Fatalf("retry did not seed skills: %v", err)
 	}
 }

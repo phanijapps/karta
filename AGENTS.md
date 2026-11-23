@@ -20,9 +20,10 @@ the rebrand does not authorize an API or data migration.
    compactions — conversations only) and the chitta database at
    `~/.zbot/data/chitta/` (ONE LadybugDB holding both chitta domains:
    memory records and the knowledge graph, with their cross-domain
-   links), plus the configuration tree
-   `~/.zbot/agents/**` and
-   `~/.zbot/config/{prompts,skills,hooks,mcps,providers}/**`. Two scoped
+   links), plus the configuration tree `~/.zbot/{agents,skills,hooks}/**`
+   (skills and hooks are TOP-LEVEL user content, relocated from
+   config/ — migrateLegacySkillsHooks moves classic installs once) and
+   `~/.zbot/config/{prompts,mcps,providers}/**`. Two scoped
    exceptions: (a) provider credential VALUES for daemon-managed providers
    live in the platform keyring (Linux Secret Service, macOS Keychain,
    Windows Credential Manager), namespaced per home root — never under

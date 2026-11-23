@@ -50,8 +50,9 @@ work out, all state inspectable and local.
   linter; read-only in the UI today. (The old "Code Wards" sandboxed-
   execution concept lives on as the slice-3 tool-plane direction:
   ward-scoped execution with optional Docker isolation.)
-- **Filesystem control plane** — `~/.zbot/config/{prompts,skills,hooks,mcps}`,
-  the top-level `~/.zbot/agents/`, plus `~/.zbot/config.yaml`: zero hardcoded
+- **Filesystem control plane** — the top-level
+  `~/.zbot/{agents,skills,hooks}/` and
+  `~/.zbot/config/{prompts,mcps,providers}/`, plus `~/.zbot/config.yaml`: zero hardcoded
   agents or tools, hot-reloaded via fsnotify. The user's files *are* the
   configuration. A fresh install seeds an example roster (six agent examples
   + five prompt-craft skills, user-owned after first write) — examples, not

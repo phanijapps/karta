@@ -44,14 +44,17 @@ func ParseSkillMD(raw string) (name, description, body string, err error) {
 	return fmSpec.Name, fmSpec.Description, body, nil
 }
 
-// skillFrontmatter is the decoded SKILL.md frontmatter. The Path sink
-// keeps strict decoding tolerant of hand-authored path fields (they are
-// ignored — the directory walk owns Path) without accepting arbitrary
-// unknown fields.
+// skillFrontmatter is the decoded SKILL.md frontmatter. The sink
+// fields (Path, License, Metadata, AllowedTools) keep strict decoding
+// tolerant of PACKAGING keys common in hand-moved/marketplace skills —
+// they are decoded and ignored. Everything else unknown still errors.
 type skillFrontmatter struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-	Path        string `yaml:"path"` // sink: decoded but never trusted
+	Name         string `yaml:"name"`
+	Description  string `yaml:"description"`
+	Path         string `yaml:"path"`          // sink: decoded but never trusted
+	License      string `yaml:"license"`       // sink: packaging key, ignored
+	Metadata     any    `yaml:"metadata"`      // sink: packaging key, ignored
+	AllowedTools any    `yaml:"allowed-tools"` // sink: packaging key, ignored
 }
 
 // loadSkills loads config/skills/<name>/SKILL.md directories. SKILL.md

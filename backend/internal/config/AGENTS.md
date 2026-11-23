@@ -26,3 +26,11 @@ in the dependency graph (nothing here imports registry/eventbus/engine).
   unauthenticated API to the network — the request guard adapts (see
   internal/server) and the operator owns that trust decision.
 - Key entrypoints: `ResolveHome`, `NewPaths`, `Bootstrap`, `Load`, `Default`.
+## Layout notes (relocate-skills-hooks)
+
+- Skills load from `~/.zbot/skills/`, hooks from `~/.zbot/hooks/`
+  (top-level; `Paths.SkillsDir`/`HooksDir`). `config/{skills,hooks}`
+  are legacy: `migrateLegacySkillsHooks` (bootstrap, BEFORE ensureDirs)
+  moves entries up one-by-one, never overwriting, hand-move-aware.
+- Skill seeds target `paths.SkillsDir`; prompt seeds stay in
+  `config/prompts/` (daemon config, not user skills).

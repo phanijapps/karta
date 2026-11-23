@@ -177,12 +177,17 @@ func Default() Config {
 // overwrites an existing file and is idempotent. Bootstrap is the only
 // writer of config.yaml; Load never regenerates it.
 func Bootstrap(ctx context.Context, paths Paths) error {
-	if err := ensureDirs(paths); err != nil {
+	// Legacy migrations run BEFORE ensureDirs (their guards probe the
+	// destination's absence; ensureDirs would create it) and for
+	// EXISTING installs too (the config.yaml early-return below must
+	// not strand a populated legacy tree).
+	if _, err := migrateLegacyAgents(paths); err != nil {
 		return err
 	}
-	// Legacy migration runs for EXISTING installs too (the config.yaml
-	// early-return below must not strand a populated config/agents).
-	if _, err := migrateLegacyAgents(paths); err != nil {
+	if err := migrateLegacySkillsHooks(paths); err != nil {
+		return err
+	}
+	if err := ensureDirs(paths); err != nil {
 		return err
 	}
 	raw, err := yaml.Marshal(Default())
@@ -258,7 +263,7 @@ func migrateLegacyAgents(paths Paths) (bool, error) {
 
 // ensureDirs self-heals the directory tree without writing any file.
 func ensureDirs(paths Paths) error {
-	dirs := append(paths.AllConfigDirs(), paths.DataDir, filepath.Dir(paths.ConfigFile))
+	dirs := append(paths.AllConfigDirs(), paths.DataDir, paths.AgentsDir, paths.SkillsDir, paths.HooksDir, filepath.Dir(paths.ConfigFile))
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("config: ensure %s: %w", dir, err)

@@ -32,7 +32,7 @@ func seedExamples(ctx context.Context, paths Paths) error {
 		// already seeded — deletions stay deleted
 	} else if err := seedWalk(ctx, "seedassets/agents", paths.AgentsDir); err != nil {
 		return err
-	} else if err := seedWalk(ctx, "seedassets/skills", paths.ConfigDir("skills")); err != nil {
+	} else if err := seedWalk(ctx, "seedassets/skills", paths.SkillsDir); err != nil {
 		return err
 	} else if err := dropMarker(filepath.Join(paths.Home, exampleRosterMarker)); err != nil {
 		return err
@@ -137,5 +137,44 @@ func seedAsset(ctx context.Context, dest, src string) error {
 	}
 	published = true
 	_ = os.Remove(tmpName) // the content lives at dest now
+	return nil
+}
+
+// migrateLegacySkillsHooks relocates legacy config/{skills,hooks}/
+// entries into the top-level roots (relocate-skills-hooks), one entry
+// at a time: an entry whose destination exists is LEFT in place
+// (never overwritten — the top-level copy stands); otherwise it moves
+// up. Naturally idempotent: empty/absent legacy dirs are a no-op, and
+// a hand-moved home (top-level populated, legacy empty) migrates
+// nothing. Empty legacy directories are left in place (inert).
+func migrateLegacySkillsHooks(paths Paths) error {
+	pairs := []struct{ legacy, dest string }{
+		{paths.ConfigDir("skills"), paths.SkillsDir},
+		{paths.ConfigDir("hooks"), paths.HooksDir},
+	}
+	for _, p := range pairs {
+		if p.legacy == "" || p.dest == "" || p.legacy == p.dest {
+			continue
+		}
+		entries, err := os.ReadDir(p.legacy)
+		if err != nil {
+			continue // absent legacy dir: nothing to migrate
+		}
+		for _, e := range entries {
+			src := filepath.Join(p.legacy, e.Name())
+			dst := filepath.Join(p.dest, e.Name())
+			if _, err := os.Lstat(dst); err == nil {
+				continue // destination exists: never overwrite, legacy copy stays inert
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("config: migrate %s: %w", dst, err)
+			}
+			if err := os.MkdirAll(p.dest, 0o755); err != nil {
+				return fmt.Errorf("config: migrate %s: %w", dst, err)
+			}
+			if err := os.Rename(src, dst); err != nil {
+				return fmt.Errorf("config: migrate %s -> %s: %w", src, dst, err)
+			}
+		}
+	}
 	return nil
 }
