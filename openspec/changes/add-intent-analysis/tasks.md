@@ -2,16 +2,16 @@
 
 ## 1. Contract + router + prompts
 
-- [ ] 1.1 `domain.IntentAnalysis` (strict decode, complexity enum,
+- [x] 1.1 `domain.IntentAnalysis` (strict decode, complexity enum,
   ward_recommendation, execution_strategy) + the S/M/L/XL→step-budget
   mapping + validation helpers (index-validated recommendations, exact
   ward-name match, reusable-domain name pattern). Verify: table tests
   (decode, unknown fields rejected, validation drop/warn rules).
-- [ ] 1.2 The router (greeting/smalltalk bypass — deterministic, no
+- [x] 1.2 The router (greeting/smalltalk bypass — deterministic, no
   model call) + the analysis completion call (plain JSON, no tools,
   one retry, then degrade). Verify: fake-completer tests (full
   contract, malformed JSON, model failure → typed degrade).
-- [ ] 1.3 The intent prompt seeded to
+- [x] 1.3 The intent prompt seeded to
   `~/.zbot/config/prompts/intent-analysis.md` (operator's version with
   the design's adaptation table applied: Karta tool names
   (delegate_agent, no load_skill — skills are runtime provisions),
@@ -22,7 +22,7 @@
   validates the file's shape, falls back to the embedded default.
   Verify: seeded-file load + malformed-file fallback tests.
 
-- [ ] 1.4 `system-prompt` capability (specs/system-prompt delta):
+- [x] 1.4 `system-prompt` capability (specs/system-prompt delta):
   config surface (`system_prompt.role/soul/os/tools/custom`, os=auto by
   GOOS), strict typed resolution (missing role/unresolvable section =
   load error naming file+section; optional missing = skipped),

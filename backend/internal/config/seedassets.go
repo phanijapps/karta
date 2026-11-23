@@ -15,7 +15,7 @@ import (
 // skill seeds tuned from the operator's ~/Documents/zbot set. Seeded
 // write-once — user-owned after first write.
 //
-//go:embed seedassets/agents seedassets/skills
+//go:embed seedassets/agents seedassets/skills seedassets/prompts
 var seedFS embed.FS
 
 // seedExamples seeds the example roster: agents into agents/, skills
@@ -29,6 +29,7 @@ func seedExamples(ctx context.Context, paths Paths) error {
 	targets := []struct{ srcRoot, dstRoot string }{
 		{"seedassets/agents", paths.AgentsDir},
 		{"seedassets/skills", paths.ConfigDir("skills")},
+		{"seedassets/prompts", paths.ConfigDir("prompts")},
 	}
 	for _, t := range targets {
 		if t.dstRoot == "" {

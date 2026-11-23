@@ -11,6 +11,10 @@ import (
 type Prompt struct {
 	Name string
 	Path string
+	// Raw is the file content verbatim. Composed prompt sections use
+	// it (they are markdown, not templates); template consumers use
+	// Template() (e.g. the intent prompt's resource slots).
+	Raw string
 
 	tmpl *template.Template
 }
@@ -36,6 +40,6 @@ func loadPrompts(snap *Snapshot, dir string, errs *[]LoadError) {
 			addErr(errs, path, KindPrompt, fmt.Errorf("template parse: %w", err))
 			continue
 		}
-		snap.Prompts[name] = Prompt{Name: name, Path: path, tmpl: tmpl}
+		snap.Prompts[name] = Prompt{Name: name, Path: path, Raw: string(raw), tmpl: tmpl}
 	}
 }

@@ -17,12 +17,36 @@ import (
 // Config is the typed config.yaml schema (v1). Loading is strict: unknown
 // keys are rejected, and failures never fall back to defaults.
 type Config struct {
-	Engine     string           `yaml:"engine"`
-	Server     ServerConfig     `yaml:"server"`
-	Compaction CompactionConfig `yaml:"compaction"`
-	Wards      WardsConfig      `yaml:"wards"`
-	Providers  []ProviderConfig `yaml:"providers"`
-	Chitta     ChittaConfig     `yaml:"chitta"`
+	Engine       string             `yaml:"engine"`
+	Server       ServerConfig       `yaml:"server"`
+	Compaction   CompactionConfig   `yaml:"compaction"`
+	Wards        WardsConfig        `yaml:"wards"`
+	Providers    []ProviderConfig   `yaml:"providers"`
+	Chitta       ChittaConfig       `yaml:"chitta"`
+	SystemPrompt SystemPromptConfig `yaml:"system_prompt"`
+	Intent       IntentConfig       `yaml:"intent_analysis"`
+}
+
+// SystemPromptConfig selects the composed system prompt's static
+// sections from the prompt registry (config/prompts/<name>.md). Empty
+// optional names skip the section; `os` accepts "auto" (pick the
+// os-<platform> pack by the daemon's OS), an explicit
+// linux|windows|darwin, or "none". An install whose config.yaml
+// predates this key behaves as the defaults (Load back-fills).
+type SystemPromptConfig struct {
+	Role   string   `yaml:"role"`
+	Soul   string   `yaml:"soul,omitempty"`
+	OS     string   `yaml:"os,omitempty"`
+	Tools  string   `yaml:"tools,omitempty"`
+	Custom []string `yaml:"custom,omitempty"`
+}
+
+// IntentConfig gates the pre-execution intent middleware for goal
+// runs (chat is never analyzed). Enabled is the kill-switch: off
+// restores the exact pre-analysis behavior.
+type IntentConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Model   string `yaml:"model,omitempty"` // optional qualified provider/model for the analysis call; empty = the run's model
 }
 
 // ServerConfig is the daemon's HTTP listen address.
@@ -130,11 +154,13 @@ type ProviderConfig struct {
 // source of truth.
 func Default() Config {
 	return Config{
-		Engine:     "eino",
-		Server:     ServerConfig{Address: "127.0.0.1:8787"},
-		Compaction: CompactionConfig{MaxContextTokens: 128000, ReserveOutputTokens: 8192},
-		Wards:      WardsConfig{VaultRoot: ""}, // empty = OS-aware ~/Documents/wards (wards.ResolveVaultRoot)
-		Providers:  []ProviderConfig{},         // marshals as `providers: []` so the key is discoverable
+		Engine:       "eino",
+		Server:       ServerConfig{Address: "127.0.0.1:8787"},
+		Compaction:   CompactionConfig{MaxContextTokens: 128000, ReserveOutputTokens: 8192},
+		Wards:        WardsConfig{VaultRoot: ""}, // empty = OS-aware ~/Documents/wards (wards.ResolveVaultRoot)
+		SystemPrompt: SystemPromptConfig{Role: "role", Soul: "soul", OS: "auto", Tools: "tools"},
+		Intent:       IntentConfig{Enabled: true},
+		Providers:    []ProviderConfig{}, // marshals as `providers: []` so the key is discoverable
 		Chitta: ChittaConfig{
 			Provider:  "local",
 			Embedding: ChittaEmbeddingConfig{Model: DefaultChittaEmbeddingModel, Dim: DefaultChittaEmbeddingDim},
@@ -293,7 +319,36 @@ func Load(paths Paths) (Config, error) {
 	if err := validateWards(cfg, paths.ConfigFile); err != nil {
 		return Config{}, err
 	}
+	backfillSystemPrompt(&cfg)
+	if err := validateSystemPrompt(cfg, paths.ConfigFile); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+// backfillSystemPrompt restores the defaults for config.yaml files that
+// predate the system_prompt key (strict decode yields the zero value).
+// A configured block replaces the defaults whole: empty optional names
+// skip sections by design.
+func backfillSystemPrompt(cfg *Config) {
+	sp := cfg.SystemPrompt
+	if sp.Role == "" && sp.Soul == "" && sp.OS == "" && sp.Tools == "" && len(sp.Custom) == 0 {
+		cfg.SystemPrompt = Default().SystemPrompt
+	}
+}
+
+// validateSystemPrompt enforces the composed prompt's config surface:
+// a role name and a valid os mode.
+func validateSystemPrompt(cfg Config, file string) error {
+	if cfg.SystemPrompt.Role == "" {
+		return fmt.Errorf("config: %s: system_prompt.role must name a prompt section", file)
+	}
+	switch cfg.SystemPrompt.OS {
+	case "", "auto", "none", "linux", "windows", "darwin":
+	default:
+		return fmt.Errorf("config: %s: system_prompt.os must be auto, none, linux, windows, or darwin (got %q)", file, cfg.SystemPrompt.OS)
+	}
+	return nil
 }
 
 // DeprecatedWardsRootError is the typed migration error for a

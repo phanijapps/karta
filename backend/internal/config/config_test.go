@@ -102,6 +102,12 @@ func TestBootstrapFirstRunCreatesStructureOnly(t *testing.T) {
 			}
 			continue
 		}
+		if dir == paths.ConfigDir("prompts") {
+			if len(entries) != 7 { // role, soul, os-linux/windows/darwin, tools, intent-analysis
+				t.Fatalf("prompt seed count: %d", len(entries))
+			}
+			continue
+		}
 		if len(entries) != 0 {
 			t.Fatalf("%s seeded with content: %v", dir, entries)
 		}
