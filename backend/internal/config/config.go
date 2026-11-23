@@ -163,7 +163,7 @@ func Default() Config {
 		Server:       ServerConfig{Address: "127.0.0.1:8787"},
 		Compaction:   CompactionConfig{MaxContextTokens: 128000, ReserveOutputTokens: 8192},
 		Wards:        WardsConfig{VaultRoot: ""}, // empty = OS-aware ~/Documents/wards (wards.ResolveVaultRoot)
-		SystemPrompt: SystemPromptConfig{Role: "role", Soul: "soul", OS: "auto", Tools: "tools"},
+		SystemPrompt: SystemPromptConfig{Role: "role", Soul: "soul", OS: "auto", Tools: "tools", Custom: []string{"research-protocol"}},
 		Intent:       IntentConfig{Enabled: boolPtrLocal(true)},
 		Providers:    []ProviderConfig{}, // marshals as `providers: []` so the key is discoverable
 		Chitta: ChittaConfig{

@@ -60,6 +60,12 @@ var idCounter uint64
 // Service runs the chat exchange.
 type Service struct {
 	persona func() (string, error) // composed static system prompt (nil = none)
+	// extraTools mounts additional tool planes (the ward plane — the
+	// chat is the research surface; nil = none).
+	extraTools func() []tools.Tool
+	// activeWard renders the ## Active Ward section when the session
+	// hosts a ward (nil = never).
+	activeWard func() string
 
 	store     *store.Store
 	provider  func(name string) (providers.Provider, error)
@@ -90,6 +96,14 @@ func New(st *store.Store, providerLookup func(string) (providers.Provider, error
 // accidentally empty prompt. Nil restores the pre-composition
 // behavior (no persona message).
 func (s *Service) SetPersona(fn func() (string, error)) { s.persona = fn }
+
+// SetExtraTools mounts additional tool planes on every exchange (the
+// ward plane: wards index + structural + file tools).
+func (s *Service) SetExtraTools(fn func() []tools.Tool) { s.extraTools = fn }
+
+// SetActiveWard wires the Active Ward section renderer (composed after
+// the persona when the session hosts a ward).
+func (s *Service) SetActiveWard(fn func() string) { s.activeWard = fn }
 
 // SendOutcome is a send's result: the appended rows on success, or the
 // typed failure with the persisted user row and cursor.
@@ -176,6 +190,11 @@ func (s *Service) runExchange(ctx context.Context, text, providerName, model str
 		}
 		persona = p
 	}
+	if s.activeWard != nil {
+		if section := s.activeWard(); section != "" {
+			persona = strings.TrimSpace(persona + "\n\n" + section)
+		}
+	}
 	messages := windowToChatMessages(hw)
 	if persona != "" {
 		// Persona first: identity precedes any compaction summary.
@@ -199,7 +218,13 @@ func (s *Service) runExchange(ctx context.Context, text, providerName, model str
 	}
 
 	// 3. Bounded tool rounds.
-	toolDefs := toolChatDefs(s.toolProv)
+	toolProv := s.toolProv
+	if s.extraTools != nil {
+		if extra := s.extraTools(); len(extra) > 0 {
+			toolProv = tools.Multi(s.toolProv, staticProvider{extra})
+		}
+	}
+	toolDefs := toolChatDefs(toolProv)
 	for round := 0; round <= MaxToolRounds; round++ {
 		offerTools := round < MaxToolRounds // final round: no tools, force an answer
 		offered := toolDefs
@@ -247,7 +272,7 @@ func (s *Service) runExchange(ctx context.Context, text, providerName, model str
 
 		// Execute each requested tool; persist result rows.
 		for _, call := range res.Message.ToolCalls {
-			result := tools.Execute(ctx, s.toolProv, call.Function.Name, call.Function.Arguments)
+			result := tools.Execute(ctx, toolProv, call.Function.Name, call.Function.Arguments)
 			s.emitToolEvent(root, call.Function.Name, result)
 			content := result.Output
 			if result.Err != nil {
@@ -475,3 +500,10 @@ func NewStoreBacked(db *store.Store, provStore ProviderStore, completer Complete
 		completer, toolProv, bus, idGen)
 	return svc
 }
+
+// staticProvider serves a fixed tool list (mounting extra planes like
+// the ward tools without a registry).
+type staticProvider struct{ list []tools.Tool }
+
+// Tools returns the fixed list.
+func (p staticProvider) Tools() []tools.Tool { return p.list }

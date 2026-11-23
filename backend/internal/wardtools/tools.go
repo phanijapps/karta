@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"zbot/backend/internal/domain"
+	"zbot/backend/internal/tools"
 	"zbot/backend/internal/wards"
 )
 
@@ -212,4 +213,57 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// WardsTool is the read-only ward INDEX tool: lists the vault's wards
+// (name — archetype — canonical title). The chat research protocol
+// uses it to decide use-existing vs create-new before calling the
+// structural tools.
+type WardsTool struct {
+	Vault *wards.Vault
+}
+
+// Def describes wards.
+func (t WardsTool) Def() Def {
+	return Def{
+		Name:        "wards",
+		Description: "List the ward vault's index: every ward with its name, archetype, and canonical-page title. Read-only. Use it to decide whether an existing ward covers a domain before creating a new one.",
+		ParamsJSON:  `{"type":"object","properties":{}}`,
+	}
+}
+
+// Exec lists the vault.
+func (t WardsTool) Exec(ctx context.Context, _ string) Result {
+	infos, err := t.Vault.Index(ctx)
+	if err != nil {
+		return Result{Err: fmt.Errorf("wards: index: %w", err)}
+	}
+	if len(infos) == 0 {
+		return Result{Output: "(vault empty — no wards yet)"}
+	}
+	lines := make([]string, len(infos))
+	for i, wi := range infos {
+		line := wi.Name + " — " + wi.Archetype
+		if wi.CanonicalTitle != "" {
+			line += " — " + wi.CanonicalTitle
+		}
+		lines[i] = line
+	}
+	return Result{Output: strings.Join(lines, "\n")}
+}
+
+// ChatToolSet builds the ward tool plane for a CHAT session: the index
+// tool, the structural tools, and the file tools, all over one sticky
+// host. (The engine's root/child split does not apply here — the chat
+// user IS the root.)
+func ChatToolSet(host *Host) []tools.Tool {
+	files := FileTools{Host: host}
+	return []tools.Tool{
+		WardsTool{Vault: host.Vault()},
+		UseTool{Host: host, Vault: host.Vault()},
+		CreateTool{Host: host, Vault: host.Vault()},
+		ReadTool{F: files},
+		WriteTool{F: files},
+		ListTool{F: files},
+	}
 }

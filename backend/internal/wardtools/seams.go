@@ -39,3 +39,5 @@ var (
 	_ tools.Tool = WriteTool{}
 	_ tools.Tool = ListTool{}
 )
+
+var _ tools.Tool = WardsTool{}

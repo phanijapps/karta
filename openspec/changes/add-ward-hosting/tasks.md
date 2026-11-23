@@ -46,6 +46,21 @@
   engine; record). Verify: daemon-level smoke via existing seams;
   task verify green.
 
+## 3.5 Chat research surface (operator refinement, 2026-11-24)
+
+- [x] 3.5.1 wardtools.ChatToolSet + WardsTool (read-only index) —
+  chat-mountable plane over one sticky host. Verify: wardtools tests.
+- [x] 3.5.2 Chat: SetExtraTools/SetActiveWard seams; extra tools mount
+  per exchange (Multi); Active Ward composes after the persona.
+  Verify: TestChatWardPlane (tools offered; section absent → present).
+- [x] 3.5.3 Seeded research-protocol.md (custom section in the default
+  prompt; figure-it-out rules: assess → ward decision → discipline).
+  Verify: config seed test (8 prompts); user-owned via the persona
+  marker.
+- [x] 3.5.4 Daemon: chat ward host + tool plane + Active Ward wired
+  (engine goal-run wiring unchanged). Verify: build + suite + live
+  smoke (below).
+
 ## 4. Review and hardening
 
 - [ ] 4.1 Phase gates (gpt-6.1-terra + gpt-6.1-sol) after each task

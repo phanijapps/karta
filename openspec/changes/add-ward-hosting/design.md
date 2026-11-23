@@ -118,3 +118,33 @@ exist). Rollback = revert.
 - Persist active ward across DAEMON restarts (session resume)? Leaning
   yes via the session store — decide in tasks (cheap: store on the
   session row; resume re-enters the ward).
+
+## Operator refinement (2026-11-24): the chat IS the research surface
+
+Recorded direction: wards are NOT a goal-run hosting mechanism alone —
+a research CHAT figures wards out itself. Decisions:
+
+1. The ward tool plane mounts on CHAT exchanges too (chat
+   SetExtraTools): `wards` (read-only index), `ward_use`,
+   `ward_create`, and the file tools, over ONE sticky host for the
+   chat session. The chat user IS the root (no child split).
+2. The Active Ward section composes onto the chat system prompt when a
+   ward is entered — the conversation absorbs the ward's constitution
+   (no persona swap; the packet rides in via ward_use's result AND the
+   prompt section).
+3. The figure-it-out rules are PROMPT CONTENT: a seeded
+   `research-protocol.md` (custom section in the default system
+   prompt; user-owned) — assess trivial vs research; the ward decision
+   (index → use_existing exact | create_new reusable-name); ward
+   discipline. Shape from the operator's first-turn-protocol +
+   INSTRUCTIONS warm/cold paths.
+4. The intent middleware STAYS for goal runs (the autonomous sprint
+   surface: scheduled, budgeted, resumable). Chat gets no middleware —
+   its analysis is the model's own reasoning under the protocol.
+5. Delegation-in-chat (warm path → one delegation to a specialist)
+   remains slice 4's orchestrator work; recorded, not built here.
+
+The system-prompt capability's "chat static-only" rule is AMENDED by
+this change: chat carries `## Active Ward` when hosting (the
+add-intent-analysis delta is still unarchived — its spec text will
+gain the amendment before sync).

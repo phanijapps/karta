@@ -35,6 +35,7 @@ import (
 	"zbot/backend/internal/skillhub"
 	zbotstore "zbot/backend/internal/store"
 	"zbot/backend/internal/wards"
+	"zbot/backend/internal/wardtools"
 
 	einoengine "zbot/backend/internal/engine/eino"
 	"zbot/backend/internal/intent"
@@ -194,6 +195,21 @@ func run(ctx context.Context, homeFlag string) error {
 	// A broken composed prompt FAILS the chat exchange (the service
 	// errors before the model call) — chat never runs persona-less.
 	chatSvc.SetPersona(composePersona)
+
+	// The chat IS the research surface (operator direction): the ward
+	// tool plane (index + structural + file tools) mounts on every
+	// exchange, with ONE sticky host for the chat session, and the
+	// Active Ward section composes onto the prompt when a ward is
+	// entered — the conversation absorbs the ward's constitution.
+	chatWardHost := wardtools.NewHost(wardVault)
+	chatSvc.SetExtraTools(func() []tools.Tool { return wardtools.ChatToolSet(chatWardHost) })
+	chatSvc.SetActiveWard(func() string {
+		view := chatWardHost.Active()
+		if view == nil {
+			return ""
+		}
+		return strings.Replace(wardtools.Packet(view), "ACTIVE WARD:", "## Active Ward\n", 1)
+	})
 
 	// Resource index: registry snapshot + probed MCP tools → chitta
 	// reserved kinds; reconciled on boot and on every registry change.

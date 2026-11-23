@@ -305,3 +305,50 @@ func TestChatPersona(t *testing.T) {
 		t.Fatalf("persona must lead the messages: %+v", fc.lastMessages)
 	}
 }
+
+// The ward tool plane mounts on chat exchanges, and the Active Ward
+// section composes onto the prompt once a ward is entered (the chat IS
+// the research surface — operator direction).
+func TestChatWardPlane(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "chat.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	fc := &fakeCompleter{}
+	svc := New(st, func(string) (providers.Provider, error) { return providers.Provider{Name: "p"}, nil },
+		func(context.Context, providers.Provider) (string, error) { return "tok", nil },
+		fc, tools.BuiltinProvider{}, nil, nil)
+
+	svc.SetExtraTools(func() []tools.Tool {
+		return []tools.Tool{stubTool{name: "wards"}, stubTool{name: "ward_use"}}
+	})
+	svc.SetPersona(func() (string, error) { return "## Role\n\nI am Karta.", nil })
+	svc.SetActiveWard(func() string { return "" }) // no ward yet
+
+	if out := svc.Send(context.Background(), "what wards exist", "p", "m"); out.Err != nil {
+		t.Fatalf("send: %v", out.Err)
+	}
+	if len(fc.seenTools) == 0 || fc.seenTools[0] < 2 {
+		t.Fatalf("ward tools not offered: %v", fc.seenTools)
+	}
+	// First system message: persona, no Active Ward.
+	if !strings.Contains(fc.lastMessages[0].Content, "I am Karta.") || strings.Contains(fc.lastMessages[0].Content, "Active Ward") {
+		t.Fatalf("prompt: %.120s", fc.lastMessages[0].Content)
+	}
+
+	// A ward becomes active → the section composes after the persona.
+	svc.SetActiveWard(func() string { return "## Active Ward\n\nstock-analysis" })
+	if out := svc.Send(context.Background(), "continue", "p", "m"); out.Err != nil {
+		t.Fatalf("send 2: %v", out.Err)
+	}
+	if !strings.Contains(fc.lastMessages[0].Content, "## Active Ward") || !strings.Contains(fc.lastMessages[0].Content, "stock-analysis") {
+		t.Fatalf("active ward missing: %.200s", fc.lastMessages[0].Content)
+	}
+}
+
+// stubTool is a named no-op tool for inventory assertions.
+type stubTool struct{ name string }
+
+func (s stubTool) Def() tools.Def                            { return tools.Def{Name: s.name, Description: "stub"} }
+func (s stubTool) Exec(context.Context, string) tools.Result { return tools.Result{Output: "ok"} }
