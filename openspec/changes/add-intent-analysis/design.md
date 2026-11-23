@@ -120,9 +120,12 @@ system_prompt:
 
 Assembly order: Role, Soul, OS, Tools, Custom — then DYNAMIC sections
 appended by machinery at run time: `## Task Analysis` (this change's
-middleware), `## Active Ward` (slice 3: the ward's OWN constitution —
-its AGENTS.md + layout template; the "ward = mini bot with its own
-constitution" model), `## Context` (chitta recall). `AGENTS.md` is
+middleware), `## Skills` (the provisioned skills — intent-recommended,
+index-validated bodies inlined into context at run start; no
+load_skill tool: the runtime provides, the agent does not fetch),
+`## Active Ward` (slice 3: the ward's OWN constitution — its AGENTS.md
++ layout template; the "ward = mini bot with its own constitution"
+model), `## Context` (chitta recall). `AGENTS.md` is
  deliberately NOT a static section: it is the ward-level constitution
 and composes only when a run is hosted. One template serves chat and
 research; surface differences ride the dynamic sections. Failure
@@ -147,7 +150,7 @@ Adaptations when seeding `config/prompts/intent-analysis.md`:
 | `execution_strategy.graph` (executable graph object, "prefer null") | DROP — Karta's engine is a bounded loop, no planner builds graphs in v1; `approach` + `explanation` stay |
 | `complexity`, `solution_path` | RESTORED from agentzero's contract (this change's step budgets 4/8/16/24 + plan seeding) — the operator's prompt dropped them |
 | `mcp_tools` | ADDED (this change's MCP-plane recommendations) |
-| "Agents = delegate_to_agent()" | Karta's tool is `delegate_agent` — seeded prompt uses Karta's names |
+| "Skills = load_skill()", "Agents = delegate_to_agent()" | NO load_skill tool in Karta: the runtime PROVIDES the right skills — intent-recommended, index-validated — by injecting their bodies into the run's context before the loop starts (a dynamic `## Skills` section; eino ships `adk/middlewares/skill` as prior art, but Karta provisions proactively instead of an agent-initiated load call). Agents remain `delegate_agent` — skills are context provisions, agents are delegations; still never mixed |
 | "ALWAYS include 'coding' in recommended_skills" (ward structure + task runner) | NO such skill in Karta — v1 rule: graph runs must recommend a builder/orchestrator agent (the seeded builder-agent); the flow-skill form returns with slice 4 |
 | "Relevant Skills/Agents" + "Existing Wards" lists | Template slots ({{.Skills}}/{{.Agents}}/{{.Wards}}) — the registry already parses prompts as Go templates, so the seeded file is hot-editable and the runtime injects index hits; Existing Wards = slice 1's Vault.Index (name, archetype, canonical title as scope) |
 
