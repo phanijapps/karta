@@ -66,6 +66,10 @@ type Service struct {
 	// activeWard renders the ## Active Ward section when the session
 	// hosts a ward (nil = never).
 	activeWard func() string
+	// researchPath routes research-mode exchanges through the engine
+	// (the wrapped RunGoal path). Nil = research mode falls back to
+	// the lean chat path (wiring incomplete — tests).
+	researchPath func(ctx context.Context, text, providerName, model string) SendOutcome
 
 	store     *store.Store
 	provider  func(name string) (providers.Provider, error)
@@ -96,11 +100,6 @@ type SendOutcome struct {
 	Rows      []store.Message
 	EndCursor int64
 	Err       error // typed providers failure or chat error
-}
-
-// Send runs one serialized exchange (synchronous: no deltas).
-func (s *Service) Send(ctx context.Context, text, providerName, model string) SendOutcome {
-	return s.runExchange(ctx, text, providerName, model, nil, nil)
 }
 
 // SendStream runs the same serialized exchange, streaming volatile deltas

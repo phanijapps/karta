@@ -1,6 +1,11 @@
 package chat
 
-import "zbot/backend/internal/tools"
+import (
+	"context"
+
+	"zbot/backend/internal/domain"
+	"zbot/backend/internal/tools"
+)
 
 // SetPersona wires the composed system prompt (static sections only —
 // chat is never analyzed and never provisioned skills). An ERROR from
@@ -23,3 +28,24 @@ type staticProvider struct{ list []tools.Tool }
 
 // Tools returns the fixed list.
 func (p staticProvider) Tools() []tools.Tool { return p.list }
+
+// SetResearchPath wires the research-mode execution route: the full
+// engine pipeline (intent analysis, skills, wards, delegation).
+func (s *Service) SetResearchPath(fn func(ctx context.Context, text, providerName, model string) SendOutcome) {
+	s.researchPath = fn
+}
+
+// Send runs one serialized exchange (synchronous: no deltas).
+func (s *Service) Send(ctx context.Context, text, providerName, model string) SendOutcome {
+	return s.SendMode(ctx, text, providerName, model, "")
+}
+
+// SendMode runs one exchange with an explicit chat mode. Empty mode =
+// chat (the lean default). Research mode routes through the engine's
+// full pipeline when wired; the persona is the SAME in both modes.
+func (s *Service) SendMode(ctx context.Context, text, providerName, model, mode string) SendOutcome {
+	if domain.NormalizeChatMode(mode) == domain.ChatModeResearch && s.researchPath != nil {
+		return s.researchPath(ctx, text, providerName, model)
+	}
+	return s.runExchange(ctx, text, providerName, model, nil, nil)
+}

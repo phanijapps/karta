@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"zbot/backend/internal/chat"
+	"zbot/backend/internal/domain"
 	"zbot/backend/internal/providers"
 	apigen "zbot/backend/internal/server/apigen"
 	"zbot/backend/internal/store"
@@ -45,6 +46,21 @@ func (s *Server) SyncChatMessages(w http.ResponseWriter, r *http.Request, params
 	})
 }
 
+// writeStreamOutcome emits a completed exchange as the stream's
+// terminal frame (research-mode sends complete as units).
+func (s *Server) writeStreamOutcome(w http.ResponseWriter, outcome chat.SendOutcome) {
+	body := apigen.ChatExchange{
+		Messages:  chatViews(outcome.Rows),
+		EndCursor: int(outcome.EndCursor),
+	}
+	if outcome.Err != nil {
+		body.Error = chatErrorView(outcome.Err)
+		writeJSON(w, http.StatusBadGateway, body)
+		return
+	}
+	writeJSON(w, http.StatusOK, body)
+}
+
 // SendChatMessage runs one serialized exchange and returns every row it
 // appended (failures return the persisted user row + cursor).
 func (s *Server) SendChatMessage(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +78,11 @@ func (s *Server) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	outcome := s.chat.Send(r.Context(), req.Text, providerName, modelID)
+	mode := ""
+	if req.Mode != nil {
+		mode = string(*req.Mode)
+	}
+	outcome := s.chat.SendMode(r.Context(), req.Text, providerName, modelID, mode)
 	// Persist the model as the default (last-used wins).
 	if s.db != nil {
 		_ = s.db.SetDefaultModel(req.Model)
@@ -122,6 +142,17 @@ func (s *Server) StreamChatMessage(w http.ResponseWriter, r *http.Request) {
 	// under its own context, durable events serve every other client, and
 	// writes to the dead connection fail their deadline and drop.
 	runCtx := context.WithoutCancel(r.Context())
+	streamMode := ""
+	if req.Mode != nil {
+		streamMode = string(*req.Mode)
+	}
+	// Research mode on the streaming path completes as a unit (the
+	// engine pipeline is not a token stream).
+	if domain.NormalizeChatMode(streamMode) == domain.ChatModeResearch {
+		outcome := s.chat.SendMode(runCtx, req.Text, providerName, modelID, streamMode)
+		s.writeStreamOutcome(w, outcome)
+		return
+	}
 	outcome := s.chat.SendStream(runCtx, req.Text, providerName, modelID, func(d chat.Delta) {
 		kind := apigen.Content
 		if d.Kind == string(apigen.Reasoning) {

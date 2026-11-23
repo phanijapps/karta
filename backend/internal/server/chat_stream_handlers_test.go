@@ -26,6 +26,10 @@ type scriptedStreamChat struct {
 func (s *scriptedStreamChat) Send(ctx context.Context, text, providerName, model string) chat.SendOutcome {
 	return chat.SendOutcome{Err: errors.New("sync unused on stream tests")}
 }
+
+func (s *scriptedStreamChat) SendMode(ctx context.Context, text, providerName, model, mode string) chat.SendOutcome {
+	return s.Send(ctx, text, providerName, model)
+}
 func (s *scriptedStreamChat) SendStream(ctx context.Context, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome {
 	if s.onCall != nil {
 		s.onCall()
@@ -176,6 +180,10 @@ type instrumentedStreamChat struct {
 func (i *instrumentedStreamChat) Send(ctx context.Context, text, providerName, model string) chat.SendOutcome {
 	return i.inner.Send(ctx, text, providerName, model)
 }
+
+func (i *instrumentedStreamChat) SendMode(ctx context.Context, text, providerName, model, mode string) chat.SendOutcome {
+	return i.Send(ctx, text, providerName, model)
+}
 func (i *instrumentedStreamChat) SendStream(ctx context.Context, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome {
 	out := i.inner.SendStream(ctx, text, providerName, model, onDelta)
 	close(i.done)
@@ -271,6 +279,10 @@ type gappedStreamChat struct {
 
 func (g *gappedStreamChat) Send(ctx context.Context, text, providerName, model string) chat.SendOutcome {
 	return g.inner.Send(ctx, text, providerName, model)
+}
+
+func (g *gappedStreamChat) SendMode(ctx context.Context, text, providerName, model, mode string) chat.SendOutcome {
+	return g.Send(ctx, text, providerName, model)
 }
 func (g *gappedStreamChat) SendStream(ctx context.Context, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome {
 	if onDelta != nil && len(g.inner.deltas) > 0 {

@@ -59,6 +59,24 @@ func (e ChatMessageRole) Valid() bool {
 	}
 }
 
+// Defines values for ChatSendMode.
+const (
+	Chat     ChatSendMode = "chat"
+	Research ChatSendMode = "research"
+)
+
+// Valid indicates whether the value is a known member of the ChatSendMode enum.
+func (e ChatSendMode) Valid() bool {
+	switch e {
+	case Chat:
+		return true
+	case Research:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ChittaToolInvokedPayloadErrorCode.
 const (
 	ChittaToolInvokedPayloadErrorCodeConflict     ChittaToolInvokedPayloadErrorCode = "conflict"
@@ -965,10 +983,28 @@ type ChatMessageRole string
 
 // ChatSend defines model for ChatSend.
 type ChatSend struct {
+	// Mode The execution mode for this exchange. `chat` (aliases:
+	// `fast`) skips the intent pipeline and uses the lean
+	// persona prompt. `research` (aliases: `deep`) runs the
+	// full pipeline through the engine — intent analysis,
+	// skills provision, ward tools, delegation, progress
+	// budgets. Defaults to the session's last mode (initial:
+	// chat).
+	Mode *ChatSendMode `json:"mode,omitempty"`
+
 	// Model Qualified selection from the picker (`provider/model-id`).
 	Model string `json:"model"`
 	Text  string `json:"text"`
 }
+
+// ChatSendMode The execution mode for this exchange. `chat` (aliases:
+// `fast`) skips the intent pipeline and uses the lean
+// persona prompt. `research` (aliases: `deep`) runs the
+// full pipeline through the engine — intent analysis,
+// skills provision, ward tools, delegation, progress
+// budgets. Defaults to the session's last mode (initial:
+// chat).
+type ChatSendMode string
 
 // ChatSync defines model for ChatSync.
 type ChatSync struct {
@@ -1786,6 +1822,12 @@ type ListSessionsParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ContinueSessionJSONBody defines parameters for ContinueSession.
+type ContinueSessionJSONBody struct {
+	// AdditionalIterations Additional iterations to grant.
+	AdditionalIterations *int `json:"additional_iterations,omitempty"`
+}
+
 // PreviewSkillArchiveMultipartBody defines parameters for PreviewSkillArchive.
 type PreviewSkillArchiveMultipartBody struct {
 	// Archive The .skill or .zip file (≤10 MiB).
@@ -1829,6 +1871,9 @@ type CreateScheduleJSONRequestBody = ScheduleCreate
 
 // UpdateScheduleJSONRequestBody defines body for UpdateSchedule for application/json ContentType.
 type UpdateScheduleJSONRequestBody = ScheduleCreate
+
+// ContinueSessionJSONRequestBody defines body for ContinueSession for application/json ContentType.
+type ContinueSessionJSONRequestBody ContinueSessionJSONBody
 
 // ResumeSessionJSONRequestBody defines body for ResumeSession for application/json ContentType.
 type ResumeSessionJSONRequestBody = UserInput
@@ -1937,6 +1982,9 @@ type ServerInterface interface {
 	// CancelSession Cancel a session's active run
 	// (POST /api/sessions/{sessionId}/cancel)
 	CancelSession(w http.ResponseWriter, r *http.Request, sessionId SessionId)
+	// ContinueSession Grant additional iterations to a live run
+	// (POST /api/sessions/{sessionId}/continue)
+	ContinueSession(w http.ResponseWriter, r *http.Request, sessionId string)
 	// StreamSessionEvents Stream the session's Timeline Tree events over SSE
 	// (GET /api/sessions/{sessionId}/events)
 	StreamSessionEvents(w http.ResponseWriter, r *http.Request, sessionId SessionId)
@@ -2153,6 +2201,12 @@ func (_ Unimplemented) GetSession(w http.ResponseWriter, r *http.Request, sessio
 // CancelSession Cancel a session's active run
 // (POST /api/sessions/{sessionId}/cancel)
 func (_ Unimplemented) CancelSession(w http.ResponseWriter, r *http.Request, sessionId SessionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ContinueSession Grant additional iterations to a live run
+// (POST /api/sessions/{sessionId}/continue)
+func (_ Unimplemented) ContinueSession(w http.ResponseWriter, r *http.Request, sessionId string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2855,6 +2909,32 @@ func (siw *ServerInterfaceWrapper) CancelSession(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// ContinueSession operation middleware
+func (siw *ServerInterfaceWrapper) ContinueSession(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "sessionId" -------------
+	var sessionId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sessionId", chi.URLParam(r, "sessionId"), &sessionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sessionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ContinueSession(w, r, sessionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // StreamSessionEvents operation middleware
 func (siw *ServerInterfaceWrapper) StreamSessionEvents(w http.ResponseWriter, r *http.Request) {
 
@@ -3388,6 +3468,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/sessions/{sessionId}/resume", wrapper.ResumeSession)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/sessions/{sessionId}/continue", wrapper.ContinueSession)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/sessions/{sessionId}/events", wrapper.StreamSessionEvents)

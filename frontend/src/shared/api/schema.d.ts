@@ -765,6 +765,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/{sessionId}/continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grant additional iterations to a live run
+         * @description Extends a running research-mode session's step budget. The
+         *     progress tracker consumes the grant: the hard budget extends
+         *     and the run keeps going. Only valid while the run is active.
+         */
+        post: operations["continueSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/{sessionId}/events": {
         parameters: {
             query?: never;
@@ -927,6 +949,18 @@ export interface components {
             text: string;
             /** @description Qualified selection from the picker (`provider/model-id`). */
             model: string;
+            /**
+             * @description The execution mode for this exchange. `chat` (aliases:
+             *     `fast`) skips the intent pipeline and uses the lean
+             *     persona prompt. `research` (aliases: `deep`) runs the
+             *     full pipeline through the engine — intent analysis,
+             *     skills provision, ward tools, delegation, progress
+             *     budgets. Defaults to the session's last mode (initial:
+             *     chat).
+             * @default chat
+             * @enum {string}
+             */
+            mode: "chat" | "research";
         };
         ChatExchange: {
             /** @description Every row this exchange appended, in order. */
@@ -2683,6 +2717,50 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    continueSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description Additional iterations to grant.
+                     * @default 25
+                     */
+                    additional_iterations?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Extension granted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Iterations actually granted. */
+                        granted: number;
+                    };
+                };
+            };
+            /** @description The session has no active run to extend. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     streamSessionEvents: {

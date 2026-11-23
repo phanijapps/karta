@@ -204,6 +204,9 @@ type stubChatService struct{}
 func (s *stubChatService) Send(ctx context.Context, text, providerName, model string) chat.SendOutcome {
 	return chat.SendOutcome{Err: fmt.Errorf("stub")}
 }
+func (s *stubChatService) SendMode(ctx context.Context, text, providerName, model, mode string) chat.SendOutcome {
+	return s.Send(ctx, text, providerName, model)
+}
 func (s *stubChatService) SendStream(ctx context.Context, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome {
 	return s.Send(ctx, text, providerName, model)
 }

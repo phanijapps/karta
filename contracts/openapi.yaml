@@ -1123,6 +1123,55 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /api/sessions/{sessionId}/continue:
+    post:
+      operationId: continueSession
+      summary: Grant additional iterations to a live run
+      description: |
+        Extends a running research-mode session's step budget. The
+        progress tracker consumes the grant: the hard budget extends
+        and the run keeps going. Only valid while the run is active.
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                additional_iterations:
+                  type: integer
+                  minimum: 1
+                  maximum: 200
+                  default: 25
+                  description: Additional iterations to grant.
+      responses:
+        '200':
+          description: Extension granted.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [granted]
+                properties:
+                  granted:
+                    type: integer
+                    description: Iterations actually granted.
+        '409':
+          description: The session has no active run to extend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /api/sessions/{sessionId}/events:
     get:
       operationId: streamSessionEvents
@@ -1548,6 +1597,18 @@ components:
           pattern: '^[a-z0-9][a-z0-9-]{0,63}/[\s\S]+$'
           description: Qualified selection from the picker
             (`provider/model-id`).
+        mode:
+          type: string
+          enum: [chat, research]
+          default: chat
+          description: |
+            The execution mode for this exchange. `chat` (aliases:
+            `fast`) skips the intent pipeline and uses the lean
+            persona prompt. `research` (aliases: `deep`) runs the
+            full pipeline through the engine — intent analysis,
+            skills provision, ward tools, delegation, progress
+            budgets. Defaults to the session's last mode (initial:
+            chat).
 
     ChatExchange:
       type: object

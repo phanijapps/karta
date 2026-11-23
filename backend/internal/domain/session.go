@@ -32,3 +32,28 @@ const (
 	// SessionFailed — one of the SessionStatus values.
 	SessionFailed SessionStatus = "failed"
 )
+
+// ChatMode is the chat surface's execution mode: chat (lean pipeline)
+// or research (full pipeline). The mode gates the pipeline, never the
+// persona.
+type ChatMode string
+
+const (
+	// ChatModeChat is the lean mode: no intent analysis, no ward
+	// tools, no delegation. Memory recall still runs.
+	ChatModeChat ChatMode = "chat"
+	// ChatModeResearch is the full pipeline: intent analysis, skills
+	// provision, ward tools, delegation, progress budgets.
+	ChatModeResearch ChatMode = "research"
+)
+
+// NormalizeChatMode maps aliases to canonical values (fast→chat,
+// deep→research; unknown → chat).
+func NormalizeChatMode(mode string) ChatMode {
+	switch mode {
+	case "research", "deep":
+		return ChatModeResearch
+	default:
+		return ChatModeChat
+	}
+}

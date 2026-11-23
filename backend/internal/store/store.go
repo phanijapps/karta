@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -53,6 +54,7 @@ var schemaSQL = `
 CREATE TABLE IF NOT EXISTS sessions (
     id          TEXT PRIMARY KEY,
     title       TEXT,
+    mode        TEXT NOT NULL DEFAULT 'chat',
     created_at  TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS executions (
@@ -134,6 +136,16 @@ type Store struct {
 // migrateReasoning adds the messages.reasoning column to databases created
 // before it existed (guarded: absent column only). The house pattern for a
 // schema with no migration framework.
+// migrateSessionMode adds the mode column to pre-existing sessions
+// tables (add-chat-modes). Idempotent.
+func migrateSessionMode(db *sql.DB) error {
+	_, err := db.Exec(`ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'chat'`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("store: migrate session mode: %w", err)
+	}
+	return nil
+}
+
 func migrateReasoning(db *sql.DB) error {
 	rows, err := db.Query(`PRAGMA table_info(messages)`)
 	if err != nil {
@@ -177,6 +189,9 @@ func Open(path string) (*Store, error) {
 	if _, err := db.Exec(fmt.Sprintf(schemaSQL, SchemaVersion)); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("store: bootstrap schema: %w", err)
+	}
+	if err := migrateSessionMode(db); err != nil {
+		return nil, err
 	}
 	if err := migrateReasoning(db); err != nil {
 		_ = db.Close()

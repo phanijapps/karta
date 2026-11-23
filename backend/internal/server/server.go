@@ -42,11 +42,17 @@ type Server struct {
 	sched   ScheduleSource
 	wards   WardIndex
 	hub     *skillHub
-	version string
+	// engineExtender grants iterations to live runs (Continue).
+	engineExtender SessionExtender
+	version        string
 	// indexMCPTools feeds successful probe results to the daemon's
 	// resource index (nil = indexing off, e.g. tests).
 	indexMCPTools func(server string, tools []mcpclient.Tool)
 }
+
+// SetEngineExtender wires the Continue protocol's session-extender
+// seam (the adapter's per-session closure).
+func (s *Server) SetEngineExtender(fn SessionExtender) { s.engineExtender = fn }
 
 // SetMCPToolIndexer wires the resource-index feed for probed MCP tools
 // (the daemon owns the indexer).
@@ -58,6 +64,7 @@ func (s *Server) SetMCPToolIndexer(fn func(server string, tools []mcpclient.Tool
 // *chat.Service in production; a fake in handler tests).
 type ChatService interface {
 	Send(ctx context.Context, text, providerName, model string) chat.SendOutcome
+	SendMode(ctx context.Context, text, providerName, model, mode string) chat.SendOutcome
 	SendStream(ctx context.Context, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome
 	Sync(afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error)
 }
