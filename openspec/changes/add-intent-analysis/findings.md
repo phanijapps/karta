@@ -87,3 +87,10 @@ Final reviewer re-verifies the batch (roster-change precedent).
   grep-verified, the three operator refinements implemented, seeds
   intact.
 - task verify green after the final edit (exit 0).
+
+## Status
+
+WAITING FOR HUMAN REVIEW — implementation complete (14/14), all machine
+gates green (terra+sol per phase group, final reviewer PASS after the
+MCP-index fix, task verify exit 0); the operator's sign-off is the
+outstanding step, per the archive convention.
