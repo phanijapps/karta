@@ -119,13 +119,15 @@ system_prompt:
 ```
 
 Assembly order: Role, Soul, OS, Tools, Custom — then DYNAMIC sections
-appended by machinery at run time: `## Task Analysis` (this change's
-middleware), `## Skills` (the provisioned skills — intent-recommended,
-index-validated bodies inlined into context at run start; no
-load_skill tool: the runtime provides, the agent does not fetch),
-`## Active Ward` (slice 3: the ward's OWN constitution — its AGENTS.md
-+ layout template; the "ward = mini bot with its own constitution"
-model), `## Context` (chitta recall). `AGENTS.md` is
+appended by machinery at run time, per surface: `## Context` (chitta
+recall — chat and goal runs), `## Task Analysis` (this change's
+middleware — GOAL RUNS ONLY: simple chat, the single-session
+conversation, never goes through intent analysis), `## Skills` (the
+provisioned skills — intent-recommended, index-validated bodies
+inlined into context at run start; no load_skill tool: the runtime
+provides, the agent does not fetch — goal runs only), `## Active Ward`
+(slice 3: the ward's OWN constitution — its AGENTS.md + layout
+template; the "ward = mini bot with its own constitution" model). `AGENTS.md` is
  deliberately NOT a static section: it is the ward-level constitution
 and composes only when a run is hosted. One template serves chat and
 research; surface differences ride the dynamic sections. Failure
@@ -163,8 +165,12 @@ role/soul/os/tools composition, exactly like the operator's file.
 - Surface the analysis in the UI (a Task Analysis card on the run's
   first event?) — leaning yes, cheap, high trust value; decide in
   tasks.
-- Whether chat ALSO gets analysis (the mechanism is surface-agnostic)
-  — recorded as follow-up knob, off by default v1.
+- ~~Whether chat ALSO gets analysis~~ RESOLVED (operator, 2026-11-24):
+  simple chat (the single-session conversation) does NOT go through
+  intent analysis — analysis is goal-run/research-mode only. Chat keeps
+  the light composable prompt (static sections + Context); no Task
+  Analysis, no provisioned Skills section there. If chat ever grows
+  research behavior, that traffic belongs in goal runs.
 - MCP tool recall granularity: per-tool records vs per-server records
   (per-tool matches the prober output; per-server halves the index
   size). Leaning per-tool; measure.
