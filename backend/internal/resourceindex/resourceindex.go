@@ -312,3 +312,25 @@ func wantEntries(snap registry.Snapshot) []entry {
 	}
 	return out
 }
+
+// KnownMCP reports whether a tool name exists in the indexed MCP
+// records (validation for recommended_mcp_tools).
+func (ix *Indexer) KnownMCP(ctx context.Context, name string) (bool, error) {
+	have, err := ix.activeResourceRecords(ctx, []domain.MemoryKind{KindMCP})
+	if err != nil {
+		return false, err
+	}
+	for _, rec := range have {
+		if strings.HasPrefix(rec.Content, tombstonePrefix) {
+			continue
+		}
+		if n, _, ok := strings.Cut(rec.Content, " — "); ok && n == name {
+			return true, nil
+		}
+		// Also match the bare tool name part of the subject.
+		if idx := strings.LastIndex(rec.Subject, "/"); idx >= 0 && rec.Subject[idx+1:] == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}

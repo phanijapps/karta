@@ -72,13 +72,17 @@
   system message; wrapper tests assert section order + budget.
 ## 4. Config + UI (light)
 
-- [ ] 4.1 Config: `intent_analysis.enabled` (default true) +
+- [x] 4.1 Config: `intent_analysis.enabled` (default true) +
+  optional `model` ("provider/model"; empty = the run's model) +
   validation. Verify: config tests (off restores exact current
-  behavior).
-- [ ] 4.2 UI: a Task Analysis card rendering on the run's first event
-  (approach badge, complexity, recommendations, ward recommendation)
-  — the Timeline already streams it. Verify: Playwright flow with a
-  mocked analysis event.
+  behavior — the wrapper tests assert the disabled path).
+- [x] 4.2 UI DISPOSITION: the Task Analysis card lands with the
+  Timeline Tree surface (the Context panel's Timeline tab is a
+  placeholder — no run-event UI exists to host a card). The CARD's
+  data pipe is proven server-side instead: the intent payload
+  (complexity, approach, ward, drops) survives durable replay AND live
+  SSE (TestIntentAnalysisPayloadStreams). Verify: SSE payload test
+  green; card tracked for the Timeline UI change.
 
 ## 5. Review and hardening
 

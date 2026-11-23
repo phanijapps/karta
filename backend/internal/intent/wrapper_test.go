@@ -3,7 +3,9 @@ package intent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"zbot/backend/internal/domain"
@@ -12,19 +14,25 @@ import (
 
 // fakeEngine records the last GoalRequest and streams one session event.
 type fakeEngine struct {
+	mu      sync.Mutex
 	lastReq domain.GoalRequest
-	events  chan domain.TimelineEvent
 }
 
 func (f *fakeEngine) Name() string { return "fake" }
 func (f *fakeEngine) RunGoal(_ context.Context, req domain.GoalRequest) (<-chan domain.TimelineEvent, error) {
+	f.mu.Lock()
 	f.lastReq = req
-	if f.events == nil {
-		f.events = make(chan domain.TimelineEvent, 1)
-		f.events <- domain.TimelineEvent{ID: "e1", SessionID: req.SessionID, Kind: domain.EventSession}
-		close(f.events)
+	f.mu.Unlock()
+	// Fresh channel per run (a cached closed channel would end every
+	// later run instantly — the concurrency test's original failure).
+	sid := req.SessionID
+	if sid == "" {
+		sid = "s1" // the real engine assigns one; the wrapper must learn it from this event
 	}
-	return f.events, nil
+	events := make(chan domain.TimelineEvent, 1)
+	events <- domain.TimelineEvent{ID: "e1", SessionID: sid, Kind: domain.EventSession}
+	close(events)
+	return events, nil
 }
 func (f *fakeEngine) Resume(_ context.Context, _ string, _ domain.UserInput) (<-chan domain.TimelineEvent, error) {
 	return nil, errors.New("unused")
@@ -81,10 +89,10 @@ func TestWrapperAnalyzedRun(t *testing.T) {
 	for e := range evs {
 		got = append(got, e)
 	}
-	if len(got) != 2 || got[0].Kind != domain.EventIntentAnalysis {
-		t.Fatalf("events: %+v", got)
+	if len(got) != 2 || got[0].Kind != domain.EventSession || got[1].Kind != domain.EventIntentAnalysis {
+		t.Fatalf("events: %+v", got) // session first (the engine assigns it), analysis second
 	}
-	p := got[0].IntentAnalysis
+	p := got[1].IntentAnalysis
 	if p.Status != domain.IntentStatusAnalyzed || p.Complexity != domain.ComplexityL || p.StepBudget != 16 || p.Approach != domain.ApproachGraph {
 		t.Fatalf("payload: %+v", p)
 	}
@@ -96,10 +104,13 @@ func TestWrapperAnalyzedRun(t *testing.T) {
 	}
 	// The engine got the budget + the composed prompt.
 	eng := w.Engine.(*fakeEngine)
+	eng.mu.Lock()
 	if eng.lastReq.MaxSteps != 16 {
+		eng.mu.Unlock()
 		t.Fatalf("budget: %d", eng.lastReq.MaxSteps)
 	}
 	sp := eng.lastReq.SystemPrompt
+	eng.mu.Unlock()
 	for _, want := range []string{"## Role", "I am Karta.", "## Context", "prior fact", "## Task Analysis", "do-research", "## Skills", "BODY-OF-CLEAN-CODE"} {
 		if !strings.Contains(sp, want) {
 			t.Fatalf("system prompt missing %q:\n%s", want, sp)
@@ -114,11 +125,14 @@ func TestWrapperBypassAndDegrade(t *testing.T) {
 	t.Run("trivial goal bypasses analysis", func(t *testing.T) {
 		w := newWrapper(&fakeCompleter{}, wrapSnap(), nil)
 		evs, _ := w.RunGoal(context.Background(), domain.GoalRequest{Goal: "hello"})
+		<-evs // session event
 		ev := <-evs
 		if ev.IntentAnalysis.Status != domain.IntentStatusBypassed {
 			t.Fatalf("status: %+v", ev.IntentAnalysis)
 		}
 		eng := w.Engine.(*fakeEngine)
+		eng.mu.Lock()
+		defer eng.mu.Unlock()
 		if eng.lastReq.MaxSteps != 0 || strings.Contains(eng.lastReq.SystemPrompt, "## Task Analysis") {
 			t.Fatalf("bypass must run unbudgeted without analysis sections: %d %.80s", eng.lastReq.MaxSteps, eng.lastReq.SystemPrompt)
 		}
@@ -131,11 +145,14 @@ func TestWrapperBypassAndDegrade(t *testing.T) {
 		if err != nil {
 			t.Fatalf("degraded run must proceed: %v", err)
 		}
+		<-evs // session event
 		ev := <-evs
 		if ev.IntentAnalysis.Status != domain.IntentStatusFailed || !strings.Contains(ev.IntentAnalysis.Reason, "provider down") {
 			t.Fatalf("payload: %+v", ev.IntentAnalysis)
 		}
 		eng := w.Engine.(*fakeEngine)
+		eng.mu.Lock()
+		defer eng.mu.Unlock()
 		if eng.lastReq.MaxSteps != 0 {
 			t.Fatal("failed analysis must not set a budget")
 		}
@@ -145,6 +162,7 @@ func TestWrapperBypassAndDegrade(t *testing.T) {
 		w := newWrapper(&fakeCompleter{}, wrapSnap(), nil)
 		w.Cfg.Enabled = false
 		evs, _ := w.RunGoal(context.Background(), domain.GoalRequest{Goal: "anything"})
+		<-evs // session event
 		ev := <-evs
 		if ev.IntentAnalysis.Status != domain.IntentStatusBypassed || ev.IntentAnalysis.Reason == "" {
 			t.Fatalf("payload: %+v", ev.IntentAnalysis)
@@ -156,6 +174,7 @@ func TestWrapperUnknownWardDegrades(t *testing.T) {
 	// use_existing for an unlisted ward → create_new in the payload.
 	w := newWrapper(&fakeCompleter{responses: []string{wrapperContract}}, wrapSnap(), nil) // no wards
 	evs, _ := w.RunGoal(context.Background(), domain.GoalRequest{Goal: "research task"})
+	<-evs // session event
 	ev := <-evs
 	if ev.IntentAnalysis.WardAction != domain.WardCreateNew {
 		t.Fatalf("unknown ward must degrade: %+v", ev.IntentAnalysis)
@@ -170,4 +189,87 @@ func TestWrapperPersonaFailureFailsLoud(t *testing.T) {
 	if _, err := w.RunGoal(context.Background(), domain.GoalRequest{Goal: "task"}); err == nil {
 		t.Fatal("broken composed persona must fail the run (no empty prompt)")
 	}
+}
+
+// Section ORDER is asserted (not just presence), the analysis event is
+// PERSISTED once with the assigned session id, and concurrent runs
+// stay independent (phase-3 gate F10 + F1).
+func TestWrapperOrderPersistenceConcurrency(t *testing.T) {
+	t.Run("sections in order and persist called once", func(t *testing.T) {
+		snap := wrapSnap()
+		fc := &fakeCompleter{responses: []string{wrapperContract}}
+		w := newWrapper(fc, snap, []WardInfo{{Name: "stock-analysis", Scope: "equity"}})
+		var persisted []domain.TimelineEvent
+		w.Cfg.Persist = func(ev domain.TimelineEvent) { persisted = append(persisted, ev) }
+		evs, _ := w.RunGoal(context.Background(), domain.GoalRequest{SessionID: "", Goal: "research task"})
+		for range evs { // drain
+		}
+		if len(persisted) != 1 || persisted[0].Kind != domain.EventIntentAnalysis {
+			t.Fatalf("persist: %+v", persisted)
+		}
+		// Session id learned from the engine's first event (fake assigns s1).
+		if persisted[0].SessionID != "s1" {
+			t.Fatalf("persisted session: %q", persisted[0].SessionID)
+		}
+		sp := func() string {
+			e := w.Engine.(*fakeEngine)
+			e.mu.Lock()
+			defer e.mu.Unlock()
+			return e.lastReq.SystemPrompt
+		}()
+		order := []int{strings.Index(sp, "## Role"), strings.Index(sp, "## Context"), strings.Index(sp, "## Task Analysis"), strings.Index(sp, "## Skills")}
+		for i := 1; i < len(order); i++ {
+			if order[i-1] >= order[i] || order[i] < 0 {
+				t.Fatalf("section order wrong: %v in:\n%s", order, sp)
+			}
+		}
+	})
+
+	t.Run("concurrent runs are independent", func(t *testing.T) {
+		snap := wrapSnap()
+		w := newWrapper(&fakeCompleter{responses: []string{wrapperContract, "bad", "bad"}}, snap, nil)
+		var mu sync.Mutex
+		var persisted int
+		w.Cfg.Persist = func(domain.TimelineEvent) { mu.Lock(); persisted++; mu.Unlock() }
+		var wg sync.WaitGroup
+		for i := 0; i < 4; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				evs, err := w.RunGoal(context.Background(), domain.GoalRequest{SessionID: fmt.Sprintf("s%d", i), Goal: "research task"})
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				for range evs {
+				}
+			}(i)
+		}
+		wg.Wait()
+		if persisted != 4 {
+			t.Fatalf("persisted %d, want 4", persisted)
+		}
+	})
+
+	t.Run("agent-named run composes dynamic-only prompt", func(t *testing.T) {
+		fc := &fakeCompleter{responses: []string{wrapperContract}}
+		w := newWrapper(fc, wrapSnap(), []WardInfo{{Name: "stock-analysis"}})
+		evs, _ := w.RunGoal(context.Background(), domain.GoalRequest{SessionID: "s1", Goal: "research task", Agent: "research-agent"})
+		for range evs {
+		}
+		sp := func() string {
+			e := w.Engine.(*fakeEngine)
+			e.mu.Lock()
+			defer e.mu.Unlock()
+			return e.lastReq.SystemPrompt
+		}()
+		if strings.Contains(sp, "## Role") {
+			t.Fatal("agent run must not carry the root persona")
+		}
+		for _, want := range []string{"## Context", "## Task Analysis", "## Skills"} {
+			if !strings.Contains(sp, want) {
+				t.Fatalf("agent run missing %q:\n%s", want, sp)
+			}
+		}
+	})
 }

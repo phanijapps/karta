@@ -120,6 +120,12 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 		if in.systemPrompt == "" && spec.Prompt != "" {
 			in.systemPrompt = "(prompt template " + spec.Prompt + ")"
 		}
+		if req.SystemPrompt != "" {
+			// The middleware's composed DYNAMIC sections (Task Analysis,
+			// Skills, Context) append to the agent's body — the agent's
+			// identity is never replaced.
+			in.systemPrompt = strings.TrimSpace(in.systemPrompt) + "\n\n" + req.SystemPrompt
+		}
 		in.toolAllow = spec.Tools
 		in.grant = spec.MaxDepth
 		if req.Model == "" && spec.Model != "" {

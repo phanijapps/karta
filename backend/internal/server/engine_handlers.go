@@ -53,7 +53,15 @@ func (s *Server) CreateGoal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "engine_failure", err.Error())
 		return
 	}
-	_ = events // the SSE endpoint streams events; the run proceeds async
+	// Drain the run's channel daemon-side: the durable path is
+	// persist+publish (inside the engine/wrapper), and an undrained
+	// channel would backpressure the run's emit loop (its buffer
+	// fills). The SSE endpoint reads from the store+bus, not here.
+	go func() {
+		for range events {
+			// discard: durability happened upstream
+		}
+	}()
 
 	// Determine the session ID (the engine may have assigned one).
 	sess := sessionID
@@ -165,7 +173,11 @@ func (s *Server) StreamSessionEvents(w http.ResponseWriter, r *http.Request, ses
 			_, _ = fmt.Fprintf(w, ": heartbeat\n\n")
 			flusher.Flush()
 		case evt := <-busCh:
-			writeSSE(w, sseEvent{ID: evt.ID, SessionID: evt.SessionID, Kind: string(evt.Kind), Text: evt.Text})
+			live := sseEvent{ID: evt.ID, SessionID: evt.SessionID, Kind: string(evt.Kind), Text: evt.Text}
+			if evt.Kind == domain.EventIntentAnalysis {
+				live.Intent = evt.IntentAnalysis
+			}
+			writeSSE(w, live)
 			flusher.Flush()
 		}
 	}
@@ -176,12 +188,19 @@ type sseEvent struct {
 	SessionID string
 	Kind      string
 	Text      string
+	// Intent carries the intent_analysis payload when Kind is
+	// intent_analysis (both replay and live paths).
+	Intent *domain.IntentAnalysisPayload
 }
 
 func writeSSE(w http.ResponseWriter, e sseEvent) {
-	data, _ := json.Marshal(map[string]any{
+	body := map[string]any{
 		"id": e.ID, "session_id": e.SessionID, "kind": e.Kind, "text": e.Text,
-	})
+	}
+	if e.Intent != nil {
+		body["intent_analysis"] = e.Intent
+	}
+	data, _ := json.Marshal(body)
 	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Kind, data)
 }
 
@@ -193,10 +212,21 @@ func (s *Server) dbSessionEvents(sessionID, afterID string, limit int) ([]sseEve
 	out := make([]sseEvent, 0, len(storeEvents))
 	for _, e := range storeEvents {
 		var payload struct {
-			Text string `json:"text"`
+			Text           string                        `json:"text"`
+			IntentAnalysis *domain.IntentAnalysisPayload `json:"intent_analysis"`
 		}
 		_ = json.Unmarshal([]byte(e.Payload), &payload)
-		out = append(out, sseEvent{ID: e.ID, SessionID: e.SessionID, Kind: e.Kind, Text: payload.Text})
+		ev := sseEvent{ID: e.ID, SessionID: e.SessionID, Kind: e.Kind, Text: payload.Text}
+		if e.Kind == string(domain.EventIntentAnalysis) && payload.IntentAnalysis == nil {
+			// legacy/flat storage: the payload itself is the analysis JSON
+			var p domain.IntentAnalysisPayload
+			if json.Unmarshal([]byte(e.Payload), &p) == nil {
+				ev.Intent = &p
+			}
+		} else {
+			ev.Intent = payload.IntentAnalysis
+		}
+		out = append(out, ev)
 	}
 	return out, nil
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -190,14 +191,9 @@ func run(ctx context.Context, homeFlag string) error {
 	composePersona := func() (string, error) {
 		return sysprompt.Compose(cfg.SystemPrompt, reg.Snapshot())
 	}
-	chatSvc.SetPersona(func() string {
-		p, err := composePersona()
-		if err != nil {
-			log.Printf("zbotd: composed prompt broken: %v", err)
-			return "" // chat degrades to the pre-composition behavior; goals fail loud in the wrapper
-		}
-		return p
-	})
+	// A broken composed prompt FAILS the chat exchange (the service
+	// errors before the model call) — chat never runs persona-less.
+	chatSvc.SetPersona(composePersona)
 
 	// Resource index: registry snapshot + probed MCP tools → chitta
 	// reserved kinds; reconciled on boot and on every registry change.
@@ -205,9 +201,8 @@ func run(ctx context.Context, homeFlag string) error {
 		Sys:  chittaSys,
 		Host: domain.ChittaHostContext{Source: domain.SourceDistiller, AgentID: "resource-index"},
 	}
-	if err := resIndex.Sync(ctx, reg.Snapshot()); err != nil {
-		log.Printf("zbotd: resource index boot sync failed: %v", err)
-	}
+	// (Boot sync runs through the coalescing worker's initial signal at
+	// the watcher wiring below — one startup sync, no seam gap.)
 
 	// Engine: eino adapter over the provider plane + store + builtins.
 	// Engine: eino adapter over the provider plane + store + builtins;
@@ -247,20 +242,86 @@ func run(ctx context.Context, homeFlag string) error {
 				return out
 			},
 			RecallFn: func(ctx context.Context, goal string) ([]string, []string) {
+				// Memory: fused recall minus resource-index records.
 				page, err := chittaSys.Recall(ctx, domain.RecallRequest{Query: goal, Limit: 8}, domain.ChittaHostContext{Source: domain.SourceAgent, AgentID: "root"})
 				if err != nil {
 					return nil, nil
 				}
-				var lines []string
+				var memory []string
 				for _, h := range page.Items {
 					if h.Record.Kind.IsResourceKind() {
 						continue
 					}
-					lines = append(lines, h.Record.Content)
+					memory = append(memory, h.Record.Content)
 				}
-				return lines, nil
+				// Knowledge: the same fused recall's GRAPH-lane hits —
+				// both chitta domains in one query, attributed by lane
+				// (graph hits are knowledge-graph contributions).
+				var knowledge []string
+				for _, h := range page.Items {
+					if h.Record.Kind.IsResourceKind() {
+						continue
+					}
+					for _, lane := range h.Lanes {
+						if lane == domain.LaneGraph {
+							knowledge = append(knowledge, h.Record.Content)
+							break
+						}
+					}
+				}
+				// Graph-lane hits double as memory: drop them there.
+				kset := map[string]bool{}
+				for _, k := range knowledge {
+					kset[k] = true
+				}
+				memOnly := memory[:0]
+				for _, m := range memory {
+					if !kset[m] {
+						memOnly = append(memOnly, m)
+					}
+				}
+				return memOnly, knowledge
 			},
-			Cfg: intent.Config{Enabled: cfg.Intent.Enabled, ComposePersona: composePersona},
+			Cfg: intent.Config{
+				Enabled:        cfg.Intent.Enabled,
+				AnalysisModel:  cfg.Intent.Model,
+				ComposePersona: composePersona,
+				Persist: func(ev domain.TimelineEvent) {
+					// Attempted-durable-first, the engine's own posture.
+					// The stored payload carries text AND the typed
+					// analysis (the SSE replay reads both).
+					payload, _ := json.Marshal(map[string]any{
+						"text":            ev.Text,
+						"intent_analysis": ev.IntentAnalysis,
+					})
+					_ = db.AppendEvent(zbotstore.Event{ //nolint:errcheck // attempted-durable-first (F-15 posture)
+						ID: ev.ID, SessionID: ev.SessionID, Kind: string(ev.Kind), Payload: string(payload),
+					})
+					_ = bus.Publish(context.Background(), ev) //nolint:errcheck // fire-and-forget emit (F-15)
+				},
+				RecallResources: func(ctx context.Context, goal string) intent.Resources {
+					hits, err := resIndex.Relevant(ctx, goal, 12)
+					if err != nil {
+						return intent.Resources{} // listing fallback inside the wrapper
+					}
+					res := intent.Resources{}
+					for _, h := range hits {
+						switch h.Kind {
+						case resourceindex.KindSkill:
+							res.Skills = append(res.Skills, h.Line())
+						case resourceindex.KindAgent:
+							res.Agents = append(res.Agents, h.Line())
+						case resourceindex.KindMCP:
+							res.MCPs = append(res.MCPs, h.Line())
+						}
+					}
+					return res
+				},
+				KnownMCPs: func(name string) bool {
+					known, err := resIndex.KnownMCP(ctx, name)
+					return err == nil && known
+				},
+			},
 		}
 	}
 
@@ -295,8 +356,10 @@ func run(ctx context.Context, homeFlag string) error {
 		server.SetExposedBind(exposed)
 	}
 
-	// Scheduler: cron-fired goal runs over the registry + engine.
-	sched := scheduler.New(reg, eng, bus, func() string { return fmt.Sprintf("evt-sched-%d", time.Now().UnixNano()) }, nil, filepath.Join(paths.DataDir, "scheduler-state.json"))
+	// Scheduler: cron-fired goal runs over the registry + engine —
+	// the WRAPPED engine, so scheduled root goals get the middleware
+	// like every other goal run.
+	sched := scheduler.New(reg, runEngine, bus, func() string { return fmt.Sprintf("evt-sched-%d", time.Now().UnixNano()) }, nil, filepath.Join(paths.DataDir, "scheduler-state.json"))
 	daemonSrv := server.New(provStore, providers.NewClient(), catalog, chatSvc, runEngine, bus, db, reg, mcpclient.GoSDKProber{}, sched, wardVault, version)
 	daemonSrv.SetSkillHub(skillhub.NewHTTPIndexClient(), skillhub.NewGitHubRepoFetcher(), skillStore)
 
@@ -331,11 +394,22 @@ func run(ctx context.Context, homeFlag string) error {
 	if err != nil {
 		return fmt.Errorf("registry watch: %w", err)
 	}
-	// Resource index follows the registry: every change reconciles the
-	// skill/agent records (MCP tools follow probes, task 3.1 wiring).
+	// Resource index follows the registry: every change SIGNALS a
+	// coalescing worker (the watcher callback must not block — sync
+	// does chitta I/O; the worker takes the latest snapshot).
+	indexDirty := make(chan struct{}, 1)
+	indexDirty <- struct{}{} // register before startup sync: no gap at the seam
+	go func() {
+		for range indexDirty {
+			if err := resIndex.Sync(ctx, reg.Snapshot()); err != nil {
+				log.Printf("zbotd: resource index sync failed: %v", err)
+			}
+		}
+	}()
 	watcher.OnChange(func(registry.Change) {
-		if err := resIndex.Sync(ctx, reg.Snapshot()); err != nil {
-			log.Printf("zbotd: resource index sync failed: %v", err)
+		select { // coalesce: one pending signal is enough
+		case indexDirty <- struct{}{}:
+		default:
 		}
 	})
 

@@ -60,14 +60,14 @@ func (e *AnalysisUnavailable) Error() string {
 // contract (unsanitized — the wrapper validates against the live
 // index). The system prompt is empty: the analysis prompt IS the
 // instruction.
-func (a *Analyzer) Analyze(ctx context.Context, goal string, res Resources) (domain.IntentAnalysis, error) {
+func (a *Analyzer) Analyze(ctx context.Context, goal string, res Resources, provider, model string) (domain.IntentAnalysis, error) {
 	prompt, err := a.renderPrompt(res)
 	if err != nil {
 		return domain.IntentAnalysis{}, err // prompt unusable: degrade (embedded fallback already tried)
 	}
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ { // one retry on parse failure
-		raw, err := a.Completer.Complete(ctx, a.Provider, a.Model, "", prompt+"\n\n## User Request\n"+goal)
+		raw, err := a.Completer.Complete(ctx, provider, model, "", prompt+"\n\n## User Request\n"+goal)
 		if err != nil {
 			return domain.IntentAnalysis{}, &AnalysisUnavailable{Reason: "model call failed: " + err.Error()}
 		}

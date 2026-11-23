@@ -59,7 +59,7 @@ var idCounter uint64
 
 // Service runs the chat exchange.
 type Service struct {
-	persona func() string // composed static system prompt (nil = none)
+	persona func() (string, error) // composed static system prompt (nil = none)
 
 	store     *store.Store
 	provider  func(name string) (providers.Provider, error)
@@ -85,9 +85,11 @@ func New(st *store.Store, providerLookup func(string) (providers.Provider, error
 }
 
 // SetPersona wires the composed system prompt (static sections only —
-// chat is never analyzed and never provisioned skills). Nil restores
-// the pre-composition behavior (no persona message).
-func (s *Service) SetPersona(fn func() string) { s.persona = fn }
+// chat is never analyzed and never provisioned skills). An ERROR from
+// fn FAILS the exchange before the model call: chat never runs on an
+// accidentally empty prompt. Nil restores the pre-composition
+// behavior (no persona message).
+func (s *Service) SetPersona(fn func() (string, error)) { s.persona = fn }
 
 // SendOutcome is a send's result: the appended rows on success, or the
 // typed failure with the persisted user row and cursor.
@@ -166,12 +168,18 @@ func (s *Service) runExchange(ctx context.Context, text, providerName, model str
 	if err != nil {
 		return fail(err)
 	}
-	messages := windowToChatMessages(hw)
+	persona := ""
 	if s.persona != nil {
-		if p := s.persona(); p != "" {
-			// Persona first: identity precedes any compaction summary.
-			messages = append([]providers.ChatMessage{{Role: "system", Content: p}}, messages...)
+		p, err := s.persona()
+		if err != nil {
+			return SendOutcome{Err: fmt.Errorf("chat: composed prompt: %w", err)} // never run on a broken/empty persona
 		}
+		persona = p
+	}
+	messages := windowToChatMessages(hw)
+	if persona != "" {
+		// Persona first: identity precedes any compaction summary.
+		messages = append([]providers.ChatMessage{{Role: "system", Content: persona}}, messages...)
 	}
 	var usage providers.ChatUsage
 

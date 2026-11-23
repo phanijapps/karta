@@ -30,11 +30,21 @@ type Recall func(ctx context.Context, goal string) (memory, knowledge []string)
 type Config struct {
 	Enabled bool
 	// AnalysisModel optionally names a qualified provider/model for the
-	// analysis call ("" = the analyzer's default).
+	// analysis call ("" = the run's model; still none → typed degrade).
 	AnalysisModel string
 	// ComposePersona composes the static persona sections (the wrapper
 	// fails a run loudly when this errors — no empty prompts).
 	ComposePersona func() (string, error)
+	// Persist durably records + publishes the intent_analysis event
+	// (the daemon wires store.AppendEvent + bus.Publish — the same
+	// attempted-durable-first posture as the engine's emits). Nil =
+	// the event only rides the run channel.
+	Persist func(domain.TimelineEvent)
+	// RecallResources supplies the semantic resource hits for the
+	// prompt slots (nil = the registry listing).
+	RecallResources func(ctx context.Context, goal string) Resources
+	// KnownMCPs validates recommended MCP tool names (nil = all drop).
+	KnownMCPs func(string) bool
 }
 
 // Wrapper decorates a domain.AgentEngine with the pre-execution intent
@@ -83,25 +93,31 @@ func (w *Wrapper) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 	case w.Router().Bypass(req.Goal):
 		bypassed, failure = true, "trivial goal (router bypass)"
 	default:
-		res := w.resources()
-		a, err := w.Analyzer.Analyze(ctx, req.Goal, res)
+		res := w.resources(ctx, req.Goal)
+		ap, am := w.analysisTarget(req)
+		a, err := w.Analyzer.Analyze(ctx, req.Goal, res, ap, am)
 		if err != nil {
 			failure = err.Error() // typed degradation; run proceeds
 			break
 		}
-		a, drops = a.Sanitize(w.knownSkills(), w.knownAgents(), w.knownMCPs(), w.knownWards())
+		a, drops = a.Sanitize(w.knownSkills(), w.knownAgents(), w.knownMCP(), w.knownWards())
 		analysis = a
 		if b, err := a.Complexity.StepBudget(); err == nil {
 			budget = b
 		}
 	}
 
-	// 3) Compose the run's system prompt: persona + dynamic sections.
-	systemPrompt := w.composePrompt(ctx, req.Goal, persona, analysis, budget)
+	// 3) Compose the run's prompt. AGENT-NAMED runs: dynamic sections
+	// ONLY (the engine APPENDS them to the agent's body — the agent's
+	// identity is never replaced); root runs: persona + dynamic.
+	var systemPrompt string
+	if req.Agent != "" {
+		systemPrompt = w.composePrompt(ctx, req.Goal, "", analysis, budget)
+	} else {
+		systemPrompt = w.composePrompt(ctx, req.Goal, persona, analysis, budget)
+	}
 
-	// 4) Run with the budget + composed prompt; prepend the analysis
-	// event. Agent-named runs keep their agent body (the engine
-	// ignores the override for them).
+	// 4) Run with the budget + composed prompt.
 	events, err := w.Engine.RunGoal(ctx, domain.GoalRequest{
 		SessionID:    req.SessionID,
 		Goal:         req.Goal,
@@ -114,16 +130,55 @@ func (w *Wrapper) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 	if err != nil {
 		return nil, err
 	}
-	ev := w.analysisEvent(req, analysis, drops, failure, bypassed, budget)
+	// 5) Forward the engine's stream, learning the ASSIGNED session id
+	// from the run's first event (the engine may assign one), then
+	// emit + persist the analysis event. The channel is best-effort
+	// (the server may discard it); Persist is the durable path.
 	out := make(chan domain.TimelineEvent, 8)
 	go func() {
 		defer close(out)
-		out <- ev
+		first, ok := <-events
+		if !ok {
+			return
+		}
+		sid := first.SessionID
+		if sid == "" {
+			sid = req.SessionID
+		}
+		ev := w.analysisEvent(sid, analysis, drops, failure, bypassed, budget)
+		if w.Cfg.Persist != nil && sid != "" {
+			w.Cfg.Persist(ev)
+		}
+		forward := func(e domain.TimelineEvent) {
+			select {
+			case out <- e:
+			case <-ctx.Done():
+			}
+		}
+		forward(first)
+		forward(ev)
 		for e := range events {
-			out <- e
+			forward(e)
 		}
 	}()
 	return out, nil
+}
+
+// analysisTarget resolves the analysis call's provider/model: config
+// override first, then the run's model ("provider/model"), else empty
+// (the completer decides; no model at all → typed degrade).
+func (w *Wrapper) analysisTarget(req domain.GoalRequest) (provider, model string) {
+	if w.Cfg.AnalysisModel != "" {
+		provider, model, _ = strings.Cut(w.Cfg.AnalysisModel, "/")
+		return provider, model
+	}
+	if req.Model != "" {
+		p, m, _ := strings.Cut(req.Model, "/")
+		if m != "" {
+			return p, m
+		}
+	}
+	return "", ""
 }
 
 // Router returns the deterministic router (kept a value method so
@@ -183,8 +238,10 @@ func (w *Wrapper) skillBodies(names []string) map[string]string {
 	return bodies
 }
 
-// analysisEvent builds the intent_analysis Timeline event.
-func (w *Wrapper) analysisEvent(req domain.GoalRequest, a domain.IntentAnalysis, drops []string, failure string, bypassed bool, budget int) domain.TimelineEvent {
+// analysisEvent builds the intent_analysis Timeline event. Text
+// carries the full summary (the SSE surface streams Text; the payload
+// rides the persisted record).
+func (w *Wrapper) analysisEvent(sessionID string, a domain.IntentAnalysis, drops []string, failure string, bypassed bool, budget int) domain.TimelineEvent {
 	payload := &domain.IntentAnalysisPayload{Dropped: drops}
 	switch {
 	case bypassed:
@@ -202,12 +259,24 @@ func (w *Wrapper) analysisEvent(req domain.GoalRequest, a domain.IntentAnalysis,
 		payload.WardAction = a.WardRecommendation.Action
 		payload.WardName = a.WardRecommendation.WardName
 	}
+	text := "Pre-execution intent analysis: " + string(payload.Status)
+	if payload.Status == domain.IntentStatusAnalyzed {
+		text = fmt.Sprintf("Task Analysis: %s — complexity %s (budget %d), approach %s", payload.PrimaryIntent, payload.Complexity, payload.StepBudget, payload.Approach)
+		if payload.WardName != "" {
+			text += fmt.Sprintf(", ward %s (%s)", payload.WardName, payload.WardAction)
+		}
+		if len(drops) > 0 {
+			text += "; dropped: " + strings.Join(drops, ", ")
+		}
+	} else if failure != "" {
+		text += " — " + failure
+	}
 	return domain.TimelineEvent{
 		ID:             fmt.Sprintf("evt-intent-%d", time.Now().UnixNano()),
-		SessionID:      req.SessionID,
+		SessionID:      sessionID,
 		Kind:           domain.EventIntentAnalysis,
 		Timestamp:      time.Now().UTC(),
-		Text:           "Pre-execution intent analysis: " + string(payload.Status),
+		Text:           text,
 		IntentAnalysis: payload,
 	}
 }
@@ -233,12 +302,6 @@ func (w *Wrapper) knownAgents() func(string) bool {
 	}
 }
 
-func (w *Wrapper) knownMCPs() func(string) bool {
-	return func(string) bool {
-		return false // MCP tools are not yet offered at runtime (slice 3); every recommendation drops
-	}
-}
-
 func (w *Wrapper) knownWards() func(string) bool {
 	if w.Wards == nil {
 		return nil
@@ -251,10 +314,26 @@ func (w *Wrapper) knownWards() func(string) bool {
 	return func(n string) bool { return set[n] }
 }
 
-// resources builds the analyzer's resource context from the live
-// snapshot (registry listing — the semantic resource index plugs in at
-// daemon wiring via the analyzer's own recall seam in a later task).
-func (w *Wrapper) resources() Resources {
+// knownMCP validates recommended MCP tool names: the semantic seam
+// when wired, else every recommendation drops (MCP tools are not
+// offered at runtime until slice 3).
+func (w *Wrapper) knownMCP() func(string) bool {
+	if w.Cfg.KnownMCPs != nil {
+		return w.Cfg.KnownMCPs
+	}
+	return func(string) bool { return false }
+}
+
+// resources builds the analyzer's resource context: the semantic
+// resource index when wired, else the registry listing (cold-index
+// fallback).
+func (w *Wrapper) resources(ctx context.Context, goal string) Resources {
+	if w.Cfg.RecallResources != nil {
+		if res := w.Cfg.RecallResources(ctx, goal); len(res.Skills)+len(res.Agents)+len(res.MCPs)+len(res.Wards) > 0 {
+			return res
+		}
+		// empty recall (cold index) → listing fallback below
+	}
 	snap := w.snapshot()
 	res := Resources{}
 	for name, s := range snap.Skills {

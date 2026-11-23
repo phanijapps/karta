@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -17,17 +18,19 @@ import (
 
 // fakeCompleter scripts completion responses.
 type fakeCompleter struct {
-	mu        sync.Mutex
-	responses []providers.ChatResponse
-	errs      []error
-	calls     int
-	seenTools []int // tools offered per call
+	mu           sync.Mutex
+	responses    []providers.ChatResponse
+	errs         []error
+	calls        int
+	seenTools    []int // tools offered per call
+	lastMessages []providers.ChatMessage
 }
 
-func (f *fakeCompleter) ChatCompletion(_ context.Context, _ providers.Provider, _, _ string, _ []providers.ChatMessage, defs []providers.ChatToolDef) (providers.ChatResponse, error) {
+func (f *fakeCompleter) ChatCompletion(_ context.Context, _ providers.Provider, _, _ string, messages []providers.ChatMessage, defs []providers.ChatToolDef) (providers.ChatResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.seenTools = append(f.seenTools, len(defs))
+	f.lastMessages = messages
 	i := f.calls
 	f.calls++
 	if i < len(f.errs) && f.errs[i] != nil {
@@ -275,4 +278,30 @@ func TestNeedsCompactionSurfaces(t *testing.T) {
 		t.Fatal("store must signal compaction over bound")
 	}
 	var _ = json.Marshal
+}
+
+// A broken composed persona FAILS the chat exchange before the model
+// call (phase-3 gate: chat never runs persona-less); a working persona
+// rides as the first system message, ahead of any compaction summary.
+func TestChatPersona(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "chat.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	fc := &fakeCompleter{}
+	svc := New(st, func(string) (providers.Provider, error) { return providers.Provider{Name: "p"}, nil },
+		func(context.Context, providers.Provider) (string, error) { return "tok", nil },
+		fc, tools.BuiltinProvider{}, nil, nil)
+	svc.SetPersona(func() (string, error) { return "", errors.New("role missing") })
+	if out := svc.Send(context.Background(), "hi", "p", "m"); out.Err == nil || !strings.Contains(out.Err.Error(), "role missing") {
+		t.Fatalf("broken persona must fail the exchange: %+v", out.Err)
+	}
+	svc.SetPersona(func() (string, error) { return "## Role\n\nI am Karta.", nil })
+	if out := svc.Send(context.Background(), "hi", "p", "m"); out.Err != nil {
+		t.Fatalf("send: %v", out.Err)
+	}
+	if len(fc.lastMessages) == 0 || fc.lastMessages[0].Role != "system" || !strings.Contains(fc.lastMessages[0].Content, "I am Karta.") {
+		t.Fatalf("persona must lead the messages: %+v", fc.lastMessages)
+	}
 }
