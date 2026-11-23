@@ -2,15 +2,15 @@
 
 ## 1. Roots + loader
 
-- [ ] 1.1 `config.Paths` gains SkillsDir/HooksDir; Subdirs drops
+- [x] 1.1 `config.Paths` gains SkillsDir/HooksDir; Subdirs drops
   skills+hooks; ensureDirs; zbotd's LoadAll + Watch Dirs wiring uses
   the new roots. Verify: config tests (tree, self-heal lists) +
   registry loads from a top-level skills dir.
-- [ ] 1.2 Skill frontmatter sink keys (license/metadata/allowed-tools
+- [x] 1.2 Skill frontmatter sink keys (license/metadata/allowed-tools
   decoded-ignored; everything else still strict). Verify: loader table
   tests — raw operator skill loads clean, unknown key still errors,
   name/description rules unchanged.
-- [ ] 1.3 One-time hand-move-aware migration (legacy config/{skills,
+- [x] 1.3 One-time hand-move-aware migration (legacy config/{skills,
   hooks} entries rename up when absent at the root; conflicts left
   inert; no-op on the operator's state). Verify: table tests — classic
   install migrates once, hand-moved no-op, conflict never overwrites,
@@ -18,10 +18,10 @@
 
 ## 2. Seeds + docs
 
-- [ ] 2.1 Skill seeds target the new root (prompt seeds unchanged;
+- [x] 2.1 Skill seeds target the new root (prompt seeds unchanged;
   markers untouched). Verify: fresh-home bootstrap seeds skills at
   ~/.zbot/skills/; marked homes unchanged.
-- [ ] 2.2 Constitution rule 1 tree text + config-plane spec sync +
+- [x] 2.2 Constitution rule 1 tree text + config-plane spec sync +
   AGENTS.md notes (config, registry). Verify: grep — no stale
   config/skills references in docs/specs (archive exempt).
 
