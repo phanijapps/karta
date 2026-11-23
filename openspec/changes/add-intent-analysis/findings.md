@@ -65,3 +65,25 @@ gates:backend OK.
 Verification after fixes: resourceindex + chitta green (incl. pagination,
 batch, lifecycle, revival, invisibility tests); golangci-lint 0; gates OK.
 Final reviewer re-verifies the batch (roster-change precedent).
+
+## Final review (2026-11-24)
+
+- zbot-reviewer (default model, whole change): FAIL — 1×P1 + 3×P2,
+  then PASS after fixes:
+  - F-P1: IndexTools had zero production callers (spec: enabled MCP
+    tools SHALL be embedded). FIXED: server seam SetMCPToolIndexer fed
+    from every successful non-truncated probe (TestMcp handler);
+    daemon wires resIndex.IndexTools bounded (10s, WithoutCancel);
+    TestMcpProbeFeedsResourceIndex.
+  - F-P2a: task 3.2 verify overclaimed — REWORDED (budget forwarding
+    asserted; the tier-2 loop-bound conformance scenario recorded as a
+    contracttest follow-up).
+  - F-P2b: task 4.2 claimed live SSE — REWORDED (replay proven by
+    test; live path carries the same field via the bus event; explicit
+    live-SSE test rides with the Timeline UI change).
+  - F-P2c: proposal said Started/Complete events, shipped is ONE
+    outcome event — proposal amended to the single-event model.
+- Everything else clean: five boundaries, all I1-I26 mechanisms
+  grep-verified, the three operator refinements implemented, seeds
+  intact.
+- task verify green after the final edit (exit 0).

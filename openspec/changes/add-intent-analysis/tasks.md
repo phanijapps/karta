@@ -91,6 +91,6 @@
 
 ## 5. Review and hardening
 
-- [ ] 5.1 zbot-reviewer read-only over the change; fix P0/P1, P2s fix
+- [x] 5.1 zbot-reviewer read-only over the change; fix P0/P1, P2s fix
   or record. Verify: reviewer report zero open P0/P1.
-- [ ] 5.2 task verify green. Verify: exits zero.
+- [x] 5.2 task verify green. Verify: exits zero.
