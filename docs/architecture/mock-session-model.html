@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Karta — Session Model Mock</title>
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --bg-panel: #111113;
+    --bg-card: #161618;
+    --bg-inset: #1a1a1d;
+    --border: #26262a;
+    --text: #e8e8ec;
+    --text-muted: #6b6b76;
+    --accent: #6366f1;
+    --accent-soft: rgba(99,102,241,.12);
+    --success: #22c55e;
+    --success-soft: rgba(34,197,94,.1);
+    --danger: #e5484d;
+    --warning: #f59e0b;
+    --radius: 12px;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono: 'SF Mono', 'Cascadia Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; height: 100vh; overflow: hidden; }
+
+  .app { display: grid; grid-template-columns: 280px 1fr 320px; height: 100vh; }
+
+  /* ===== SIDEBAR ===== */
+  .sidebar { background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+  .brand { padding: 1rem 1.25rem .75rem; display: flex; align-items: center; gap: .6rem; }
+  .brand-icon { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #fff; }
+  .brand-name { font-weight: 600; font-size: 15px; }
+  .brand-sub { font-size: .68rem; color: var(--text-muted); }
+
+  .session-section { padding: .5rem .75rem; }
+  .session-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); padding: .4rem .5rem; display: flex; align-items: center; justify-content: space-between; }
+  .new-research-btn { display: inline-flex; align-items: center; gap: .3rem; padding: .25rem .6rem; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent); font-size: .68rem; font-weight: 500; cursor: pointer; }
+  .new-research-btn:hover { background: var(--accent); color: #fff; }
+
+  .session-item { display: flex; align-items: center; gap: .55rem; padding: .5rem .6rem; border-radius: 8px; cursor: pointer; margin-bottom: 2px; }
+  .session-item:hover { background: var(--bg-inset); }
+  .session-item.active { background: var(--accent-soft); border: 1px solid rgba(99,102,241,.3); }
+  .session-item .icon { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; font-size: 15px; flex-shrink: 0; }
+  .session-item .icon.chat { background: var(--bg-inset); border: 1px solid var(--border); }
+  .session-item .icon.ward { background: var(--success-soft); border: 1px solid rgba(34,197,94,.25); }
+  .session-item .icon.research { background: var(--accent-soft); border: 1px solid rgba(99,102,241,.25); }
+  .session-item .meta { flex: 1; min-width: 0; }
+  .session-item .name { font-size: .82rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .session-item .sub { font-size: .68rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .session-item .badge { font-size: .58rem; padding: .1rem .4rem; border-radius: 999px; flex-shrink: 0; }
+  .badge.live { background: var(--success-soft); color: var(--success); border: 1px solid rgba(34,197,94,.3); }
+  .badge.ward { background: var(--success-soft); color: var(--success); }
+  .badge.shell { background: var(--accent-soft); color: var(--accent); }
+
+  .nav-footer { margin-top: auto; padding: .75rem; border-top: 1px solid var(--border); }
+  .nav-row { display: flex; align-items: center; gap: .55rem; padding: .45rem .6rem; border-radius: 8px; cursor: pointer; color: var(--text-muted); font-size: .82rem; }
+  .nav-row:hover { background: var(--bg-inset); color: var(--text); }
+  .nav-row svg { width: 16px; height: 16px; }
+
+  /* ===== MAIN AREA ===== */
+  .main { display: flex; flex-direction: column; overflow: hidden; }
+
+  .session-header { padding: .8rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: .8rem; background: var(--bg-panel); }
+  .session-header .icon-lg { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-size: 17px; }
+  .session-header .icon-lg.ward { background: var(--success-soft); border: 1px solid rgba(34,197,94,.3); }
+  .session-header .icon-lg.chat { background: var(--bg-inset); border: 1px solid var(--border); }
+  .session-header .icon-lg.research { background: var(--accent-soft); border: 1px solid rgba(99,102,241,.3); }
+  .session-title { font-size: 1rem; font-weight: 600; }
+  .session-subtitle { font-size: .72rem; color: var(--text-muted); }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: .5rem; }
+  .model-chip { padding: .25rem .7rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-inset); font-size: .72rem; color: var(--text-muted); }
+
+  .transcript { flex: 1; overflow-y: auto; padding: 1rem 1.5rem; display: flex; flex-direction: column; gap: .75rem; }
+
+  /* Task Analysis card */
+  .analysis-card { border: 1px solid rgba(99,102,241,.3); border-radius: var(--radius); padding: .8rem 1rem; background: var(--bg-card); display: grid; gap: .5rem; max-width: 640px; }
+  .analysis-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  .analysis-head strong { font-size: .88rem; color: var(--accent); }
+  .ab { display: inline-flex; align-items: center; gap: .2rem; font-size: .68rem; padding: .15rem .5rem; border-radius: 999px; border: 1px solid var(--border); }
+  .ab.approach { color: var(--accent); border-color: rgba(99,102,241,.3); }
+  .ab.cx { font-weight: 600; }
+  .ab.cx[data-cx="S"] { color: var(--success); }
+  .ab.cx[data-cx="M"] { color: var(--accent); }
+  .ab.cx[data-cx="L"] { color: var(--warning); }
+  .ab.cx[data-cx="XL"] { color: var(--danger); }
+  .ab.ward { color: var(--success); border-color: rgba(34,197,94,.3); }
+  .analysis-meta { display: flex; gap: 1.2rem; flex-wrap: wrap; font-size: .78rem; }
+  .analysis-meta dt { color: var(--text-muted); font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; }
+  .analysis-meta dd { margin: 0; }
+  .skills-row { display: flex; gap: .35rem; flex-wrap: wrap; }
+  .skill-chip { display: inline-flex; align-items: center; gap: .2rem; font-size: .68rem; padding: .12rem .5rem; border-radius: 6px; background: var(--accent-soft); color: var(--accent); border: 1px solid rgba(99,102,241,.2); }
+
+  /* Delegation tree */
+  .del-tree { border: 1px solid var(--border); border-radius: var(--radius); padding: .6rem .8rem; background: var(--bg-card); max-width: 640px; font-size: .78rem; }
+  .del-tree-title { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: .4rem; }
+  .del-node { display: flex; align-items: center; gap: .45rem; padding: .2rem 0; }
+  .del-node .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .del-node .dot.done { background: var(--success); }
+  .del-node .dot.active { background: var(--accent); animation: pulse 1.5s infinite; }
+  .del-node .dot.pending { background: var(--border); }
+  .del-node .agent { font-weight: 500; }
+  .del-node .task { color: var(--text-muted); }
+  .del-node .status { margin-left: auto; font-size: .65rem; color: var(--text-muted); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+  /* Tool calls */
+  .tool-group { max-width: 640px; }
+  .tool-header { display: flex; align-items: center; gap: .4rem; padding: .35rem .6rem; border-radius: 8px; cursor: pointer; font-size: .72rem; color: var(--text-muted); }
+  .tool-header:hover { background: var(--bg-inset); }
+  .tool-header .count { background: var(--bg-inset); padding: .1rem .4rem; border-radius: 4px; font-size: .62rem; }
+  .tool-list { display: none; padding: .3rem 0 .3rem 1.5rem; }
+  .tool-list.open { display: block; }
+  .tool-item { display: flex; align-items: center; gap: .4rem; padding: .2rem 0; font-size: .7rem; color: var(--text-muted); }
+  .tool-item code { font-family: var(--mono); font-size: .65rem; background: var(--bg-inset); padding: .1rem .3rem; border-radius: 4px; }
+
+  /* Messages */
+  .bubble { max-width: min(640px, 90%); padding: .7rem 1rem; border-radius: 14px; line-height: 1.55; }
+  .bubble.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+  .bubble.assistant { align-self: flex-start; background: var(--bg-card); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .bubble.assistant .answer-label { font-size: .62rem; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); margin-bottom: .4rem; }
+
+  /* ===== COMPOSER ===== */
+  .composer-wrap { padding: .75rem 1.5rem .5rem; border-top: 1px solid var(--border); background: var(--bg-panel); display: grid; gap: .35rem; }
+  .ward-strip { display: flex; align-items: center; gap: .45rem; padding: .3rem .7rem; border-radius: 8px; border: 1px solid rgba(34,197,94,.3); background: var(--success-soft); font-size: .75rem; color: var(--success); }
+  .ward-strip .leave { margin-left: auto; background: none; border: none; color: var(--text-muted); font-size: .65rem; cursor: pointer; text-decoration: underline; }
+  .composer { display: flex; align-items: flex-end; gap: .5rem; padding: .5rem; border-radius: 14px; border: 1px solid var(--border); background: var(--bg-inset); }
+  .composer:focus-within { border-color: var(--accent); }
+  .composer .input { flex: 1; padding: .35rem 0; color: var(--text); font: inherit; background: none; border: none; outline: none; resize: none; min-height: 1.4rem; }
+  .composer .input::placeholder { color: var(--text-muted); opacity: .6; }
+  .send-btn { width: 2.1rem; height: 2.1rem; border-radius: 10px; border: none; background: var(--accent); color: #fff; display: grid; place-items: center; cursor: pointer; }
+  .composer-note { font-size: .65rem; color: var(--text-muted); text-align: center; }
+  .composer-note .dot-sep { margin: 0 .3rem; opacity: .4; }
+
+  /* ===== RIGHT PANEL (Context) ===== */
+  .context-panel { background: var(--bg-panel); border-left: 1px solid var(--border); overflow-y: auto; padding: 1rem; }
+  .ctx-section { margin-bottom: 1.25rem; }
+  .ctx-title { font-size: .65rem; text-transform: uppercase; letter-spacing: .07em; color: var(--text-muted); margin-bottom: .5rem; display: flex; align-items: center; gap: .35rem; }
+  .ward-card { border: 1px solid rgba(34,197,94,.25); border-radius: 10px; padding: .7rem .8rem; background: var(--bg-card); }
+  .ward-card .name { font-weight: 600; font-size: .85rem; color: var(--success); }
+  .ward-card .type { font-size: .68rem; color: var(--text-muted); margin-top: .15rem; }
+  .ward-card .canonical { font-size: .72rem; color: var(--text); margin-top: .4rem; padding: .35rem .5rem; background: var(--bg-inset); border-radius: 6px; border-left: 2px solid var(--success); }
+  .ward-files { display: grid; gap: .2rem; margin-top: .5rem; }
+  .ward-file { display: flex; align-items: center; gap: .35rem; font-size: .7rem; color: var(--text-muted); padding: .15rem .3rem; }
+  .ward-file svg { width: 12px; height: 12px; }
+
+  .ctx-skill { display: flex; align-items: center; gap: .4rem; padding: .35rem .5rem; border-radius: 6px; font-size: .72rem; margin-bottom: .25rem; background: var(--bg-card); border: 1px solid var(--border); }
+  .ctx-skill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .ctx-skill .name { font-weight: 500; }
+  .ctx-skill .src { margin-left: auto; font-size: .6rem; color: var(--text-muted); }
+
+  .ctx-agent { display: flex; align-items: center; gap: .4rem; padding: .35rem .5rem; border-radius: 6px; font-size: .72rem; margin-bottom: .25rem; background: var(--bg-card); border: 1px solid var(--border); }
+  .ctx-agent .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+
+  .mockup-label { position: fixed; bottom: 1rem; right: 1rem; padding: .3rem .8rem; border-radius: 8px; background: rgba(99,102,241,.15); border: 1px solid rgba(99,102,241,.3); color: var(--accent); font-size: .68rem; z-index: 100; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ======== SIDEBAR ======== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">K</div>
+      <div>
+        <div class="brand-name">Karta</div>
+        <div class="brand-sub">local-first research</div>
+      </div>
+    </div>
+
+    <!-- Quick Chat -->
+    <div class="session-section">
+      <div class="session-label">Chat</div>
+      <div class="session-item">
+        <div class="icon chat">💬</div>
+        <div class="meta">
+          <div class="name">Quick Chat</div>
+          <div class="sub">Always here · lean mode</div>
+        </div>
+        <span class="badge live">●</span>
+      </div>
+    </div>
+
+    <!-- Ward Sessions -->
+    <div class="session-section">
+      <div class="session-label">
+        Ward Bots
+        <button class="new-research-btn">+ New Research</button>
+      </div>
+
+      <div class="session-item active">
+        <div class="icon ward">📊</div>
+        <div class="meta">
+          <div class="name">Stock Analysis</div>
+          <div class="sub">AMD vs NVIDIA · 2h ago</div>
+        </div>
+        <span class="badge ward">ward</span>
+      </div>
+
+      <div class="session-item">
+        <div class="icon ward">🇮🇳</div>
+        <div class="meta">
+          <div class="name">India Analysis</div>
+          <div class="sub">Macro research · yesterday</div>
+        </div>
+        <span class="badge ward">ward</span>
+      </div>
+    </div>
+
+    <!-- Research Sessions -->
+    <div class="session-section">
+      <div class="session-label">Research</div>
+
+      <div class="session-item">
+        <div class="icon research">☁️</div>
+        <div class="meta">
+          <div class="name">Cloud Pricing</div>
+          <div class="sub">Shell — no ward yet</div>
+        </div>
+        <span class="badge shell">shell</span>
+      </div>
+    </div>
+
+    <!-- Nav -->
+    <div class="nav-footer">
+      <div class="nav-row">📁 Wards</div>
+      <div class="nav-row">🗓️ Schedules</div>
+      <div class="nav-row">⚙️ Settings</div>
+    </div>
+  </aside>
+
+  <!-- ======== MAIN AREA (Stock Analysis ward session) ======== -->
+  <main class="main">
+    <div class="session-header">
+      <div class="icon-lg ward">📊</div>
+      <div>
+        <div class="session-title">Stock Analysis</div>
+        <div class="session-subtitle">Ward bot · research mode · ~/Documents/wards/stock-analysis</div>
+      </div>
+      <div class="header-right">
+        <span class="model-chip">zai/glm-5.3-flash</span>
+      </div>
+    </div>
+
+    <div class="transcript">
+      <!-- User message -->
+      <div class="bubble user">I want to understand how AMD is positioned against NVIDIA in the datacenter GPU market. Write a brief.</div>
+
+      <!-- Task Analysis card -->
+      <div class="analysis-card">
+        <div class="analysis-head">
+          <strong>🔬 Research</strong>
+          <span class="ab approach">graph</span>
+          <span class="ab cx" data-cx="M">M</span>
+          <span class="ab ward">📁 stock-analysis</span>
+        </div>
+        <dl class="analysis-meta">
+          <div><dt>Intent</dt><dd>comparative-research-amd-vs-nvidia</dd></div>
+        </dl>
+        <div class="skills-row">
+          <span class="skill-chip">📄 pdf</span>
+          <span class="skill-chip">💻 clean-code</span>
+          <span class="skill-chip" style="opacity:.5; text-decoration:line-through">duckduckgo ✕ dropped</span>
+        </div>
+      </div>
+
+      <!-- Ward entry -->
+      <div style="max-width:640px; display:flex; align-items:center; gap:.4rem; font-size:.72rem; color:var(--success); padding:.3rem .6rem; border-radius:8px; border:1px solid rgba(34,197,94,.25); background:var(--success-soft);">
+        📁 Entered <strong>stock-analysis</strong> — constitution loaded, layout digest 73e2664f
+      </div>
+
+      <!-- Delegation tree -->
+      <div class="del-tree">
+        <div class="del-tree-title">Delegation</div>
+        <div class="del-node">
+          <span class="dot done"></span>
+          <span class="agent">root</span>
+          <span class="task">— entered ward, wrote spec + plan</span>
+          <span class="status">✓</span>
+        </div>
+        <div class="del-node" style="padding-left:1.2rem;">
+          <span class="dot done"></span>
+          <span class="agent">research-agent</span>
+          <span class="task">— market share estimates (TrendForce, IDC, Omdia)</span>
+          <span class="status">✓ 3 sources</span>
+        </div>
+        <div class="del-node" style="padding-left:1.2rem;">
+          <span class="dot done"></span>
+          <span class="agent">builder-agent</span>
+          <span class="task">— yfinance cross-check (NVDA/AMD financials)</span>
+          <span class="status">✓ data/yf_xcheck.py</span>
+        </div>
+        <div class="del-node" style="padding-left:1.2rem;">
+          <span class="dot active"></span>
+          <span class="agent">writing-agent</span>
+          <span class="task">— synthesizing 3-paragraph brief</span>
+          <span class="status">working…</span>
+        </div>
+      </div>
+
+      <!-- Tool calls collapsed -->
+      <div class="tool-group">
+        <div class="tool-header">
+          <span>🔧</span> Tool calls <span class="count">27</span>
+          <span style="margin-left:auto; font-size:.62rem;">show ▾</span>
+        </div>
+      </div>
+
+      <!-- The answer -->
+      <div class="bubble assistant">
+        <div class="answer-label">━━ The Answer ━━</div>
+        NVIDIA holds roughly <strong>90–98%</strong> of datacenter AI-accelerator
+        unit share across 2023–2025 (TrendForce ~90%+ through 2025; Omdia ~98%
+        of 2023 hyperscaler purchases; IDC ~98%, low-confidence attribution).
+        Filings corroborate: NVIDIA's Data Center revenue runs ~9–12× AMD's
+        entire Data Center segment ($115.2B FY2025 vs $12.6B CY2024).
+
+        <br><br>
+        <span style="font-size:.7rem; color:var(--text-muted);">Sources: TrendForce 2025, Omdia 2023, IDC 2024, SEC filings · Gaps: AMD's exact unit share in Omdia's dataset is paywalled</span>
+      </div>
+    </div>
+
+    <!-- Composer -->
+    <div class="composer-wrap">
+      <div class="ward-strip">
+        📁 stock-analysis · research
+        <button class="leave">Leave ward</button>
+      </div>
+      <div class="composer">
+        <textarea class="input" placeholder="Continue researching in stock-analysis…" rows="1"></textarea>
+        <button class="send-btn">↑</button>
+      </div>
+      <div class="composer-note">
+        Research mode · ward context active · skills provisioned · delegation available
+        <span class="dot-sep">·</span> budget: 14/16
+      </div>
+    </div>
+  </main>
+
+  <!-- ======== RIGHT PANEL (Context) ======== -->
+  <aside class="context-panel">
+    <div class="ctx-section">
+      <div class="ctx-title">📁 Active Ward</div>
+      <div class="ward-card">
+        <div class="name">stock-analysis</div>
+        <div class="type">research archetype · lint clean</div>
+        <div class="canonical">
+          <strong>Stock Analysis</strong><br>
+          Equity research method: gather → verify → synthesize.
+        </div>
+        <div class="ward-files">
+          <div class="ward-file">📄 stock-analysis.md</div>
+          <div class="ward-file">📋 spec.md</div>
+          <div class="ward-file">📋 plan.md</div>
+          <div class="ward-file">📝 log.md</div>
+          <div class="ward-file">🐍 data/yf_xcheck.py</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ctx-section">
+      <div class="ctx-title">📄 Provisioned Skills</div>
+      <div class="ctx-skill">
+        <span class="dot"></span>
+        <span class="name">pdf</span>
+        <span class="src">intent</span>
+      </div>
+      <div class="ctx-skill">
+        <span class="dot"></span>
+        <span class="name">clean-code</span>
+        <span class="src">intent</span>
+      </div>
+    </div>
+
+    <div class="ctx-section">
+      <div class="ctx-title">👥 Agents</div>
+      <div class="ctx-agent">
+        <span class="dot"></span>
+        <span>research-agent</span>
+        <span style="margin-left:auto; font-size:.6rem; color:var(--text-muted);">✓ done</span>
+      </div>
+      <div class="ctx-agent">
+        <span class="dot"></span>
+        <span>builder-agent</span>
+        <span style="margin-left:auto; font-size:.6rem; color:var(--text-muted);">✓ done</span>
+      </div>
+      <div class="ctx-agent">
+        <span class="dot" style="background:var(--accent); animation:pulse 1.5s infinite;"></span>
+        <span>writing-agent</span>
+        <span style="margin-left:auto; font-size:.6rem; color:var(--accent);">working</span>
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<div class="mockup-label">Mock UI — session model (no mode toggle)</div>
+</body>
+</html>
