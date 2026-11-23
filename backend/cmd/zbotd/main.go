@@ -32,6 +32,7 @@ import (
 	"zbot/backend/internal/server"
 	"zbot/backend/internal/skillhub"
 	zbotstore "zbot/backend/internal/store"
+	"zbot/backend/internal/wards"
 
 	einoengine "zbot/backend/internal/engine/eino"
 	"zbot/backend/internal/tools"
@@ -44,18 +45,23 @@ func main() {
 	homeFlag := flag.String("home", "", "z-Bot home root (default ~/.zbot; ZBOT_HOME also honored)")
 	flag.Parse()
 
-	if err := run(*homeFlag); err != nil {
+	// The one context root (go-rules 2.2: Background only in main). It
+	// is created before any wiring so bootstrap-era work is cancellable.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := run(ctx, *homeFlag); err != nil {
 		log.Fatalf("zbotd: %v", err)
 	}
 }
 
-func run(homeFlag string) error {
+func run(ctx context.Context, homeFlag string) error {
 	home, err := config.ResolveHome(homeFlag)
 	if err != nil {
 		return fmt.Errorf("resolve home: %w", err)
 	}
 	paths := config.NewPaths(home)
-	if err := config.Bootstrap(paths); err != nil {
+	if err := config.Bootstrap(ctx, paths); err != nil {
 		return fmt.Errorf("bootstrap: %w", err)
 	}
 	cfg, err := config.Load(paths)
@@ -65,10 +71,13 @@ func run(homeFlag string) error {
 
 	// The provider store merges config.yaml entries with the managed
 	// config/providers/ directory and watches it for external changes.
+	// Close is deferred IMMEDIATELY: every later early-return (vault
+	// bootstrap, engine wiring, listen) must still stop the watcher.
 	provStore, err := providers.NewStore(paths, cfg, providers.NewKeyringStore(home))
 	if err != nil {
 		return fmt.Errorf("providers: %w", err)
 	}
+	defer provStore.Close() // stops the providers watcher on any exit path
 
 	// Skill marketplace plane: pinned skills.sh index, GitHub fetcher,
 	// staged-import capabilities (startup reclaims orphaned stages).
@@ -193,9 +202,24 @@ func run(homeFlag string) error {
 		server.SetExposedBind(exposed)
 	}
 
+	// Ward vault: user data OUTSIDE ~/.zbot (default ~/Documents/wards,
+	// config wards.vault_root override). Bootstrap creates it and seeds
+	// the archetype templates write-once; the daemon then only reads it.
+	vaultRoot, err := wards.ResolveVaultRoot(cfg.Wards.VaultRoot, home)
+	if err != nil {
+		return err // names config.yaml: wards.vault_root and the reason
+	}
+	if err := wards.Bootstrap(ctx, vaultRoot); err != nil {
+		return fmt.Errorf("ward vault bootstrap: %w", err)
+	}
+	wardVault, err := wards.Open(ctx, vaultRoot)
+	if err != nil {
+		return fmt.Errorf("ward vault open: %w", err)
+	}
+
 	// Scheduler: cron-fired goal runs over the registry + engine.
 	sched := scheduler.New(reg, eng, bus, func() string { return fmt.Sprintf("evt-sched-%d", time.Now().UnixNano()) }, nil, filepath.Join(paths.DataDir, "scheduler-state.json"))
-	daemonSrv := server.New(provStore, providers.NewClient(), catalog, chatSvc, eng, bus, db, reg, mcpclient.GoSDKProber{}, sched, version)
+	daemonSrv := server.New(provStore, providers.NewClient(), catalog, chatSvc, eng, bus, db, reg, mcpclient.GoSDKProber{}, sched, wardVault, version)
 	daemonSrv.SetSkillHub(skillhub.NewHTTPIndexClient(), skillhub.NewGitHubRepoFetcher(), skillStore)
 
 	srv := &http.Server{
@@ -204,12 +228,8 @@ func run(homeFlag string) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	defer provStore.Close() // stops the providers watcher on any exit path
-
 	// Graceful shutdown on SIGINT/SIGTERM: in-flight requests drain,
 	// then the daemon exits. Provider config changes apply on restart.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	go sched.Run(ctx)
 
 	// Distiller: sessions → chitta (trusted seam, source: distiller).
@@ -243,7 +263,7 @@ func run(homeFlag string) error {
 			return fmt.Errorf("serve: %w", err)
 		}
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	}

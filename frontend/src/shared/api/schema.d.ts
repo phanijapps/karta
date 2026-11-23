@@ -199,6 +199,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/wards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List vault wards
+         * @description Every ward directory in the ward vault (default ~/Documents/wards,
+         *     or the config `wards.vault_root` override — wards are user data
+         *     outside ~/.zbot), ordered by name: archetype, lint summary, and
+         *     the canonical page title when a canonical page exists.
+         *     Conf-less wards are valid freeform wards (archetype `generic`);
+         *     a ward whose ward-conf.yaml fails to parse lists with archetype
+         *     `unknown` and its findings carry the parse error. Read-only in
+         *     v1 — wards are created by agents (a later slice) or by hand;
+         *     the daemon never writes user files. The response also carries
+         *     the resolved vault root (the UI empty state points at it).
+         */
+        get: operations["listWards"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wards/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one ward (layout tree + lint findings)
+         * @description One ward's detail: the parsed ward-conf.yaml layout tree (node
+         *     ids, kinds, matches — `layout` is absent for conf-less or
+         *     unparseable-conffed wards) plus the full lint findings. These
+         *     node ids are the same ids the ward tool will inject as the
+         *     Active Ward Template (slice 3).
+         */
+        get: operations["getWard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mcps": {
         parameters: {
             query?: never;
@@ -1126,6 +1179,62 @@ export interface components {
         AgentList: {
             agents: components["schemas"]["Agent"][];
         };
+        WardList: {
+            /** @description The resolved vault root (config `wards.vault_root` override or the OS-aware ~/Documents/wards default). Paths are bounded by the OS, not trimmed to fit. */
+            vault_root: string;
+            wards: components["schemas"]["WardSummary"][];
+        };
+        WardSummary: {
+            /** @description The ward's directory name in the vault. */
+            name: string;
+            /** @description The conf's declared archetype; `generic` for conf-less freeform wards, `unknown` when the conf fails to parse. Convention: lowercase letters, digits, dashes. */
+            archetype: string;
+            /** @enum {string} */
+            lint_status: "clean" | "violations";
+            /** @description Lint findings against the ward's conf (0 = clean). */
+            finding_count: number;
+            /** @description The canonical page's title (first level-1 heading, else the file name); absent when the ward has no canonical page yet. */
+            canonical_title?: string;
+        };
+        Ward: {
+            name: string;
+            archetype: string;
+            /** @enum {string} */
+            lint_status: "clean" | "violations";
+            finding_count: number;
+            canonical_title?: string;
+            findings: components["schemas"]["WardFinding"][];
+            /** @description The parsed ward-conf.yaml layout tree; absent for conf-less wards and unparseable confs. */
+            layout?: components["schemas"]["WardNode"];
+        };
+        WardFinding: {
+            /** @enum {string} */
+            kind: "missing_required" | "unexpected_entry" | "format_mismatch" | "invalid_conf";
+            /** @description The conf node's id; absent when the finding has no node (unexpected entries, invalid confs). Nodes without a declared id are identified by their match pattern, so the bound matches the match-pattern limit. */
+            node_id?: string;
+            /** @description The offending location relative to the ward root; for missing_required, the expected path. Pathologically deep paths are clamped at emit. */
+            path?: string;
+            message: string;
+        };
+        WardNode: {
+            /** @description Node id (findings and the API tree name nodes by it; the canonical page node uses the id `canonical`). */
+            id?: string;
+            /** @enum {string} */
+            kind: "file" | "directory";
+            /** @description Glob match pattern for this node's entries; `{ward}` expands to the ward's name. Empty on the root node. */
+            match?: string;
+            /** @description Default true — required nodes with no match are findings. */
+            required?: boolean;
+            /** @description Default false — a non-repeatable node matching multiple entries flags the extras. */
+            repeat?: boolean;
+            /**
+             * @description File nodes only; markdown expects .md files, raw accepts any bytes.
+             * @enum {string}
+             */
+            format?: "markdown" | "raw";
+            /** @description Directory nodes only; the walk descends into each matched directory. */
+            children?: components["schemas"]["WardNode"][];
+        };
         McpList: {
             servers: components["schemas"]["Mcp"][];
             load_errors?: components["schemas"]["RegistryLoadError"][];
@@ -1698,6 +1807,85 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentList"];
+                };
+            };
+        };
+    };
+    listWards: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The ward roster. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WardList"];
+                };
+            };
+            /** @description Vault I/O failure (indexed mid-scan, permissions). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The ward vault is not wired (daemon wiring failure). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getWard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The ward detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ward"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Vault I/O failure (indexed mid-scan, permissions). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The ward vault is not wired (daemon wiring failure). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

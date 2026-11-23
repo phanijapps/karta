@@ -1,9 +1,14 @@
 # Ward-Based Research — Architecture Exploration
 
-> **Status: EXPLORATION ONLY.** This document maps the agentzero research
-> system's concepts onto Karta's architecture. Nothing here is a decision,
-> a spec, or a commitment. It exists so the eventual OpenSpec change starts
-> from a shared vocabulary.
+> **Status: EXPLORATION + IMPLEMENTING.** This document maps the agentzero
+> research system's concepts onto Karta's architecture. Slice 1 (the
+> ward vault: `internal/wards`, `GET /api/wards`, the Wards sidebar
+> surface) has LANDED via OpenSpec change
+> [`add-ward-vault`](../../openspec/changes/add-ward-vault/) — see its
+> [findings ledger](../../openspec/changes/add-ward-vault/findings.md)
+> for the phase-gate record. Slices 2-5 remain planned. Nothing here
+> overrides the landed specs; where this doc and a spec disagree, the
+> spec wins.
 
 ## What agentzero does (verified in its source)
 

@@ -29,7 +29,7 @@ func newChatDaemon(t *testing.T, scripted []providers.ChatResponse, errs []error
 	}
 	resolve := func(context.Context, providers.Provider) (string, error) { return "", nil }
 	svc := chat.New(db, lookup, resolve, fc, tools.BuiltinProvider{}, nil, nil)
-	daemon := startTestServer(New(nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, "test").Routes())
+	daemon := startTestServer(New(nil, nil, nil, svc, nil, nil, nil, nil, nil, nil, nil, "test").Routes())
 	t.Cleanup(daemon.Close)
 	return daemon.URL, db
 }

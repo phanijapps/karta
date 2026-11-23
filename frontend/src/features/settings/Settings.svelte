@@ -48,7 +48,7 @@
       {:else if section === 'Advanced'}
         <Advanced />
         <h3 style="margin-top:2rem">Runtime configuration</h3><p class="source">Existing configuration concepts · <code>~/.zbot/config.yaml</code> · Values below are fixtures, not loaded configuration.</p>
-        <div class="fields"><label>Engine<input bind:value={draft.engine} /></label><label>Server address<input bind:value={draft.address} /></label><label>Max context tokens<input type="number" min="1" bind:value={draft.maxTokens} /></label><label>Reserved output tokens<input type="number" min="1" bind:value={draft.reserveTokens} /></label><label class="full">Wards root<input bind:value={draft.wards} /></label></div>
+        <div class="fields"><label>Engine<input bind:value={draft.engine} /></label><label>Server address<input bind:value={draft.address} /></label><label>Max context tokens<input type="number" min="1" bind:value={draft.maxTokens} /></label><label>Reserved output tokens<input type="number" min="1" bind:value={draft.reserveTokens} /></label><label class="full">Wards vault root<input bind:value={draft.wards} /></label></div>
         <div class="actions"><button class="secondary" disabled>Restart unavailable</button><button class="secondary" disabled>Open config unavailable</button><button class="secondary" disabled>Reset daemon unavailable</button></div>
       {/if}
       {#if section === 'Logging' || section === 'Advanced'}<footer><p class="muted">Drafts are discarded when you close Settings.</p><button class="secondary" onclick={() => draft = settingsFixtures()}><RotateCcw size={14} />Reset preview</button></footer>{/if}

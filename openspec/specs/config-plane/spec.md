@@ -8,7 +8,7 @@ The control-plane foundation: home resolution with whole-root override, first-ru
 
 ### Requirement: Home resolution with whole-root override
 
-The config package SHALL resolve the z-Bot home in strict precedence: an explicit flag override (accepted as an API argument now, wired to the `zbotd` flag later), then the `ZBOT_HOME` environment variable, then the default `~/.zbot`. The override SHALL relocate the entire root (`config.yaml`, `config/**`, `data/`, `wards/`) — no partial overrides.
+The config package SHALL resolve the z-Bot home in strict precedence: an explicit flag override (accepted as an API argument now, wired to the `zbotd` flag later), then the `ZBOT_HOME` environment variable, then the default `~/.zbot`. The override SHALL relocate the entire root (`config.yaml`, `config/**`, `data/`) — no partial overrides. The ward vault is NOT part of the home: it is user data resolved outside `~/.zbot` via `wards.vault_root` (see the ward-vault capability).
 
 #### Scenario: Default resolution
 
@@ -27,22 +27,60 @@ The config package SHALL resolve the z-Bot home in strict precedence: an explici
 
 ### Requirement: First-run bootstrap creates structure, never content
 
-When the resolved home does not exist, bootstrap SHALL create the tree: `config.yaml` with documented defaults, empty `config/{prompts,agents,skills,hooks,mcps,providers}/` directories, `data/`, and `wards/`. Bootstrap SHALL NOT seed any agent, prompt, skill, hook, MCP, or provider content, SHALL NOT overwrite any existing file, and SHALL be idempotent.
+When the resolved home does not exist, bootstrap SHALL create the tree:
+`config.yaml` with documented defaults, the
+`config/{prompts,agents,skills,hooks,mcps,providers}/` directories
+(`config/skills/` carries the seeded example skills — see the
+"Bootstrap seeds the example roster" requirement; the rest start
+empty), and `data/`; the ward vault is created separately by the wards
+package, outside the home. Bootstrap seeds nothing except the example
+roster (see "Bootstrap seeds the example roster"), never overwrites an
+existing file, and is idempotent.
 
 #### Scenario: First run on a missing home
 
 - **WHEN** bootstrap runs against a nonexistent home
-- **THEN** the full tree exists with a default `config.yaml` and empty config subdirectories
+- **THEN** the full tree exists with a default `config.yaml`, the
+  example agent roster, and the example skills
 
 #### Scenario: Existing home is untouched
 
-- **WHEN** bootstrap runs against a home that already has a user-authored `config.yaml`
-- **THEN** that file's bytes are unchanged and no registry file is created
+- **WHEN** bootstrap runs against a home that already has a
+  user-authored `config.yaml`
+- **THEN** that file's bytes are unchanged; the example roster MAY be
+  seeded once (per the marker-gated "Bootstrap seeds the example
+  roster" requirement), and no OTHER registry file is created
 
 #### Scenario: Bootstrap is idempotent
 
-- **WHEN** bootstrap runs twice against the same home
+- **WHEN** bootstrap runs twice in a row against the same home
 - **THEN** the second run changes nothing
+
+### Requirement: Bootstrap seeds the example roster
+
+Bootstrap SHALL seed EXAMPLE content in exactly two places, write-once
+and crash-atomically (a file is published only complete): the agent
+example roster (`agents/*.example.md`) and the example prompt-craft
+skills (`config/skills/<name>/SKILL.md` plus bundled `references/`).
+Seeding is ONCE PER HOME, gated by a marker file: fresh homes AND
+pre-marker homes (upgrades) gain their missing examples; a failed
+seeding run leaves no marker so the next bootstrap retries the missing
+files. After the marker exists, bootstrap seeds nothing — user edits
+survive byte-for-byte and a deleted example is NOT recreated. Seeded
+skills SHALL parse under the strict SKILL.md loader.
+
+#### Scenario: User-owned examples survive re-bootstrap
+
+- **WHEN** a user edits or deletes a seeded example agent or skill and
+  bootstrap runs again
+- **THEN** the edit is preserved byte-for-byte (edited files) and the
+  deleted example is not recreated
+
+#### Scenario: Seeded skills load cleanly
+
+- **WHEN** the registry loads a freshly bootstrapped home
+- **THEN** every seeded skill parses under the strict SKILL.md loader
+  (name + description frontmatter) with zero load errors
 
 ### Requirement: Strict config loading hard-fails on invalid input
 
@@ -65,7 +103,7 @@ Loading `config.yaml` SHALL strictly decode known fields and reject unknown keys
 
 ### Requirement: Directory tree self-heals
 
-Loading with an existing home SHALL recreate any missing subdirectory of the control plane (`config/{prompts,agents,skills,hooks,mcps,providers}`, `data`, `wards`) without touching any existing file.
+Loading with an existing home SHALL recreate any missing subdirectory of the control plane (`config/{prompts,agents,skills,hooks,mcps,providers}`, `data`) without touching any existing file.
 
 #### Scenario: Partial home is repaired
 

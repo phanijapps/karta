@@ -22,13 +22,20 @@ the rebrand does not authorize an API or data migration.
    memory records and the knowledge graph, with their cross-domain
    links), plus the configuration tree
    `~/.zbot/agents/**` and
-   `~/.zbot/config/{prompts,skills,hooks,mcps,providers}/**`. The one
-   scoped exception: provider credential VALUES for daemon-managed providers
+   `~/.zbot/config/{prompts,skills,hooks,mcps,providers}/**`. Two scoped
+   exceptions: (a) provider credential VALUES for daemon-managed providers
    live in the platform keyring (Linux Secret Service, macOS Keychain,
    Windows Credential Manager), namespaced per home root — never under
    `~/.zbot/`, never in files, responses, or logs, and never a plaintext
-   fallback. No cloud storage, no remote state, no other data leaving the
-   device.
+   fallback; (b) the **ward vault** — user-chosen local data — lives
+   OUTSIDE `~/.zbot` (default OS-aware `~/Documents/wards`, overridable
+   via `wards.vault_root` in config.yaml; absolute paths only, and the
+   resolver REJECTS roots inside `~/.zbot` — wards are documented
+   knowledge the user owns, not daemon state). The daemon only reads
+   and lints the vault; bootstrap creates it and seeds the archetype
+   templates plus a `.gitignore` starter write-once, never overwriting
+   user files. No cloud storage, no remote state, no other data leaving
+   the device.
 2. **Contract-first API.** `contracts/openapi.yaml` is the single source of
    truth for the daemon HTTP/SSE API. Endpoint changes update the contract
    first, then regenerate clients (`task codegen`), then implement handlers.

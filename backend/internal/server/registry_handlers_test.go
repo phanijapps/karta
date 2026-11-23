@@ -54,7 +54,7 @@ func newTestServerWithProber(store *providers.Store, catalog *providers.Catalog,
 	reg := registry.New()
 	reg.LoadAll(dirs)
 	lastTestDirs = dirs
-	return New(store, providers.NewClient(), catalog, newFakeChatService(), nil, nil, nil, reg, prober, nil, "test")
+	return New(store, providers.NewClient(), catalog, newFakeChatService(), nil, nil, nil, reg, prober, nil, nil, "test")
 }
 
 // lastTestDirs remembers the dirs of the most recently built test server
@@ -387,7 +387,7 @@ func TestListAgents(t *testing.T) {
 	if _, errs := reg.LoadAll(registry.Dirs{Agents: agentDir}); len(errs) != 0 {
 		t.Fatalf("load: %v", errs)
 	}
-	srv := New(nil, nil, nil, nil, nil, nil, nil, reg, nil, nil, "test")
+	srv := New(nil, nil, nil, nil, nil, nil, nil, reg, nil, nil, nil, "test")
 	rec := httptest.NewRecorder()
 	srv.ListAgents(rec, httptest.NewRequest(http.MethodGet, "/api/agents", nil))
 	if rec.Code != http.StatusOK {

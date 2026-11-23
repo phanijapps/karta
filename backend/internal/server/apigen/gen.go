@@ -424,16 +424,16 @@ func (e ProviderFailureReason) Valid() bool {
 
 // Defines values for ProviderOrigin.
 const (
-	Config ProviderOrigin = "config"
-	File   ProviderOrigin = "file"
+	ProviderOriginConfig ProviderOrigin = "config"
+	ProviderOriginFile   ProviderOrigin = "file"
 )
 
 // Valid indicates whether the value is a known member of the ProviderOrigin enum.
 func (e ProviderOrigin) Valid() bool {
 	switch e {
-	case Config:
+	case ProviderOriginConfig:
 		return true
-	case File:
+	case ProviderOriginFile:
 		return true
 	default:
 		return false
@@ -701,6 +701,102 @@ func (e TimelineEventKind) Valid() bool {
 	case TimelineEventKindSession:
 		return true
 	case TimelineEventKindToolCall:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WardLintStatus.
+const (
+	WardLintStatusClean      WardLintStatus = "clean"
+	WardLintStatusViolations WardLintStatus = "violations"
+)
+
+// Valid indicates whether the value is a known member of the WardLintStatus enum.
+func (e WardLintStatus) Valid() bool {
+	switch e {
+	case WardLintStatusClean:
+		return true
+	case WardLintStatusViolations:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WardFindingKind.
+const (
+	FormatMismatch  WardFindingKind = "format_mismatch"
+	InvalidConf     WardFindingKind = "invalid_conf"
+	MissingRequired WardFindingKind = "missing_required"
+	UnexpectedEntry WardFindingKind = "unexpected_entry"
+)
+
+// Valid indicates whether the value is a known member of the WardFindingKind enum.
+func (e WardFindingKind) Valid() bool {
+	switch e {
+	case FormatMismatch:
+		return true
+	case InvalidConf:
+		return true
+	case MissingRequired:
+		return true
+	case UnexpectedEntry:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WardNodeFormat.
+const (
+	Markdown WardNodeFormat = "markdown"
+	Raw      WardNodeFormat = "raw"
+)
+
+// Valid indicates whether the value is a known member of the WardNodeFormat enum.
+func (e WardNodeFormat) Valid() bool {
+	switch e {
+	case Markdown:
+		return true
+	case Raw:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WardNodeKind.
+const (
+	WardNodeKindDirectory WardNodeKind = "directory"
+	WardNodeKindFile      WardNodeKind = "file"
+)
+
+// Valid indicates whether the value is a known member of the WardNodeKind enum.
+func (e WardNodeKind) Valid() bool {
+	switch e {
+	case WardNodeKindDirectory:
+		return true
+	case WardNodeKindFile:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WardSummaryLintStatus.
+const (
+	WardSummaryLintStatusClean      WardSummaryLintStatus = "clean"
+	WardSummaryLintStatusViolations WardSummaryLintStatus = "violations"
+)
+
+// Valid indicates whether the value is a known member of the WardSummaryLintStatus enum.
+func (e WardSummaryLintStatus) Valid() bool {
+	switch e {
+	case WardSummaryLintStatusClean:
+		return true
+	case WardSummaryLintStatusViolations:
 		return true
 	default:
 		return false
@@ -1442,6 +1538,91 @@ type UserInput struct {
 	Text string `json:"text"`
 }
 
+// Ward defines model for Ward.
+type Ward struct {
+	Archetype      string        `json:"archetype"`
+	CanonicalTitle *string       `json:"canonical_title,omitempty"`
+	FindingCount   int           `json:"finding_count"`
+	Findings       []WardFinding `json:"findings"`
+
+	// Layout The parsed ward-conf.yaml layout tree; absent for conf-less wards and unparseable confs.
+	Layout     *WardNode      `json:"layout,omitempty"`
+	LintStatus WardLintStatus `json:"lint_status"`
+	Name       string         `json:"name"`
+}
+
+// WardLintStatus defines model for Ward.LintStatus.
+type WardLintStatus string
+
+// WardFinding defines model for WardFinding.
+type WardFinding struct {
+	Kind    WardFindingKind `json:"kind"`
+	Message string          `json:"message"`
+
+	// NodeId The conf node's id; absent when the finding has no node (unexpected entries, invalid confs). Nodes without a declared id are identified by their match pattern, so the bound matches the match-pattern limit.
+	NodeId *string `json:"node_id,omitempty"`
+
+	// Path The offending location relative to the ward root; for missing_required, the expected path. Pathologically deep paths are clamped at emit.
+	Path *string `json:"path,omitempty"`
+}
+
+// WardFindingKind defines model for WardFinding.Kind.
+type WardFindingKind string
+
+// WardList defines model for WardList.
+type WardList struct {
+	// VaultRoot The resolved vault root (config `wards.vault_root` override or the OS-aware ~/Documents/wards default). Paths are bounded by the OS, not trimmed to fit.
+	VaultRoot string        `json:"vault_root"`
+	Wards     []WardSummary `json:"wards"`
+}
+
+// WardNode defines model for WardNode.
+type WardNode struct {
+	// Children Directory nodes only; the walk descends into each matched directory.
+	Children *[]WardNode `json:"children,omitempty"`
+
+	// Format File nodes only; markdown expects .md files, raw accepts any bytes.
+	Format *WardNodeFormat `json:"format,omitempty"`
+
+	// Id Node id (findings and the API tree name nodes by it; the canonical page node uses the id `canonical`).
+	Id   *string      `json:"id,omitempty"`
+	Kind WardNodeKind `json:"kind"`
+
+	// Match Glob match pattern for this node's entries; `{ward}` expands to the ward's name. Empty on the root node.
+	Match *string `json:"match,omitempty"`
+
+	// Repeat Default false — a non-repeatable node matching multiple entries flags the extras.
+	Repeat *bool `json:"repeat,omitempty"`
+
+	// Required Default true — required nodes with no match are findings.
+	Required *bool `json:"required,omitempty"`
+}
+
+// WardNodeFormat File nodes only; markdown expects .md files, raw accepts any bytes.
+type WardNodeFormat string
+
+// WardNodeKind defines model for WardNode.Kind.
+type WardNodeKind string
+
+// WardSummary defines model for WardSummary.
+type WardSummary struct {
+	// Archetype The conf's declared archetype; `generic` for conf-less freeform wards, `unknown` when the conf fails to parse. Convention: lowercase letters, digits, dashes.
+	Archetype string `json:"archetype"`
+
+	// CanonicalTitle The canonical page's title (first level-1 heading, else the file name); absent when the ward has no canonical page yet.
+	CanonicalTitle *string `json:"canonical_title,omitempty"`
+
+	// FindingCount Lint findings against the ward's conf (0 = clean).
+	FindingCount int                   `json:"finding_count"`
+	LintStatus   WardSummaryLintStatus `json:"lint_status"`
+
+	// Name The ward's directory name in the vault.
+	Name string `json:"name"`
+}
+
+// WardSummaryLintStatus defines model for WardSummary.LintStatus.
+type WardSummaryLintStatus string
+
 // McpName defines model for McpName.
 type McpName = Id
 
@@ -1674,6 +1855,12 @@ type ServerInterface interface {
 	// UpdateSkill Edit a skill (full replace; rename supported)
 	// (PATCH /api/skills/{name})
 	UpdateSkill(w http.ResponseWriter, r *http.Request, name SkillName)
+	// ListWards List vault wards
+	// (GET /api/wards)
+	ListWards(w http.ResponseWriter, r *http.Request)
+	// GetWard Read one ward (layout tree + lint findings)
+	// (GET /api/wards/{name})
+	GetWard(w http.ResponseWriter, r *http.Request, name string)
 	// GetHealth Liveness probe
 	// (GET /healthz)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -1920,6 +2107,18 @@ func (_ Unimplemented) GetSkill(w http.ResponseWriter, r *http.Request, name Ski
 // UpdateSkill Edit a skill (full replace; rename supported)
 // (PATCH /api/skills/{name})
 func (_ Unimplemented) UpdateSkill(w http.ResponseWriter, r *http.Request, name SkillName) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListWards List vault wards
+// (GET /api/wards)
+func (_ Unimplemented) ListWards(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetWard Read one ward (layout tree + lint findings)
+// (GET /api/wards/{name})
+func (_ Unimplemented) GetWard(w http.ResponseWriter, r *http.Request, name string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2785,6 +2984,46 @@ func (siw *ServerInterfaceWrapper) UpdateSkill(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// ListWards operation middleware
+func (siw *ServerInterfaceWrapper) ListWards(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListWards(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetWard operation middleware
+func (siw *ServerInterfaceWrapper) GetWard(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", chi.URLParam(r, "name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetWard(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
 
@@ -2950,6 +3189,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/agents", wrapper.ListAgents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/wards", wrapper.ListWards)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/wards/{name}", wrapper.GetWard)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/mcps", wrapper.ListMcps)

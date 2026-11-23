@@ -661,6 +661,40 @@ export async function listSchedules(): Promise<Schedule[]> {
   }
 }
 
+// --- Wards (read-only vault surface; getWard feeds the detail panel) ---
+
+export type WardSummary = components['schemas']['WardSummary'];
+export type Ward = components['schemas']['Ward'];
+export type WardNode = components['schemas']['WardNode'];
+export type WardFinding = components['schemas']['WardFinding'];
+
+export type WardRoster = { vaultRoot: string; wards: WardSummary[] };
+
+/** List the vault: roster + the resolved vault root (empty-state hint).
+ * Returns null on any failure — an unreachable vault is NOT an empty
+ * roster, and the UI must say which happened. */
+export async function listWards(): Promise<WardRoster | null> {
+  try {
+    const res = await fetch(`${BASE}/api/wards`);
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as { vault_root?: string; wards?: WardSummary[] } | null;
+    return { vaultRoot: body?.vault_root ?? '', wards: body?.wards ?? [] };
+  } catch {
+    return null;
+  }
+}
+
+/** Read one ward's detail (layout tree + findings); null when unknown. */
+export async function getWard(name: string): Promise<Ward | null> {
+  try {
+    const res = await fetch(`${BASE}/api/wards/${encodeURIComponent(name)}`);
+    if (!res.ok) return null;
+    return (await res.json().catch(() => null)) as Ward | null;
+  } catch {
+    return null;
+  }
+}
+
 export async function createSchedule(input: ScheduleInput): Promise<{ ok: boolean; error?: string }> {
   try {
     const res = await fetch(`${BASE}/api/schedules`, {

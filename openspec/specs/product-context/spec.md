@@ -8,7 +8,7 @@ Establishes `docs/product/product-context.md` as the single maintained source of
 
 ### Requirement: Product context document
 
-The repository SHALL maintain `docs/product/product-context.md` covering: what z-Bot is (a local-first, autonomous, goal-oriented multi-agent desktop system with a Go daemon and multiple lightweight clients), the target users, the core product concepts (daemon/client split, the swappable agent engine seam, compaction, the Timeline Tree, Code Wards, the filesystem control plane, and local-first memory), and explicit non-goals.
+The repository SHALL maintain `docs/product/product-context.md` covering: what z-Bot is (a local-first, autonomous, goal-oriented multi-agent desktop system with a Go daemon and multiple lightweight clients), the target users, the core product concepts (daemon/client split, the swappable agent engine seam, compaction, the Timeline Tree, wards/the ward vault, the filesystem control plane, and local-first memory), and explicit non-goals.
 
 #### Scenario: Product-level decision needs grounding
 

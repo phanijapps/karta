@@ -19,7 +19,7 @@ func newTestStore(t *testing.T, cfgProviders ...config.ProviderConfig) (*Store, 
 	t.Helper()
 	home := t.TempDir()
 	paths := config.NewPaths(home)
-	if err := config.Bootstrap(paths); err != nil {
+	if err := config.Bootstrap(context.Background(), paths); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.Default()

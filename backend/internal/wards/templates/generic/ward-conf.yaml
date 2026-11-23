@@ -1,0 +1,14 @@
+# Ward layout: generic freeform knowledge ward (Karta v1 trimmed tree).
+# Lint walks the ward's actual tree against these rules: a required node
+# with no match, an entry no rule matches, or a format mismatch are
+# findings. User-owned after seeding — edit freely, lint follows.
+archetype: generic
+layout:
+  kind: directory
+  children:
+    - { id: canonical, match: "{ward}.md", kind: file, format: markdown }
+    - { id: agent-instructions, match: AGENTS.md, kind: file, format: markdown }
+    - { id: log, match: log.md, kind: file, format: markdown }
+    - { id: pages, match: pages, kind: directory, required: false }
+    - { id: sources, match: sources, kind: directory, required: false }
+    - { id: outputs, match: outputs, kind: directory, required: false }

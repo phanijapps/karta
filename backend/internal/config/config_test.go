@@ -1,6 +1,8 @@
 package config
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -70,36 +72,46 @@ func TestResolveHomePrecedence(t *testing.T) {
 
 func TestBootstrapFirstRunCreatesStructureOnly(t *testing.T) {
 	_, paths := tempHome(t)
-	if err := Bootstrap(paths); err != nil {
+	if err := Bootstrap(context.Background(), paths); err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}
 
-	// Tree: config.yaml + five config dirs + data + wards.
+	// Tree: config.yaml + six config dirs + data (the ward vault is NOT
+	// part of the home — it lives outside ~/.zbot; see internal/wards).
 	if _, err := os.Stat(paths.ConfigFile); err != nil {
 		t.Fatalf("config.yaml missing: %v", err)
 	}
-	for _, dir := range append(paths.AllConfigDirs(), paths.DataDir, paths.WardsDir) {
+	for _, dir := range append(paths.AllConfigDirs(), paths.DataDir) {
 		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 			t.Fatalf("%s missing or not a dir: %v", dir, err)
 		}
 	}
-	// Structure, never content — the ONE exception: agents/ seeds two
-	// EXAMPLE agent definitions (add-engine-delegation; user-owned after
-	// first bootstrap). Every other registry dir stays empty.
+	// Structure, never content — the ONE exception is the EXAMPLE
+	// roster (seed-operator-roster): agents/ seeds six agent examples
+	// and config/skills/ seeds five prompt-craft skills (user-owned
+	// after first bootstrap; deleted examples do not resurrect). Every
+	// other registry dir stays empty.
 	for _, dir := range paths.AllConfigDirs() {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			t.Fatalf("ReadDir %s: %v", dir, err)
 		}
-		if dir == paths.AgentsDir {
-			if len(entries) != 2 {
-				t.Fatalf("agents seed count: %d", len(entries))
+		if dir == paths.ConfigDir("skills") {
+			if len(entries) != 5 {
+				t.Fatalf("skills seed count: %d", len(entries))
 			}
 			continue
 		}
 		if len(entries) != 0 {
 			t.Fatalf("%s seeded with content: %v", dir, entries)
 		}
+	}
+	agents, err := os.ReadDir(paths.AgentsDir)
+	if err != nil {
+		t.Fatalf("ReadDir %s: %v", paths.AgentsDir, err)
+	}
+	if len(agents) != 6 {
+		t.Fatalf("agents seed count: %d", len(agents))
 	}
 	// The default file parses back as the typed defaults.
 	cfg, err := Load(paths)
@@ -113,15 +125,15 @@ func TestBootstrapFirstRunCreatesStructureOnly(t *testing.T) {
 
 func TestBootstrapNeverOverwrites(t *testing.T) {
 	_, paths := tempHome(t)
-	if err := Bootstrap(paths); err != nil {
+	if err := Bootstrap(context.Background(), paths); err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}
 	// User edits their config.
-	user := "engine: custom\nserver:\n    address: 127.0.0.1:9999\ncompaction:\n    max_context_tokens: 1000\n    reserve_output_tokens: 100\nwards:\n    root: elsewhere\n"
+	user := "engine: custom\nserver:\n    address: 127.0.0.1:9999\ncompaction:\n    max_context_tokens: 1000\n    reserve_output_tokens: 100\nwards:\n    vault_root: ~/karta-wards\n"
 	if err := os.WriteFile(paths.ConfigFile, []byte(user), 0o644); err != nil {
 		t.Fatalf("write user config: %v", err)
 	}
-	if err := Bootstrap(paths); err != nil {
+	if err := Bootstrap(context.Background(), paths); err != nil {
 		t.Fatalf("second Bootstrap: %v", err)
 	}
 	got, _ := os.ReadFile(paths.ConfigFile)
@@ -132,11 +144,11 @@ func TestBootstrapNeverOverwrites(t *testing.T) {
 
 func TestBootstrapIdempotent(t *testing.T) {
 	_, paths := tempHome(t)
-	if err := Bootstrap(paths); err != nil {
+	if err := Bootstrap(context.Background(), paths); err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}
 	first, _ := os.ReadFile(paths.ConfigFile)
-	if err := Bootstrap(paths); err != nil {
+	if err := Bootstrap(context.Background(), paths); err != nil {
 		t.Fatalf("second Bootstrap: %v", err)
 	}
 	second, _ := os.ReadFile(paths.ConfigFile)
@@ -148,7 +160,7 @@ func TestBootstrapIdempotent(t *testing.T) {
 func TestLoadStrict(t *testing.T) {
 	t.Run("valid config loads", func(t *testing.T) {
 		_, paths := tempHome(t)
-		writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\n")
+		writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    vault_root: ~/Documents/wards\n")
 		cfg, err := Load(paths)
 		if err != nil {
 			t.Fatalf("Load: %v", err)
@@ -178,7 +190,7 @@ func TestLoadStrict(t *testing.T) {
 
 	t.Run("absent file rejected", func(t *testing.T) {
 		_, paths := tempHome(t)
-		if err := Bootstrap(paths); err != nil {
+		if err := Bootstrap(context.Background(), paths); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Remove(paths.ConfigFile); err != nil {
@@ -192,7 +204,7 @@ func TestLoadStrict(t *testing.T) {
 
 func TestLoadSelfHealsMissingDirs(t *testing.T) {
 	_, paths := tempHome(t)
-	if err := Bootstrap(paths); err != nil {
+	if err := Bootstrap(context.Background(), paths); err != nil {
 		t.Fatal(err)
 	}
 	// Delete two directories.
@@ -221,20 +233,43 @@ func TestLoadSelfHealsMissingDirs(t *testing.T) {
 	}
 }
 
-func TestWardsRootResolution(t *testing.T) {
-	_, paths := tempHome(t)
-	cfg := Default()
-	if got := cfg.WardsRoot(paths); got != filepath.Join(paths.Home, "wards") {
-		t.Fatalf("relative root not resolved: %s", got)
-	}
-	cfg.Wards.Root = "/abs/wards"
-	if got := cfg.WardsRoot(paths); got != "/abs/wards" {
-		t.Fatalf("absolute root not passed through: %s", got)
-	}
+func TestLoadWardsVaultRoot(t *testing.T) {
+	t.Run("vault_root loads verbatim (wards.ResolveVaultRoot resolves it)", func(t *testing.T) {
+		_, paths := tempHome(t)
+		writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    vault_root: ~/karta-wards\n")
+		cfg, err := Load(paths)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Wards.VaultRoot != "~/karta-wards" {
+			t.Fatalf("vault_root not loaded: %q", cfg.Wards.VaultRoot)
+		}
+	})
+
+	t.Run("deprecated default wards.root is ignored", func(t *testing.T) {
+		_, paths := tempHome(t)
+		writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: wards\n")
+		if _, err := Load(paths); err != nil {
+			t.Fatalf("old default root must be ignored, got: %v", err)
+		}
+	})
+
+	t.Run("customized deprecated wards.root errors with migration path", func(t *testing.T) {
+		_, paths := tempHome(t)
+		writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: elsewhere\n")
+		_, err := Load(paths)
+		var de *DeprecatedWardsRootError
+		if !errors.As(err, &de) {
+			t.Fatalf("want typed DeprecatedWardsRootError, got %T: %v", err, err)
+		}
+		if de.Value != "elsewhere" || !strings.Contains(err.Error(), "wards.vault_root") {
+			t.Fatalf("migration error must carry value + path: %+v %v", de, err)
+		}
+	})
 }
 
 func TestLoadProviders(t *testing.T) {
-	base := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\n"
+	base := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    vault_root: ~/Documents/wards\n"
 
 	t.Run("absent providers key loads as empty list", func(t *testing.T) {
 		_, paths := tempHome(t)
@@ -319,7 +354,7 @@ func TestLoadProviders(t *testing.T) {
 }
 
 func TestLoadProviderBoundaries(t *testing.T) {
-	base := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\n"
+	base := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    vault_root: ~/Documents/wards\n"
 
 	t.Run("name outside contract Id pattern rejected", func(t *testing.T) {
 		_, paths := tempHome(t)
@@ -364,7 +399,7 @@ func TestServerAddressBinds(t *testing.T) {
 func TestProvidersDirectoryBootstrapped(t *testing.T) {
 	home := t.TempDir()
 	paths := NewPaths(filepath.Join(home, "zbot"))
-	if err := Bootstrap(paths); err != nil {
+	if err := Bootstrap(context.Background(), paths); err != nil {
 		t.Fatal(err)
 	}
 	if info, err := os.Stat(paths.ProvidersDir); err != nil || !info.IsDir() {
@@ -386,7 +421,7 @@ func TestConfigYAMLRejectsKeyringMarker(t *testing.T) {
 	// config.yaml provider entries are environment-reference only; the
 	// api_key marker is rejected by strict decoding (unknown key).
 	_, paths := tempHome(t)
-	writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\nproviders:\n    - name: x\n      type: openai-compatible\n      base_url: http://localhost:1/v1\n      api_key: keyring\n")
+	writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    vault_root: ~/Documents/wards\nproviders:\n    - name: x\n      type: openai-compatible\n      base_url: http://localhost:1/v1\n      api_key: keyring\n")
 	_, err := Load(paths)
 	if err == nil || !strings.Contains(err.Error(), "api_key") {
 		t.Fatalf("want unknown-key error for api_key in config.yaml, got: %v", err)
@@ -395,7 +430,7 @@ func TestConfigYAMLRejectsKeyringMarker(t *testing.T) {
 
 func TestChittaProviderValidation(t *testing.T) {
 	base := func(chitta string) string {
-		content := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\n"
+		content := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    vault_root: ~/Documents/wards\n"
 		if chitta != "" {
 			content += chitta
 		}
@@ -439,7 +474,7 @@ func TestChittaProviderValidation(t *testing.T) {
 
 func TestChittaEmbeddingAdvancedConfig(t *testing.T) {
 	base := func(chitta string) string {
-		content := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\n"
+		content := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    vault_root: ~/Documents/wards\n"
 		if chitta != "" {
 			content += chitta
 		}
@@ -487,7 +522,7 @@ func TestChittaEmbeddingAdvancedConfig(t *testing.T) {
 
 func TestChittaRecallValidation(t *testing.T) {
 	base := func(recall string) string {
-		content := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    root: w\nchitta:\n    provider: local\n"
+		content := "engine: eino\nserver:\n    address: 127.0.0.1:1\ncompaction:\n    max_context_tokens: 10\n    reserve_output_tokens: 2\nwards:\n    vault_root: ~/Documents/wards\nchitta:\n    provider: local\n"
 		if recall != "" {
 			content += recall
 		}
@@ -531,7 +566,7 @@ func TestChittaRecallValidation(t *testing.T) {
 func TestBootstrapSeedsExampleAgents(t *testing.T) {
 	t.Parallel()
 	paths := NewPaths(t.TempDir())
-	if err := Bootstrap(paths); err != nil {
+	if err := Bootstrap(context.Background(), paths); err != nil {
 		t.Fatal(err)
 	}
 	dir := paths.AgentsDir
@@ -554,7 +589,7 @@ func TestBootstrapSeedsExampleAgents(t *testing.T) {
 	if err := os.WriteFile(owned, []byte("---\nname: research-agent\ndescription: mine now\n---\nBody."), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := Bootstrap(paths); err != nil {
+	if err := Bootstrap(context.Background(), paths); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(owned)
@@ -575,7 +610,7 @@ func TestBootstrapMigratesLegacyAgentsDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(legacy, "my-agent.md"), []byte("---\nname: my-agent\ndescription: mine\n---\nPrompt."), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := Bootstrap(paths); err != nil {
+	if err := Bootstrap(context.Background(), paths); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(paths.AgentsDir, "my-agent.md")); err != nil {
@@ -589,7 +624,7 @@ func TestBootstrapMigratesLegacyAgentsDir(t *testing.T) {
 	if err := os.WriteFile(owned, []byte("---\nname: my-agent\ndescription: edited\n---\nNew."), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := Bootstrap(paths); err != nil {
+	if err := Bootstrap(context.Background(), paths); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(owned)
@@ -604,7 +639,7 @@ func TestBootstrapMigratesLegacyAgentsOnExistingInstall(t *testing.T) {
 	t.Parallel()
 	paths := NewPaths(t.TempDir())
 	// Existing install: bootstrap once (seeds agents at the NEW home)...
-	if err := Bootstrap(paths); err != nil {
+	if err := Bootstrap(context.Background(), paths); err != nil {
 		t.Fatal(err)
 	}
 	// ...then simulate a LEGACY install: remove the new home and place
@@ -620,7 +655,7 @@ func TestBootstrapMigratesLegacyAgentsOnExistingInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	// config.yaml EXISTS → the old early-return path; migration must still run.
-	if err := Bootstrap(paths); err != nil {
+	if err := Bootstrap(context.Background(), paths); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(paths.AgentsDir, "old.md")); err != nil {

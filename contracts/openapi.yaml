@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: z-Bot Daemon API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     The local-first HTTP/SSE contract between the zbotd daemon and its
     clients (web UI, Wails desktop shell, Bubbletea CLI, future channels).
@@ -308,6 +308,80 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentList'
+
+  /api/wards:
+    get:
+      operationId: listWards
+      summary: List vault wards
+      description: |
+        Every ward directory in the ward vault (default ~/Documents/wards,
+        or the config `wards.vault_root` override — wards are user data
+        outside ~/.zbot), ordered by name: archetype, lint summary, and
+        the canonical page title when a canonical page exists.
+        Conf-less wards are valid freeform wards (archetype `generic`);
+        a ward whose ward-conf.yaml fails to parse lists with archetype
+        `unknown` and its findings carry the parse error. Read-only in
+        v1 — wards are created by agents (a later slice) or by hand;
+        the daemon never writes user files. The response also carries
+        the resolved vault root (the UI empty state points at it).
+      responses:
+        '200':
+          description: The ward roster.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WardList'
+        '500':
+          description: Vault I/O failure (indexed mid-scan, permissions).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: The ward vault is not wired (daemon wiring failure).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/wards/{name}:
+    get:
+      operationId: getWard
+      summary: Read one ward (layout tree + lint findings)
+      description: |
+        One ward's detail: the parsed ward-conf.yaml layout tree (node
+        ids, kinds, matches — `layout` is absent for conf-less or
+        unparseable-conffed wards) plus the full lint findings. These
+        node ids are the same ids the ward tool will inject as the
+        Active Ward Template (slice 3).
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 255
+      responses:
+        '200':
+          description: The ward detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ward'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          description: Vault I/O failure (indexed mid-scan, permissions).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: The ward vault is not wired (daemon wiring failure).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/mcps:
     get:
@@ -2087,6 +2161,146 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Agent'
+
+    WardList:
+      type: object
+      additionalProperties: false
+      required: [vault_root, wards]
+      properties:
+        vault_root:
+          type: string
+          maxLength: 2048
+          description: The resolved vault root (config `wards.vault_root`
+            override or the OS-aware ~/Documents/wards default). Paths are
+            bounded by the OS, not trimmed to fit.
+        wards:
+          type: array
+          items:
+            $ref: '#/components/schemas/WardSummary'
+
+    WardSummary:
+      type: object
+      additionalProperties: false
+      required: [name, archetype, lint_status, finding_count]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: The ward's directory name in the vault.
+        archetype:
+          type: string
+          maxLength: 64
+          description: >-
+            The conf's declared archetype; `generic` for conf-less
+            freeform wards, `unknown` when the conf fails to parse.
+            Convention: lowercase letters, digits, dashes.
+        lint_status:
+          type: string
+          enum: [clean, violations]
+        finding_count:
+          type: integer
+          minimum: 0
+          description: Lint findings against the ward's conf (0 = clean).
+        canonical_title:
+          type: string
+          maxLength: 256
+          description: The canonical page's title (first level-1 heading,
+            else the file name); absent when the ward has no canonical
+            page yet.
+
+    Ward:
+      type: object
+      additionalProperties: false
+      required: [name, archetype, lint_status, finding_count, findings]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        archetype:
+          type: string
+          maxLength: 64
+        lint_status:
+          type: string
+          enum: [clean, violations]
+        finding_count:
+          type: integer
+          minimum: 0
+        canonical_title:
+          type: string
+          maxLength: 256
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/WardFinding'
+        layout:
+          $ref: '#/components/schemas/WardNode'
+          description: The parsed ward-conf.yaml layout tree; absent for
+            conf-less wards and unparseable confs.
+
+    WardFinding:
+      type: object
+      additionalProperties: false
+      required: [kind, message]
+      properties:
+        kind:
+          type: string
+          enum: [missing_required, unexpected_entry, format_mismatch, invalid_conf]
+        node_id:
+          type: string
+          maxLength: 512
+          description: The conf node's id; absent when the finding has no
+            node (unexpected entries, invalid confs). Nodes without a
+            declared id are identified by their match pattern, so the
+            bound matches the match-pattern limit.
+        path:
+          type: string
+          maxLength: 1024
+          description: The offending location relative to the ward root;
+            for missing_required, the expected path. Pathologically deep
+            paths are clamped at emit.
+        message:
+          type: string
+          maxLength: 1024
+
+    WardNode:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        id:
+          type: string
+          maxLength: 128
+          description: Node id (findings and the API tree name nodes by
+            it; the canonical page node uses the id `canonical`).
+        kind:
+          type: string
+          enum: [file, directory]
+        match:
+          type: string
+          maxLength: 256
+          description: Glob match pattern for this node's entries; `{ward}`
+            expands to the ward's name. Empty on the root node.
+        required:
+          type: boolean
+          description: Default true — required nodes with no match are
+            findings.
+        repeat:
+          type: boolean
+          description: Default false — a non-repeatable node matching
+            multiple entries flags the extras.
+        format:
+          type: string
+          enum: [markdown, raw]
+          description: File nodes only; markdown expects .md files,
+            raw accepts any bytes.
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/WardNode'
+          description: Directory nodes only; the walk descends into each
+            matched directory.
 
     McpList:
       type: object

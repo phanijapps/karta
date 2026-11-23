@@ -1,9 +1,9 @@
 <script lang="ts">
   import { SquarePen, Folder, SlidersHorizontal, Settings, PanelLeftClose, MessageSquare, ChevronDown, CalendarClock } from '@lucide/svelte';
   import type { Sessions } from '../entities/session/session.svelte';
-  let { sessions, rail = false, ontoggle, onselect, onplaceholder, onsettings, onschedules }: {
+  let { sessions, rail = false, ontoggle, onselect, onplaceholder, onsettings, onschedules, onwards }: {
     sessions: Sessions; rail?: boolean; ontoggle: () => void; onselect: () => void;
-    onplaceholder: (name: string) => void; onsettings: () => void; onschedules: () => void;
+    onplaceholder: (name: string) => void; onsettings: () => void; onschedules: () => void; onwards: () => void;
   } = $props();
   
 </script>
@@ -12,7 +12,7 @@
   <div class="brand-row"><span class="wordmark" aria-hidden="true">K<span class="brand-text">arta</span></span><span class="sr-only">Karta</span><button class="icon-button collapse" onclick={ontoggle} aria-label="Collapse left sidebar"><PanelLeftClose size={18} /></button></div>
   <div class="primary">
     <button class="nav-row" onclick={onselect} title="Conversation"><SquarePen size={18} /><span>Conversation</span></button>
-    <button class="nav-row" onclick={() => onplaceholder('Code Wards')} title="Code Wards — coming soon"><Folder size={18} /><span>Code Wards</span><span class="todo">TODO</span></button>
+    <button class="nav-row" onclick={onwards} title="Wards — your documented-knowledge vault"><Folder size={18} /><span>Wards</span></button>
     <button class="nav-row" onclick={onschedules} title="Schedules"><CalendarClock size={18} /><span>Schedules</span></button>
     <button class="nav-row" onclick={() => onplaceholder('Configuration')} title="Configuration — coming soon"><SlidersHorizontal size={18} /><span>Configuration</span><span class="todo">TODO</span></button>
   </div>

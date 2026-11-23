@@ -40,6 +40,7 @@ type Server struct {
 	reg     *registry.Registry
 	prober  mcpclient.Prober
 	sched   ScheduleSource
+	wards   WardIndex
 	hub     *skillHub
 	version string
 }
@@ -53,11 +54,12 @@ type ChatService interface {
 }
 
 // New builds a server over the provider store, model catalog, and the
-// control-plane registry (MCP + skill management) with its MCP prober.
-// version lands in /healthz (zbotd injects its build version; "dev" in
-// development).
-func New(store *providers.Store, client *providers.Client, catalog *providers.Catalog, chatSvc ChatService, eng domain.AgentEngine, bus *eventbus.Bus, db *zbotstore.Store, reg *registry.Registry, prober mcpclient.Prober, sched ScheduleSource, version string) *Server {
-	return &Server{store: store, client: client, catalog: catalog, chat: chatSvc, engine: eng, bus: bus, db: db, reg: reg, prober: prober, sched: sched, version: version}
+// control-plane registry (MCP + skill management) with its MCP prober;
+// wardSvc serves the read-only ward vault surface (nil = 503 from those
+// handlers, e.g. tests that do not exercise them). version lands in
+// /healthz (zbotd injects its build version; "dev" in development).
+func New(store *providers.Store, client *providers.Client, catalog *providers.Catalog, chatSvc ChatService, eng domain.AgentEngine, bus *eventbus.Bus, db *zbotstore.Store, reg *registry.Registry, prober mcpclient.Prober, sched ScheduleSource, wardSvc WardIndex, version string) *Server {
+	return &Server{store: store, client: client, catalog: catalog, chat: chatSvc, engine: eng, bus: bus, db: db, reg: reg, prober: prober, sched: sched, wards: wardSvc, version: version}
 }
 
 // Routes mounts every contract operation (paths stay in lockstep with

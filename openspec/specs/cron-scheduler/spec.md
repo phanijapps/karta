@@ -57,7 +57,7 @@ expressions/names); `GET/PUT/DELETE /api/schedules/{name}` read, update
 ### Requirement: Schedules live in the main navigation
 
 The sidebar SHALL offer a Schedules destination (between Conversations
-and Code Wards) opening a Schedules page: schedule cards (name,
+and Wards) opening a Schedules page: schedule cards (name,
 expression, humanized cadence, next fire, goal, agent), create/edit with
 inline expression validation from the daemon's parser, delete with
 confirm, and an action opening the schedule's session timeline.

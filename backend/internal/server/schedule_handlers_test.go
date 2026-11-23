@@ -28,7 +28,7 @@ func newScheduleServer(t *testing.T) (*httptest.Server, *registry.Registry) {
 	dir := t.TempDir()
 	reg := registry.New()
 	reg.LoadAll(registry.Dirs{Schedules: dir})
-	srv := New(nil, nil, nil, nil, nil, nil, nil, reg, nil, fakeSched{}, "test")
+	srv := New(nil, nil, nil, nil, nil, nil, nil, reg, nil, fakeSched{}, nil, "test")
 	return httptest.NewServer(srv.Routes()), reg
 }
 

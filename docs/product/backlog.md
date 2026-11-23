@@ -72,12 +72,27 @@ and uses the wider MCP tool ecosystem safely.
 Sliced so each change is one session, independently valuable, and lands
 on the last. Slice 1's proposal is live in openspec/changes/add-ward-vault.
 
-### add-ward-vault — foundation (SLICE 1, proposal ready)
+### add-ward-vault — foundation (SLICE 1, IMPLEMENTED)
 
-Vault root outside ~/.zbot (config, default ~/karta-wards); internal/wards
-(schema parse, linter, archetype seeds generic+research); GET /api/wards
-read-only; Wards sidebar surface replacing the Code Wards placeholder.
-Constitution gets a scoped ~/.zbot exception for the user-chosen vault.
+Vault root outside ~/.zbot (config `wards.vault_root`, default OS-aware
+~/Documents/wards — the earlier ~/karta-wards idea was superseded during
+design); internal/wards (schema parse, linter, archetype seeds
+generic+research); GET /api/wards read-only; Wards sidebar surface
+replacing the retired Code Wards placeholder. Constitution carries a
+scoped ~/.zbot exception for the user-chosen vault.
+
+### seed-operator-roster — support change (IMPLEMENTED)
+
+Seeds the operator's portable content: five prompt-craft skills
+(clean-code, explain-like-socrates, humanizer, book-reader, eagle-eye;
+verbatim bodies, strict frontmatter) and a six-agent example roster
+(research, reviewer upgraded; planner, writing, builder,
+adversarial-reviewer added) tuned from `~/Documents/zbot`. Skills are
+registry-visible but INERT until slice 2 injects recommendations; the
+deferred ledger records what waits for the exec plane (slice 3:
+ddg/pdf/browser/yfinance/ppt/skill-creator + general-purpose agent) and
+wards (slice 3-4: spec-builder/plan-composer, ward clauses in agent
+prompts).
 
 ### add-intent-analysis — SLICE 2 (after 1; FULL ARTIFACTS READY)
 

@@ -59,7 +59,7 @@ type Channel interface {
 ### How Eino Wires Into These Seams
 
 - **`internal/engine/eino/`** implements `domain.AgentEngine` using Eino ADK (`adk.Runner`, `deep.New`, `WriteTodos`, `TaskTool`, `eino-ext` MCP tools, and `Skill` middleware).  
-- **Swapping Engines Later:** Implement `internal/engine/<new-engine>/` against `domain.AgentEngine` and flip `engine: eino` in `~/.zbot/config.yaml`. Your memory store, custom compactor, hooks, Code Wards, Timeline Tree, Svelte UI, and Bubbletea CLI remain untouched.
+- **Swapping Engines Later:** Implement `internal/engine/<new-engine>/` against `domain.AgentEngine` and flip `engine: eino` in `~/.zbot/config.yaml`. Your memory store, custom compactor, hooks, wards, Timeline Tree, Svelte UI, and Bubbletea CLI remain untouched.
 
 ---
 
@@ -110,7 +110,7 @@ zbot/
 │       │   ├── recall/              # Hybrid vector+BM25 search + graph expansion
 │       │   └── distillation/        # Async post-session transcript -> facts/entities
 │       ├── tools/                   # Ward-scoped FS/Shell backends, MCP bridge, Bridge Workers
-│       ├── wards/                   # Code Ward creation, naming, and path sandboxing
+│       ├── wards/                   # Ward vault: resolve, bootstrap, lint, read-only listing (vault lives outside ~/.zbot)
 │       ├── channels/                # Future Day-2 plugins (whatsapp/, signal/) via domain.Channel
 │       └── server/                  # net/http + chi + SSE handlers
 ├── frontend/                        # Snappy OpenWebUI-style SPA (Svelte 5 + TS + Vite)
@@ -138,10 +138,9 @@ zbot/
 
 ```
 ~/.zbot/
-├── config.yaml                      # Engine selection, LLM providers, token budgets, wards root
+├── config.yaml                      # Engine selection, LLM providers, token budgets, wards vault root
 ├── data/
 │   └── zbot.db                      # SQLite (sessions, timeline tree, sqlite-vec, FTS5, graph)
-├── wards/                           # Persistent Code Ward project directories
 └── config/
     ├── prompts/                     # *.md reusable system prompt templates
     ├── agents/                      # *.yaml specialist sub-agent definitions

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 
-// The Schedules main-area surface: sidebar row between Code Wards and
+// The Schedules main-area surface: sidebar row between Wards and
 // Configuration; CRUD with daemon-validated expressions.
 
 async function mockChat(page: Page) {

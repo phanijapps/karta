@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +20,7 @@ func TestDistillationHandlers(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(home, "config"), 0o755)
 
 	paths := config.NewPaths(home)
-	if err := config.Bootstrap(paths); err != nil {
+	if err := config.Bootstrap(context.Background(), paths); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.Default()

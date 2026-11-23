@@ -64,7 +64,7 @@ Logging SHALL provide log-level and diagnostics previews with explicit unavailab
 ### Requirement: Advanced configuration previews
 
 Advanced SHALL display clearly labeled engine, server address,
-compaction-budget, and wards-root previews associated with the
+compaction-budget, and wards vault-root previews associated with the
 existing configuration concepts. It SHALL distinguish existing
 concepts from proposed UI-only settings and disable actions requiring
 daemon mutation or filesystem access — **except the Distillation

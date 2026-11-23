@@ -11,7 +11,9 @@ templates, read-only listing.
 ### Requirement: The vault lives outside the daemon home
 
 The ward vault root SHALL be a user-configured path (default
-`~/karta-wards`) outside `~/.zbot`: wards are user data and documented
+OS-aware `~/Documents/wards`, recorded operator decision in design.md —
+the earlier `~/karta-wards` text was superseded during design) outside
+`~/.zbot`: wards are user data and documented
 knowledge, not daemon state. A missing vault directory SHALL be created
 empty on first bootstrap; user files inside are never modified by the
 vault machinery itself.

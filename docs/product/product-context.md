@@ -44,11 +44,18 @@ work out, all state inspectable and local.
 - **Timeline Tree** — the persistent, streaming record of every agent step,
   delegation, tool call, hook decision, and compaction event; the backbone of
   observability, streamed to all clients via SSE.
-- **Code Wards** — sandboxed project directories where agents do file/shell
-  work, with path sandboxing enforced by the ward layer.
-- **Filesystem control plane** — `~/.zbot/config/{prompts,agents,skills,hooks,mcps}`
-  plus `~/.zbot/config.yaml`: zero hardcoded agents or tools, hot-reloaded via
-  fsnotify. The user's files *are* the configuration.
+- **Wards** — the ward vault: user-owned directories of documented
+  knowledge OUTSIDE `~/.zbot` (default `~/Documents/wards`), each
+  self-describing via an optional `ward-conf.yaml` layout schema with a
+  linter; read-only in the UI today. (The old "Code Wards" sandboxed-
+  execution concept lives on as the slice-3 tool-plane direction:
+  ward-scoped execution with optional Docker isolation.)
+- **Filesystem control plane** — `~/.zbot/config/{prompts,skills,hooks,mcps}`,
+  the top-level `~/.zbot/agents/`, plus `~/.zbot/config.yaml`: zero hardcoded
+  agents or tools, hot-reloaded via fsnotify. The user's files *are* the
+  configuration. A fresh install seeds an example roster (six agent examples
+  + five prompt-craft skills, user-owned after first write) — examples, not
+  built-ins: delete or edit them freely.
 - **Claude Code–style hooks** — lifecycle hooks (`PreToolUse`, `PostToolUse`,
   `PreCompact`, `SessionStart`, `SessionEnd`, `SubagentStop`) with exit-code
   semantics (0 allow, 2 block, other non-zero warn-and-continue) that let the

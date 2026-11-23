@@ -15,7 +15,9 @@ var Subdirs = []string{"prompts", "skills", "hooks", "mcps", "schedules", "provi
 // ResolveHome resolves the z-Bot home root with strict precedence: a
 // non-empty flagOverride, then the ZBOT_HOME environment variable, then
 // ~/.zbot. The winner relocates the entire control plane (config.yaml,
-// config/**, data/, wards/) — there are no partial overrides.
+// config/**, data/) — there are no partial overrides. The ward vault is
+// NOT part of the home: it is user data outside ~/.zbot
+// (wards.ResolveVaultRoot).
 func ResolveHome(flagOverride string) (string, error) {
 	for _, candidate := range []string{flagOverride, os.Getenv("ZBOT_HOME")} {
 		if candidate != "" {
@@ -35,7 +37,6 @@ type Paths struct {
 	Home         string
 	ConfigFile   string
 	DataDir      string
-	WardsDir     string
 	ProvidersDir string
 	AgentsDir    string // ~/.zbot/agents — the agent roster's top-level home
 }
@@ -46,7 +47,6 @@ func NewPaths(home string) Paths {
 		Home:         home,
 		ConfigFile:   filepath.Join(home, "config.yaml"),
 		DataDir:      filepath.Join(home, "data"),
-		WardsDir:     filepath.Join(home, "wards"),
 		ProvidersDir: filepath.Join(home, "config", "providers"),
 		AgentsDir:    filepath.Join(home, "agents"),
 	}

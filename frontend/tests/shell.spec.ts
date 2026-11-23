@@ -99,8 +99,10 @@ test('sidebars, placeholders, responsive transitions and keyboard dismissal', as
   await expect(page.getByRole('button', { name: 'Toggle left sidebar' })).toHaveAttribute('aria-expanded', 'false');
   await expect(page.getByRole('heading', { name: 'A place for context' })).toBeVisible();
   await page.getByRole('button', { name: 'Toggle left sidebar' }).click();
-  await page.getByRole('button', { name: 'Code Wards', exact: false }).click();
-  await expect(page.getByRole('heading', { name: 'Code Wards' })).toBeVisible();
+  // The remaining placeholder surface is Configuration (the old Code
+  // Wards slot became the Wards surface — see tests/wards.spec.ts).
+  await page.getByRole('button', { name: 'Configuration', exact: false }).click();
+  await expect(page.getByRole('heading', { name: 'Configuration' })).toBeVisible();
   await page.getByRole('button', { name: 'Back to chat' }).click();
   for (const width of [375, 1024, 1440]) {
     await page.setViewportSize({ width, height: 812 });
