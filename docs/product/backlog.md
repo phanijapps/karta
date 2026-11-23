@@ -112,7 +112,11 @@ everywhere; config kill-switch. Artifacts: proposal/specs/design/tasks
 ### add-ward-hosting — SLICE 3 (after 1; parallel with 2)
 
 Ward tools for root agents (ward_use/ward_create with archetype);
-sticky ward per run; Active Ward Template injection (layout + digest,
+sticky ward per run; **a ward runs as its own specialized mini-bot —
+the ward's AGENTS.md/ward-agent prompt is the run's constitution**
+(operator direction): ward_create instantiates the mini bot from an
+archetype template, ward_use executes subsequent runs as that ward's
+agent. Active Ward Template injection (layout + digest,
 untrusted-data framing) into the run's agents INCLUDING children;
 ward-scoped file tools (read/write/list within the active ward only —
 Karta's first filesystem tool plane, bounded by the ward);

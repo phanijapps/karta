@@ -100,6 +100,18 @@ recall), knowledge (the ward).
   self-describing directory of **documented knowledge**, not daemon
   plumbing. A vault root configured in `config.yaml` (default e.g.
   `~/karta-wards/` or a user path); the daemon only points at it.
+- Intent analysis runs **BEFORE research mode** (pre-execution
+  middleware); once intent is captured, the agent picks between an
+  **existing ward** and **creating a new one**.
+- **A ward IS a mini specialized bot** — "stock analysis", "india
+  analysis", and so on: a reusable domain specialist, never a one-off
+  task container. When a run lands in a ward, it **runs as that
+  ward's own agent, with its own constitution** — the ward's
+  `AGENTS.md` (+ ward-agent prompt seeded from the archetype) is the
+  run's governing document, evolved by the ward's own work. Ward
+  hosting (slice 3) therefore means executing as the ward's agent,
+  not merely setting a working directory; ward creation means
+  instantiating the mini bot from an archetype.
 - Intent analysis decides: an **existing ward** that matches the domain
   → host the run there (sticky ward); no match → recommend/create with
   an archetype; trivial work → no ward.
