@@ -103,6 +103,24 @@ tasks:
     cmds:
       - pnpm dev
 
+  dev:backend:
+    desc: Live-reload zbotd (air) — edit Go, daemon restarts on :8787
+    dir: backend
+    env:
+      CGO_ENABLED: "1"
+    cmds:
+      - air -c .air.toml
+
+  dev:all:
+    desc: Dev stack — Vite HMR on :9245 + live-reloading zbotd on :8787 (Ctrl-C stops both)
+    cmds:
+      - |
+        cleanup() { kill 0 2>/dev/null || true; }
+        trap cleanup EXIT INT TERM
+        (cd frontend && pnpm dev) &
+        (cd backend && CGO_ENABLED=1 air -c .air.toml) &
+        wait
+
   check:frontend:
     desc: Check Svelte and TypeScript and build the static SPA
     dir: frontend

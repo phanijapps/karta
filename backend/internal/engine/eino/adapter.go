@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	einoopenai "github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
@@ -82,7 +83,7 @@ func New(provStore ProviderStore, st *store.Store, bus *eventbus.Bus, toolProv t
 		snapFn: snapFn, depthCap: DefaultDepthCap,
 		cancels: map[string]context.CancelFunc{},
 		models:  map[string]chatGenerator{},
-		idGen:   func() string { return fmt.Sprintf("evt-%d", nextID()) },
+		idGen:   func() string { return fmt.Sprintf("evt-%d-%d", time.Now().UnixNano(), nextID()) },
 		newModel: func(ctx context.Context, prov providers.Provider, token, modelID string) (chatGenerator, error) {
 			return einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
 				BaseURL: prov.BaseURL,
@@ -157,7 +158,7 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 	// Create/reuse session + root execution.
 	sessionID := req.SessionID
 	if sessionID == "" {
-		sessionID = "goal-" + fmt.Sprint(nextID())
+		sessionID = fmt.Sprintf("goal-%d-%d", time.Now().UnixNano(), nextID())
 	}
 	rootExec, err := a.st.EnsureSession(sessionID)
 	if err != nil {
@@ -281,7 +282,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 	// Append the goal as the opening user message.
 	var err error
 	_, err = a.st.Append(store.Message{
-		ID: fmt.Sprintf("msg-goal-%d", nextID()), SessionID: in.sessionID,
+		ID: fmt.Sprintf("msg-goal-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
 		ExecutionID: in.execID, Role: "user", Content: in.goal,
 	})
 	if err != nil {
@@ -393,7 +394,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 		if len(out.ToolCalls) == 0 {
 			// Final answer.
 			_, _ = a.st.Append(store.Message{
-				ID: fmt.Sprintf("msg-final-%d", nextID()), SessionID: in.sessionID,
+				ID: fmt.Sprintf("msg-final-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
 				ExecutionID: in.execID, Role: "assistant", Content: out.Content,
 				Provider: in.providerName, Model: in.modelID,
 			})
@@ -406,7 +407,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 		// Tool round: persist intent, execute, persist results.
 		intentJSON, _ := json.Marshal(out.ToolCalls)
 		_, _ = a.st.Append(store.Message{
-			ID: fmt.Sprintf("msg-intent-%d", nextID()), SessionID: in.sessionID,
+			ID: fmt.Sprintf("msg-intent-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
 			ExecutionID: in.execID, Role: "assistant", Content: out.Content,
 			ToolCalls: string(intentJSON), Provider: in.providerName, Model: in.modelID,
 		})
@@ -447,7 +448,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 			case <-ctx.Done():
 			}
 			_, _ = a.st.Append(store.Message{
-				ID: fmt.Sprintf("msg-tool-%d", nextID()), SessionID: in.sessionID,
+				ID: fmt.Sprintf("msg-tool-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
 				ExecutionID: in.execID, Role: "tool", Content: content,
 				ToolCallID: tc.ID, ToolName: tc.Function.Name,
 			})

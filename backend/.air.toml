@@ -1,0 +1,34 @@
+# Air config: live-reload zbotd for development. CGO is required
+# (chitta links LadybugDB); the daemon serves on :8787 and the Vite
+# dev server (:9245) proxies /api to it — edit Go, watch the reload,
+# refresh the UI.
+root = "."
+tmp_dir = "tmp/air"
+
+[build]
+cmd = "go build -o tmp/air/zbotd ./cmd/zbotd"
+bin = "tmp/air/zbotd"
+args_bin = []
+full_bin = "tmp/air/zbotd"
+delay = 500
+exclude_dir = ["tmp", "vendor", "node_modules", "internal/server/apigen", "third_party", "tools"]
+exclude_regex = ["_test\\.go$", ".*_test\\.go"]
+include_ext = ["go", "yaml", "md"]
+exclude_unchanged = true
+follow_symlink = true
+kill_delay = "2s"
+send_interrupt = true
+stop_on_error = true
+
+[log]
+time = true
+main_only = false
+
+[color]
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
+
+[misc]
+clean_on_exit = true
