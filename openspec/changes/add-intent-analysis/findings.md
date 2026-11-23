@@ -26,4 +26,18 @@ green; task gates:backend OK.
 
 ## Phase-2 gate — Resource index (2026-11-24)
 
-- PENDING.
+- gpt-6.1-terra: FAIL — 5×P1 + 1×P2 (all fixed below).
+- gpt-6.1-sol: FAIL — 4×P1 + P2s converging with terra (all fixed).
+
+| # | Pri | Finding (both unless noted) | Disposition |
+|---|-----|-----------------------------|-------------|
+| I10 | P1 | History limits above 100 silently clamp to 10 — reconciliation saw one tenth of the index | FIXED: cursor-walked pagination at pageLimit=100; >10-record test (the same trap bit the TEST helper first — tActive now walks too) |
+| I11 | P1 | One oversized Remember call (chitta caps batches at 64) failed whole rosters | FIXED: rememberBatched chunks at 64; 80-resource test |
+| I12 | P1 | MCP lifecycle broken: Sync retired ALL tools (wantEntries lacked them); IndexTools never reconciled (changed/vanished/empty probes) | FIXED: Sync reconciles skills+agents ONLY; IndexTools reconciles per server (change→revise, vanish→retire, empty→retire server); interleave tests |
+| I13 | P1 | Tombstones re-revised on every sync (not idempotent); removed-then-returned resources never revived (chitta ignores replayed content on superseded records) | FIXED: tombstones skipped in removal loops; REVIVAL revises the tombstone (Sync + IndexTools); idempotency + revival tests |
+| I14 | P1 (terra) | Reserved kinds leak: agents could read (recall/history) AND WRITE resource records | FIXED (reads landed mid-review: dropResourceHits/Records + leak test; writes now rejected: rejectResourceKinds + ToolRevise kind check + vet fix) |
+| I15 | P2 (both) | Task 2.1/2.2 verify clauses overclaimed (watch/boot wiring is group 3; design said 'deletions remove the record') | FIXED: design records tombstone+revival semantics and agent-invisibility; task 2.1 wording matches the actual guarantees |
+
+Verification after fixes: resourceindex + chitta green (incl. pagination,
+batch, lifecycle, revival, invisibility tests); golangci-lint 0; gates OK.
+Final reviewer re-verifies the batch (roster-change precedent).

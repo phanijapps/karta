@@ -106,7 +106,10 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 	if a.snapFn != nil {
 		snap = a.snapFn()
 	}
-	in := runInput{systemPrompt: systemPrompt, grant: a.depthCap}
+	in := runInput{systemPrompt: systemPrompt, grant: a.depthCap, maxSteps: req.MaxSteps}
+	if req.SystemPrompt != "" && req.Agent == "" {
+		in.systemPrompt = req.SystemPrompt // daemon-composed prompt (GoalRequest.SystemPrompt, json:"-")
+	}
 	if req.Agent != "" {
 		spec, ok := snap.Agents[req.Agent]
 		if !ok {
@@ -165,6 +168,7 @@ type runInput struct {
 	sessionID, execID, goal      string
 	providerName, modelID, token string
 	prov                         providers.Provider
+	maxSteps                     int // per-run bound (clamped to MaxSteps; 0 = default)
 
 	// Delegation wiring: agent-shaped runs and children.
 	systemPrompt string   // resolved system prompt (agent body or default)
@@ -270,7 +274,11 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 	// Bounded loop over the spike-verified Generate + WithTools.
 	var tokensIn, tokensOut int64
 	var childMsgs []*schema.Message // child's retained conversation (P1-2)
-	for step := 0; step < MaxSteps; step++ {
+	steps := in.maxSteps
+	if steps <= 0 || steps > MaxSteps {
+		steps = MaxSteps
+	}
+	for step := 0; step < steps; step++ {
 		if ctx.Err() != nil {
 			emit(domain.EventSession, "run cancelled")
 			_ = a.st.FinishExecution(in.execID, "cancelled", "", tokensIn, tokensOut)
@@ -324,7 +332,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 		// execution, not just the menu; the delegate tool is executable).
 		var opts []model.Option
 		var offered []tools.Tool
-		if step < MaxSteps-1 {
+		if step < steps-1 {
 			if in.toolAllow != nil && len(in.toolAllow) == 0 {
 				offered = nil // tools: [] is an EXPLICIT no-tools inventory
 			} else {

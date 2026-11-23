@@ -1731,7 +1731,7 @@ components:
     TimelineEventKind:
       type: string
       description: Mirrors the domain TimelineEventKind set.
-      enum: [session, agent_step, delegation, tool_call, hook_decision, compaction_triggered, chitta_tool_invoked, chat_delta]
+      enum: [session, agent_step, delegation, tool_call, hook_decision, compaction_triggered, chitta_tool_invoked, chat_delta, intent_analysis]
 
     TimelineEvent:
       type: object
@@ -1765,6 +1765,51 @@ components:
           $ref: '#/components/schemas/CompactionStats'
         chitta_tool_invoked:
           $ref: '#/components/schemas/ChittaToolInvokedPayload'
+        intent_analysis:
+          $ref: '#/components/schemas/IntentAnalysisPayload'
+
+    IntentAnalysisPayload:
+      type: object
+      description: One pre-execution intent analysis outcome for a root
+        goal run — analyzed (with the contract summary), bypassed
+        (trivial goal), or failed (non-fatal; the run proceeds).
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [analyzed, bypassed, failed]
+        reason:
+          type: string
+          maxLength: 1024
+          description: Why the analysis was bypassed or failed; absent
+            for a successful analysis.
+        primary_intent:
+          type: string
+          maxLength: 256
+        complexity:
+          type: string
+          enum: [S, M, L, XL]
+        step_budget:
+          type: integer
+          minimum: 1
+          description: The engine step budget derived from complexity.
+        approach:
+          type: string
+          enum: [simple, graph]
+        ward_action:
+          type: string
+          enum: [use_existing, create_new]
+        ward_name:
+          type: string
+          maxLength: 64
+        dropped:
+          type: array
+          description: Recommended names the runtime dropped because
+            they are not in the index (drop-and-warn).
+          items:
+            type: string
+            maxLength: 256
 
     ChittaToolInvokedPayload:
       type: object

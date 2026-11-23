@@ -59,6 +59,8 @@ var idCounter uint64
 
 // Service runs the chat exchange.
 type Service struct {
+	persona func() string // composed static system prompt (nil = none)
+
 	store     *store.Store
 	provider  func(name string) (providers.Provider, error)
 	resolve   CredentialResolver
@@ -81,6 +83,11 @@ func New(st *store.Store, providerLookup func(string) (providers.Provider, error
 	}
 	return &Service{store: st, provider: providerLookup, resolve: resolve, completer: completer, toolProv: toolProv, bus: bus, idGen: idGen}
 }
+
+// SetPersona wires the composed system prompt (static sections only —
+// chat is never analyzed and never provisioned skills). Nil restores
+// the pre-composition behavior (no persona message).
+func (s *Service) SetPersona(fn func() string) { s.persona = fn }
 
 // SendOutcome is a send's result: the appended rows on success, or the
 // typed failure with the persisted user row and cursor.
@@ -160,6 +167,12 @@ func (s *Service) runExchange(ctx context.Context, text, providerName, model str
 		return fail(err)
 	}
 	messages := windowToChatMessages(hw)
+	if s.persona != nil {
+		if p := s.persona(); p != "" {
+			// Persona first: identity precedes any compaction summary.
+			messages = append([]providers.ChatMessage{{Role: "system", Content: p}}, messages...)
+		}
+	}
 	var usage providers.ChatUsage
 
 	complete := func(ctx context.Context, messages []providers.ChatMessage, offered []providers.ChatToolDef) (providers.ChatResponse, error) {

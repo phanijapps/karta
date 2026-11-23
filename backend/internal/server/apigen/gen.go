@@ -218,6 +218,87 @@ func (e HookAction) Valid() bool {
 	}
 }
 
+// Defines values for IntentAnalysisPayloadApproach.
+const (
+	Graph  IntentAnalysisPayloadApproach = "graph"
+	Simple IntentAnalysisPayloadApproach = "simple"
+)
+
+// Valid indicates whether the value is a known member of the IntentAnalysisPayloadApproach enum.
+func (e IntentAnalysisPayloadApproach) Valid() bool {
+	switch e {
+	case Graph:
+		return true
+	case Simple:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IntentAnalysisPayloadComplexity.
+const (
+	L  IntentAnalysisPayloadComplexity = "L"
+	M  IntentAnalysisPayloadComplexity = "M"
+	S  IntentAnalysisPayloadComplexity = "S"
+	XL IntentAnalysisPayloadComplexity = "XL"
+)
+
+// Valid indicates whether the value is a known member of the IntentAnalysisPayloadComplexity enum.
+func (e IntentAnalysisPayloadComplexity) Valid() bool {
+	switch e {
+	case L:
+		return true
+	case M:
+		return true
+	case S:
+		return true
+	case XL:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IntentAnalysisPayloadStatus.
+const (
+	IntentAnalysisPayloadStatusAnalyzed IntentAnalysisPayloadStatus = "analyzed"
+	IntentAnalysisPayloadStatusBypassed IntentAnalysisPayloadStatus = "bypassed"
+	IntentAnalysisPayloadStatusFailed   IntentAnalysisPayloadStatus = "failed"
+)
+
+// Valid indicates whether the value is a known member of the IntentAnalysisPayloadStatus enum.
+func (e IntentAnalysisPayloadStatus) Valid() bool {
+	switch e {
+	case IntentAnalysisPayloadStatusAnalyzed:
+		return true
+	case IntentAnalysisPayloadStatusBypassed:
+		return true
+	case IntentAnalysisPayloadStatusFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IntentAnalysisPayloadWardAction.
+const (
+	CreateNew   IntentAnalysisPayloadWardAction = "create_new"
+	UseExisting IntentAnalysisPayloadWardAction = "use_existing"
+)
+
+// Valid indicates whether the value is a known member of the IntentAnalysisPayloadWardAction enum.
+func (e IntentAnalysisPayloadWardAction) Valid() bool {
+	switch e {
+	case CreateNew:
+		return true
+	case UseExisting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for McpTransportsKind.
 const (
 	McpTransportsKindHttp  McpTransportsKind = "http"
@@ -679,6 +760,7 @@ const (
 	TimelineEventKindCompactionTriggered TimelineEventKind = "compaction_triggered"
 	TimelineEventKindDelegation          TimelineEventKind = "delegation"
 	TimelineEventKindHookDecision        TimelineEventKind = "hook_decision"
+	TimelineEventKindIntentAnalysis      TimelineEventKind = "intent_analysis"
 	TimelineEventKindSession             TimelineEventKind = "session"
 	TimelineEventKindToolCall            TimelineEventKind = "tool_call"
 )
@@ -697,6 +779,8 @@ func (e TimelineEventKind) Valid() bool {
 	case TimelineEventKindDelegation:
 		return true
 	case TimelineEventKindHookDecision:
+		return true
+	case TimelineEventKindIntentAnalysis:
 		return true
 	case TimelineEventKindSession:
 		return true
@@ -1000,6 +1084,37 @@ type HookDecision struct {
 
 // Id defines model for Id.
 type Id = string
+
+// IntentAnalysisPayload One pre-execution intent analysis outcome for a root goal run — analyzed (with the contract summary), bypassed (trivial goal), or failed (non-fatal; the run proceeds).
+type IntentAnalysisPayload struct {
+	Approach   *IntentAnalysisPayloadApproach   `json:"approach,omitempty"`
+	Complexity *IntentAnalysisPayloadComplexity `json:"complexity,omitempty"`
+
+	// Dropped Recommended names the runtime dropped because they are not in the index (drop-and-warn).
+	Dropped       *[]string `json:"dropped,omitempty"`
+	PrimaryIntent *string   `json:"primary_intent,omitempty"`
+
+	// Reason Why the analysis was bypassed or failed; absent for a successful analysis.
+	Reason *string                     `json:"reason,omitempty"`
+	Status IntentAnalysisPayloadStatus `json:"status"`
+
+	// StepBudget The engine step budget derived from complexity.
+	StepBudget *int                             `json:"step_budget,omitempty"`
+	WardAction *IntentAnalysisPayloadWardAction `json:"ward_action,omitempty"`
+	WardName   *string                          `json:"ward_name,omitempty"`
+}
+
+// IntentAnalysisPayloadApproach defines model for IntentAnalysisPayload.Approach.
+type IntentAnalysisPayloadApproach string
+
+// IntentAnalysisPayloadComplexity defines model for IntentAnalysisPayload.Complexity.
+type IntentAnalysisPayloadComplexity string
+
+// IntentAnalysisPayloadStatus defines model for IntentAnalysisPayload.Status.
+type IntentAnalysisPayloadStatus string
+
+// IntentAnalysisPayloadWardAction defines model for IntentAnalysisPayload.WardAction.
+type IntentAnalysisPayloadWardAction string
 
 // Mcp defines model for Mcp.
 type Mcp struct {
@@ -1511,6 +1626,9 @@ type TimelineEvent struct {
 	Delegation        *DelegationPayload        `json:"delegation,omitempty"`
 	Hook              *HookDecision             `json:"hook,omitempty"`
 	Id                Id                        `json:"id"`
+
+	// IntentAnalysis One pre-execution intent analysis outcome for a root goal run — analyzed (with the contract summary), bypassed (trivial goal), or failed (non-fatal; the run proceeds).
+	IntentAnalysis *IntentAnalysisPayload `json:"intent_analysis,omitempty"`
 
 	// Kind Mirrors the domain TimelineEventKind set.
 	Kind      TimelineEventKind `json:"kind"`

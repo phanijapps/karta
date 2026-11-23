@@ -11,7 +11,10 @@ import (
 type SkillSpec struct {
 	Name        string
 	Description string
-	Path        string // the skill directory
+	// Body is the SKILL.md content after the frontmatter — what runtime
+	// provisioning inlines into ## Skills (intent middleware).
+	Body string
+	Path string // the skill directory
 	// Origin is derived at load: `marketplace`/`import` when a valid
 	// .karta/provenance.yaml sidecar exists, `local` otherwise (local
 	// is also the degradation for a malformed sidecar). Source is the
@@ -87,6 +90,7 @@ func loadSkills(snap *Snapshot, dir string, errs *[]LoadError) {
 		}
 		spec.Name = fmName
 		spec.Description = fmDesc
+		_, _, spec.Body, _ = ParseSkillMD(string(raw)) //nolint:errcheck // perr already checked above on the same raw
 		spec.Path = skillDir
 		applyProvenance(&spec, skillDir)
 		if existing, dup := snap.Skills[spec.Name]; dup {

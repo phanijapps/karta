@@ -1001,7 +1001,7 @@ export interface components {
          * @description Mirrors the domain TimelineEventKind set.
          * @enum {string}
          */
-        TimelineEventKind: "session" | "agent_step" | "delegation" | "tool_call" | "hook_decision" | "compaction_triggered" | "chitta_tool_invoked" | "chat_delta";
+        TimelineEventKind: "session" | "agent_step" | "delegation" | "tool_call" | "hook_decision" | "compaction_triggered" | "chitta_tool_invoked" | "chat_delta" | "intent_analysis";
         TimelineEvent: {
             id: components["schemas"]["Id"];
             session_id: components["schemas"]["Id"];
@@ -1016,6 +1016,26 @@ export interface components {
             hook?: components["schemas"]["HookDecision"];
             compaction?: components["schemas"]["CompactionStats"];
             chitta_tool_invoked?: components["schemas"]["ChittaToolInvokedPayload"];
+            intent_analysis?: components["schemas"]["IntentAnalysisPayload"];
+        };
+        /** @description One pre-execution intent analysis outcome for a root goal run — analyzed (with the contract summary), bypassed (trivial goal), or failed (non-fatal; the run proceeds). */
+        IntentAnalysisPayload: {
+            /** @enum {string} */
+            status: "analyzed" | "bypassed" | "failed";
+            /** @description Why the analysis was bypassed or failed; absent for a successful analysis. */
+            reason?: string;
+            primary_intent?: string;
+            /** @enum {string} */
+            complexity?: "S" | "M" | "L" | "XL";
+            /** @description The engine step budget derived from complexity. */
+            step_budget?: number;
+            /** @enum {string} */
+            approach?: "simple" | "graph";
+            /** @enum {string} */
+            ward_action?: "use_existing" | "create_new";
+            ward_name?: string;
+            /** @description Recommended names the runtime dropped because they are not in the index (drop-and-warn). */
+            dropped?: string[];
         };
         /** @description One chitta tool invocation (memory_* / knowledge_* tools) — the observable heartbeat of the chitta capability. */
         ChittaToolInvokedPayload: {

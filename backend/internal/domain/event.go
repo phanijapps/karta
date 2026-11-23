@@ -24,6 +24,10 @@ const (
 	// EventChittaToolInvoked — one chitta tool call (memory_*/knowledge_*),
 	// success or failure — every chitta operation is observable.
 	EventChittaToolInvoked TimelineEventKind = "chitta_tool_invoked"
+
+	// EventIntentAnalysis carries one pre-execution intent analysis
+	// outcome (analyzed / bypassed / failed) for a root goal run.
+	EventIntentAnalysis TimelineEventKind = "intent_analysis"
 	// EventChatDelta — a VOLATILE streamed chat fragment (reasoning or
 	// content) during a send; ephemeral typing notification, never
 	// persisted to the timeline (the persisted rows are the truth).
@@ -52,7 +56,37 @@ type TimelineEvent struct {
 	// ChittaToolInvoked carries one chitta tool invocation's observability
 	// record (tool, outcome, affected ids, host provenance).
 	ChittaToolInvoked *ChittaToolInvokedPayload `json:"chitta_tool_invoked,omitempty"`
+	// IntentAnalysis carries the pre-execution analysis outcome
+	// (exactly one of analyzed/bypassed/failed).
+	IntentAnalysis *IntentAnalysisPayload `json:"intent_analysis,omitempty"`
 }
+
+// IntentAnalysisPayload details one pre-execution intent analysis. A
+// failed analysis is NON-FATAL: the run proceeds without one and
+// Reason says why.
+type IntentAnalysisPayload struct {
+	Status        IntentAnalysisStatus `json:"status"`
+	Reason        string               `json:"reason,omitempty"`
+	PrimaryIntent string               `json:"primary_intent,omitempty"`
+	Complexity    IntentComplexity     `json:"complexity,omitempty"`
+	StepBudget    int                  `json:"step_budget,omitempty"`
+	Approach      ExecutionApproach    `json:"approach,omitempty"`
+	WardAction    WardAction           `json:"ward_action,omitempty"`
+	WardName      string               `json:"ward_name,omitempty"`
+	Dropped       []string             `json:"dropped,omitempty"`
+}
+
+// IntentAnalysisStatus is the analysis outcome.
+type IntentAnalysisStatus string
+
+const (
+	// IntentStatusAnalyzed marks a successful analysis.
+	IntentStatusAnalyzed IntentAnalysisStatus = "analyzed"
+	// IntentStatusBypassed marks a trivial goal (deterministic router).
+	IntentStatusBypassed IntentAnalysisStatus = "bypassed"
+	// IntentStatusFailed marks a non-fatal analysis failure.
+	IntentStatusFailed IntentAnalysisStatus = "failed"
+)
 
 // ChittaToolInvokedPayload details one chitta tool call. Publication is
 // best-effort; a failed publication never fails the tool call.

@@ -51,19 +51,19 @@
 
 ## 3. Middleware + engine plumbing
 
-- [ ] 3.1 The daemon-layer wrapper: router → analysis (resource context
+- [x] 3.1 The daemon-layer wrapper: router → analysis (resource context
   in, contract out) → inject `## Task Analysis` (with fast-path/graph
   instructions per approach) → RunGoal with the complexity step budget;
   children and chat untouched. Verify: wrapper tests against the fake
   engine (bypass, analyzed, degraded — prompt section + budget asserted).
-- [ ] 3.2 Engine: `maxSteps` run input (default unchanged); the
+- [x] 3.2 Engine: `maxSteps` run input (default unchanged); the
   conformance suite gains the budget-override scenario (advisory).
   Verify: adapter tests (budget respected) + suite green.
-- [ ] 3.3 Events + persistence: IntentAnalysisStarted/Complete/Bypass/
+- [x] 3.3 Events + persistence: IntentAnalysisStarted/Complete/Bypass/
   Failed emitted and the result on the execution record. Verify: event
   tests (all four paths; rule 4 holds).
 
-- [ ] 3.4 Composition wired into both surfaces: chat prepends the
+- [x] 3.4 Composition wired into both surfaces: chat prepends the
   composed static sections as the system message (no dynamic sections
   in chat this change); the goal wrapper composes static + `## Context`
   (chitta recall: memory + knowledge graph, fused) + `## Task Analysis`

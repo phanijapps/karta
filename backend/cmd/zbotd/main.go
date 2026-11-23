@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 	"zbot/backend/chitta"
@@ -35,6 +36,9 @@ import (
 	"zbot/backend/internal/wards"
 
 	einoengine "zbot/backend/internal/engine/eino"
+	"zbot/backend/internal/intent"
+	"zbot/backend/internal/resourceindex"
+	"zbot/backend/internal/sysprompt"
 	"zbot/backend/internal/tools"
 )
 
@@ -166,10 +170,99 @@ func run(ctx context.Context, homeFlag string) error {
 
 	chatSvc := chat.NewStoreBacked(db, provStore, providers.NewChatClient(), allTools, bus, nil)
 
+	// Ward vault: user data OUTSIDE ~/.zbot (default ~/Documents/wards,
+	// config wards.vault_root override). Bootstrap creates it and seeds
+	// the archetype templates write-once; the daemon then only reads it.
+	vaultRoot, err := wards.ResolveVaultRoot(cfg.Wards.VaultRoot, home)
+	if err != nil {
+		return err // names config.yaml: wards.vault_root and the reason
+	}
+	if err := wards.Bootstrap(ctx, vaultRoot); err != nil {
+		return fmt.Errorf("ward vault bootstrap: %w", err)
+	}
+	wardVault, err := wards.Open(ctx, vaultRoot)
+	if err != nil {
+		return fmt.Errorf("ward vault open: %w", err)
+	}
+
+	// Composed system prompt: static sections for BOTH surfaces (chat
+	// is static-only; goal runs add dynamic sections in the wrapper).
+	composePersona := func() (string, error) {
+		return sysprompt.Compose(cfg.SystemPrompt, reg.Snapshot())
+	}
+	chatSvc.SetPersona(func() string {
+		p, err := composePersona()
+		if err != nil {
+			log.Printf("zbotd: composed prompt broken: %v", err)
+			return "" // chat degrades to the pre-composition behavior; goals fail loud in the wrapper
+		}
+		return p
+	})
+
+	// Resource index: registry snapshot + probed MCP tools → chitta
+	// reserved kinds; reconciled on boot and on every registry change.
+	resIndex := &resourceindex.Indexer{
+		Sys:  chittaSys,
+		Host: domain.ChittaHostContext{Source: domain.SourceDistiller, AgentID: "resource-index"},
+	}
+	if err := resIndex.Sync(ctx, reg.Snapshot()); err != nil {
+		log.Printf("zbotd: resource index boot sync failed: %v", err)
+	}
+
 	// Engine: eino adapter over the provider plane + store + builtins.
 	// Engine: eino adapter over the provider plane + store + builtins;
 	// the registry snapshot supplies agent definitions (delegation).
 	eng := einoengine.New(provStore, db, bus, allTools, reg.Snapshot)
+
+	// Intent middleware wraps the engine for ROOT goal runs (router →
+	// analysis → composed prompt + step budget; children/chat/Resume
+	// pass through). Disabled by config → the plain engine.
+	runEngine := domain.AgentEngine(eng)
+	if cfg.Intent.Enabled {
+		// The analysis model: cfg intent_analysis.model as "provider/model"
+		// when set; otherwise the completer's default provider (absent
+		// one, analysis degrades non-fatally with the reason in the event).
+		var analysisProvider, analysisModel string
+		if cfg.Intent.Model != "" {
+			analysisProvider, analysisModel, _ = strings.Cut(cfg.Intent.Model, "/")
+		}
+		runEngine = &intent.Wrapper{
+			Engine: eng,
+			Analyzer: &intent.Analyzer{
+				Completer: llmCaller{provStore, providers.NewChatClient()},
+				Snapshot:  reg.Snapshot,
+				Provider:  analysisProvider,
+				Model:     analysisModel,
+			},
+			Snapshot: reg.Snapshot,
+			Wards: func() []intent.WardInfo {
+				infos, err := wardVault.Index(ctx)
+				if err != nil {
+					return nil
+				}
+				out := make([]intent.WardInfo, len(infos))
+				for i, wi := range infos {
+					out[i] = intent.WardInfo{Name: wi.Name, Scope: wi.CanonicalTitle}
+				}
+				return out
+			},
+			RecallFn: func(ctx context.Context, goal string) ([]string, []string) {
+				page, err := chittaSys.Recall(ctx, domain.RecallRequest{Query: goal, Limit: 8}, domain.ChittaHostContext{Source: domain.SourceAgent, AgentID: "root"})
+				if err != nil {
+					return nil, nil
+				}
+				var lines []string
+				for _, h := range page.Items {
+					if h.Record.Kind.IsResourceKind() {
+						continue
+					}
+					lines = append(lines, h.Record.Content)
+				}
+				return lines, nil
+			},
+			Cfg: intent.Config{Enabled: cfg.Intent.Enabled, ComposePersona: composePersona},
+		}
+	}
 
 	// Model catalog: load persisted entries (no provider requests), then
 	// persist every future refresh so restarts keep the catalog warm.
@@ -202,24 +295,9 @@ func run(ctx context.Context, homeFlag string) error {
 		server.SetExposedBind(exposed)
 	}
 
-	// Ward vault: user data OUTSIDE ~/.zbot (default ~/Documents/wards,
-	// config wards.vault_root override). Bootstrap creates it and seeds
-	// the archetype templates write-once; the daemon then only reads it.
-	vaultRoot, err := wards.ResolveVaultRoot(cfg.Wards.VaultRoot, home)
-	if err != nil {
-		return err // names config.yaml: wards.vault_root and the reason
-	}
-	if err := wards.Bootstrap(ctx, vaultRoot); err != nil {
-		return fmt.Errorf("ward vault bootstrap: %w", err)
-	}
-	wardVault, err := wards.Open(ctx, vaultRoot)
-	if err != nil {
-		return fmt.Errorf("ward vault open: %w", err)
-	}
-
 	// Scheduler: cron-fired goal runs over the registry + engine.
 	sched := scheduler.New(reg, eng, bus, func() string { return fmt.Sprintf("evt-sched-%d", time.Now().UnixNano()) }, nil, filepath.Join(paths.DataDir, "scheduler-state.json"))
-	daemonSrv := server.New(provStore, providers.NewClient(), catalog, chatSvc, eng, bus, db, reg, mcpclient.GoSDKProber{}, sched, wardVault, version)
+	daemonSrv := server.New(provStore, providers.NewClient(), catalog, chatSvc, runEngine, bus, db, reg, mcpclient.GoSDKProber{}, sched, wardVault, version)
 	daemonSrv.SetSkillHub(skillhub.NewHTTPIndexClient(), skillhub.NewGitHubRepoFetcher(), skillStore)
 
 	srv := &http.Server{
@@ -241,7 +319,7 @@ func run(ctx context.Context, homeFlag string) error {
 		Run(ctx)
 
 	// Registry hot-reload: external config edits land without a restart.
-	if _, err := reg.Watch(ctx, registry.Dirs{
+	watcher, err := reg.Watch(ctx, registry.Dirs{
 		Prompts:    paths.ConfigDir("prompts"),
 		Agents:     paths.AgentsDir,
 		Skills:     paths.ConfigDir("skills"),
@@ -249,9 +327,17 @@ func run(ctx context.Context, homeFlag string) error {
 		MCPs:       paths.ConfigDir("mcps"),
 		Schedules:  paths.ConfigDir("schedules"),
 		ConfigFile: paths.ConfigFile,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("registry watch: %w", err)
 	}
+	// Resource index follows the registry: every change reconciles the
+	// skill/agent records (MCP tools follow probes, task 3.1 wiring).
+	watcher.OnChange(func(registry.Change) {
+		if err := resIndex.Sync(ctx, reg.Snapshot()); err != nil {
+			log.Printf("zbotd: resource index sync failed: %v", err)
+		}
+	})
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()

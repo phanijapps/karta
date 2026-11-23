@@ -34,6 +34,14 @@ type GoalRequest struct {
 	// Context carries prior conversation messages into the run, when resuming
 	// history client-side.
 	Context []Message `json:"context,omitempty"`
+	// MaxSteps optionally bounds this run's model calls (advisory: 0 =
+	// the engine default; values above the engine's hard cap clamp to
+	// it). The intent middleware sets it from the analysis complexity.
+	MaxSteps int `json:"max_steps,omitempty"`
+	// SystemPrompt overrides the ROOT run's system prompt. json:"-":
+	// it is daemon-only wiring (the intent middleware's composed
+	// prompt) — never client input, never contract-visible.
+	SystemPrompt string `json:"-"`
 }
 
 // UserInput is a user turn delivered to a waiting session.
