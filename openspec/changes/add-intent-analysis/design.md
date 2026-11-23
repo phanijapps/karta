@@ -120,7 +120,10 @@ system_prompt:
 
 Assembly order: Role, Soul, OS, Tools, Custom — then DYNAMIC sections
 appended by machinery at run time, per surface: `## Context` (chitta
-recall — chat and goal runs), `## Task Analysis` (this change's
+recall — BOTH chitta domains for goal runs: memory records AND the
+knowledge graph, fused through the existing Recall seam
+keyword+vector+graph; chat recalls memory), `## Task Analysis` (this
+change's
 middleware — GOAL RUNS ONLY: simple chat, the single-session
 conversation, never goes through intent analysis), `## Skills` (the
 provisioned skills — intent-recommended, index-validated bodies
