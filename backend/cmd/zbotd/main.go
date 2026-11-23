@@ -24,6 +24,8 @@ import (
 	"zbot/backend/distiller"
 	"zbot/backend/internal/domain"
 
+	einoengine "zbot/backend/internal/engine/eino"
+
 	"zbot/backend/internal/chat"
 	"zbot/backend/internal/config"
 	"zbot/backend/internal/eventbus"
@@ -35,9 +37,7 @@ import (
 	"zbot/backend/internal/skillhub"
 	zbotstore "zbot/backend/internal/store"
 	"zbot/backend/internal/wards"
-	"zbot/backend/internal/wardtools"
 
-	einoengine "zbot/backend/internal/engine/eino"
 	"zbot/backend/internal/intent"
 	"zbot/backend/internal/resourceindex"
 	"zbot/backend/internal/sysprompt"
@@ -196,39 +196,23 @@ func run(ctx context.Context, homeFlag string) error {
 	// errors before the model call) — chat never runs persona-less.
 	chatSvc.SetPersona(composePersona)
 
-	// The chat IS the research surface (operator direction): the ward
-	// tool plane (index + structural + file tools) mounts on every
-	// exchange, with ONE sticky host for the chat session, and the
-	// Active Ward section composes onto the prompt when a ward is
-	// entered — the conversation absorbs the ward's constitution.
-	chatWardHost := wardtools.NewHost(wardVault)
-	chatSvc.SetExtraTools(func() []tools.Tool { return wardtools.ChatToolSet(chatWardHost) })
-	chatSvc.SetActiveWard(func() string {
-		view := chatWardHost.Active()
-		if view == nil {
-			return ""
-		}
-		return strings.Replace(wardtools.Packet(view), "ACTIVE WARD:", "## Active Ward\n", 1)
-	})
-
-	// Resource index: registry snapshot + probed MCP tools → chitta
-	// reserved kinds; reconciled on boot and on every registry change.
-	resIndex := &resourceindex.Indexer{
-		Sys:  chittaSys,
-		Host: domain.ChittaHostContext{Source: domain.SourceDistiller, AgentID: "resource-index"},
-	}
-	// (Boot sync runs through the coalescing worker's initial signal at
-	// the watcher wiring below — one startup sync, no seam gap.)
-
-	// Engine: eino adapter over the provider plane + store + builtins.
 	// Engine: eino adapter over the provider plane + store + builtins;
 	// the registry snapshot supplies agent definitions (delegation).
 	eng := einoengine.New(provStore, db, bus, allTools, reg.Snapshot)
-
 	// Ward hosting (slice 3): root goal runs gain the ward tool plane
 	// (ward_use/ward_create + ward-scoped file tools) with a sticky
 	// per-session active ward.
 	eng.SetWardVault(func() *wards.Vault { return wardVault })
+
+	// Resource index: registry snapshot + probed MCP tools → chitta
+	// reserved kinds; reconciled on boot (the coalescing worker's
+	// initial signal) and on every registry change.
+	resIndex := &resourceindex.Indexer{
+		Sys:  chittaSys,
+		Host: domain.ChittaHostContext{Source: domain.SourceDistiller, AgentID: "resource-index"},
+	}
+
+	wireChatWardPlane(chatSvc, wardVault)
 
 	// Intent middleware wraps the engine for ROOT goal runs (router →
 	// analysis → composed prompt + step budget; children/chat/Resume
