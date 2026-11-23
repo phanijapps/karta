@@ -81,8 +81,9 @@ work); ward machinery.
 
 ## Migration Plan
 
-Bootstrap-ordered: ensureDirs (new roots) → legacy migration (rename
-up, skip conflicts) → seeds (skill walk at the new root; markers
+Bootstrap-ordered: legacy migrations FIRST (their destination-absence
+guards would break if ensureDirs pre-created the targets) → ensureDirs
+(new roots) → seeds (skill walk at the new root; markers
 govern) → config.yaml. Rollback = revert; user data untouched.
 
 ## Open Questions

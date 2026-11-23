@@ -38,7 +38,7 @@ When the resolved home does not exist, bootstrap SHALL create the tree: `config.
 #### Scenario: Existing home is untouched
 
 - **WHEN** bootstrap runs against a home that already has a user-authored `config.yaml`
-- **THEN** that file's bytes are unchanged and no registry file is created
+- **THEN** that file's bytes are unchanged; the example roster MAY be seeded once (per the marker-gated seeding requirement), and no OTHER registry file is created
 
 #### Scenario: Bootstrap is idempotent
 
@@ -53,7 +53,7 @@ When the resolved home does not exist, bootstrap SHALL create the tree: `config.
 #### Scenario: Hand-moved home needs no migration
 
 - **WHEN** the top-level `skills/` already holds the user's skills and `config/skills/` is empty
-- **THEN** bootstrap changes nothing and the registry loads the top-level skills
+- **THEN** the migration moves nothing and the registry loads the top-level skills
 
 ### Requirement: Directory tree self-heals
 
@@ -84,7 +84,7 @@ directories are left in place.
 #### Scenario: Hand-moved home needs no migration
 
 - **WHEN** the top-level `skills/` already holds the user's skills and `config/skills/` is empty
-- **THEN** bootstrap changes nothing and the registry loads the top-level skills
+- **THEN** the migration moves nothing and the registry loads the top-level skills
 
 #### Scenario: Conflict never overwrites
 

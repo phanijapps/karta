@@ -109,3 +109,20 @@ func TestSeedAgentsDecode(t *testing.T) {
 		}
 	}
 }
+
+// The registry loads the seeded skills from the NEW top-level root
+// (relocate-skills-hooks) — external package keeps config sibling-free.
+func TestRegistryLoadsTopLevelSkillsRoot(t *testing.T) {
+	paths := config.NewPaths(t.TempDir())
+	if err := config.Bootstrap(context.Background(), paths); err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	reg := registry.New()
+	snap, errs := reg.LoadAll(registry.Dirs{Agents: paths.AgentsDir, Skills: paths.SkillsDir, Hooks: paths.HooksDir})
+	if len(errs) > 0 {
+		t.Fatalf("load errors: %+v", errs)
+	}
+	if len(snap.Skills) != 5 {
+		t.Fatalf("seeded skills at the new root: %d", len(snap.Skills))
+	}
+}

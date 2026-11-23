@@ -1,14 +1,10 @@
 package registry
 
-import "os"
+import "zbot/backend/internal/noclobber"
 
-// renameDirGuarded is the portable fallback: os.Rename on this Go
-// toolchain refuses to replace any existing directory (Lstat precheck
-// returning EEXIST for empty and non-empty targets alike).
-func renameDirGuarded(oldDir, newDir string) error {
-	err := os.Rename(oldDir, newDir)
-	if err != nil && os.IsExist(err) {
-		return err
-	}
-	return err
+// renameDirNoClobber moves a directory atomically, refusing an existing
+// target: one shared primitive (internal/noclobber), used by the
+// managed installs and the config-tree migrations alike.
+func renameDirNoClobber(oldDir, newDir string) error {
+	return noclobber.Move(oldDir, newDir)
 }

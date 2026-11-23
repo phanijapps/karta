@@ -96,12 +96,6 @@ func TestBootstrapFirstRunCreatesStructureOnly(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ReadDir %s: %v", dir, err)
 		}
-		if dir == paths.ConfigDir("skills") {
-			if len(entries) != 5 {
-				t.Fatalf("skills seed count: %d", len(entries))
-			}
-			continue
-		}
 		if dir == paths.ConfigDir("prompts") {
 			if len(entries) != 7 { // role, soul, os-linux/windows/darwin, tools, intent-analysis
 				t.Fatalf("prompt seed count: %d", len(entries))
@@ -111,6 +105,17 @@ func TestBootstrapFirstRunCreatesStructureOnly(t *testing.T) {
 		if len(entries) != 0 {
 			t.Fatalf("%s seeded with content: %v", dir, entries)
 		}
+	}
+	skills, err := os.ReadDir(paths.SkillsDir)
+	if err != nil {
+		t.Fatalf("ReadDir %s: %v", paths.SkillsDir, err)
+	}
+	if len(skills) != 5 {
+		t.Fatalf("skills seed count at the top-level root: %d", len(skills))
+	}
+	// Fresh homes never create the legacy roots.
+	if _, err := os.Stat(paths.ConfigDir("skills")); !os.IsNotExist(err) {
+		t.Fatal("fresh home must not create legacy config/skills")
 	}
 	agents, err := os.ReadDir(paths.AgentsDir)
 	if err != nil {
@@ -214,7 +219,7 @@ func TestLoadSelfHealsMissingDirs(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Delete two directories.
-	if err := os.RemoveAll(paths.ConfigDir("skills")); err != nil {
+	if err := os.RemoveAll(paths.SkillsDir); err != nil { // the NEW top-level root
 		t.Fatal(err)
 	}
 	if err := os.RemoveAll(paths.DataDir); err != nil {

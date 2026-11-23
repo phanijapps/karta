@@ -57,7 +57,8 @@ type skillFrontmatter struct {
 	AllowedTools any    `yaml:"allowed-tools"` // sink: packaging key, ignored
 }
 
-// loadSkills loads config/skills/<name>/SKILL.md directories. SKILL.md
+// loadSkills loads <skills-root>/<name>/SKILL.md directories (the
+// top-level ~/.zbot/skills since relocate-skills-hooks). SKILL.md
 // must carry Agent Skills frontmatter (name, description); directories
 // without a SKILL.md are skipped (they may hold bundled assets).
 func loadSkills(snap *Snapshot, dir string, errs *[]LoadError) {

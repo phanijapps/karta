@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+
 	"path/filepath"
+	"zbot/backend/internal/noclobber"
 )
 
 // seedFS embeds the example roster (the same go:embed pattern as the
@@ -19,9 +21,7 @@ import (
 var seedFS embed.FS
 
 // seedExamples seeds the example roster: agents into agents/, skills
-// into config/skills/ (the only tree the registry loads today; the
-// deferred relocate-skills-hooks change carries them to a top-level
-// skills/ via its one-time migration). Every file is published
+// into the top-level skills/ root (relocate-skills-hooks). Every file is published
 // crash-atomically via link (see seedAsset) — an existing file (a user
 // edit, a concurrent writer) is left untouched, and the seedRoster
 // marker keeps deleted examples from resurrecting.
@@ -158,20 +158,24 @@ func migrateLegacySkillsHooks(paths Paths) error {
 		}
 		entries, err := os.ReadDir(p.legacy)
 		if err != nil {
-			continue // absent legacy dir: nothing to migrate
+			if errors.Is(err, os.ErrNotExist) {
+				continue // absent legacy dir: nothing to migrate
+			}
+			return fmt.Errorf("config: migrate legacy %s: %w", p.legacy, err) // unreadable ≠ absent
+		}
+		if err := os.MkdirAll(p.dest, 0o755); err != nil {
+			return fmt.Errorf("config: migrate %s: %w", p.dest, err)
 		}
 		for _, e := range entries {
 			src := filepath.Join(p.legacy, e.Name())
 			dst := filepath.Join(p.dest, e.Name())
-			if _, err := os.Lstat(dst); err == nil {
-				continue // destination exists: never overwrite, legacy copy stays inert
-			} else if !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("config: migrate %s: %w", dst, err)
-			}
-			if err := os.MkdirAll(p.dest, 0o755); err != nil {
-				return fmt.Errorf("config: migrate %s: %w", dst, err)
-			}
-			if err := os.Rename(src, dst); err != nil {
+			// No-clobber move: a destination that appears between the
+			// listing and the move is a conflict, never an overwrite
+			// (phase-1 gate finding — the registry's noclobber, shared).
+			if err := noclobber.Move(src, dst); err != nil {
+				if noclobber.IsExist(err) {
+					continue // destination exists: never overwrite, legacy copy stays inert
+				}
 				return fmt.Errorf("config: migrate %s -> %s: %w", src, dst, err)
 			}
 		}
