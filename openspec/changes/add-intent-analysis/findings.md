@@ -24,6 +24,30 @@ P2s fixed or dispositioned.
 Verification after fixes: golangci-lint 0 issues; 19 internal packages
 green; task gates:backend OK.
 
+## Phase-3 gate — Middleware + engine plumbing (2026-11-24)
+
+- gpt-6.1-terra: FAIL — 7×P1 + 1×P2 (all fixed in commit 8b091aa).
+- gpt-6.1-sol: FAIL — 9×P1 + 2×P2 (converging; all fixed or
+  dispositioned below).
+
+| # | Pri | Finding (both unless noted) | Disposition |
+|---|-----|-----------------------------|-------------|
+| I16 | P1 | Analysis event neither persisted nor published (channel-only; handler discards it); relay could block | FIXED: Persist sink (store.AppendEvent text+payload + bus.Publish, attempted-durable-first); session id learned from the run's first event; ctx-safe forwarding; CreateGoal drains the channel daemon-side |
+| I17 | P1 (sol F2) | SSE replay/live paths dropped the intent payload (text only) | FIXED: sseEvent carries intent_analysis on BOTH paths (replay unmarshals text+payload with legacy-flat fallback; live maps the payload); TestIntentAnalysisPayloadStreams |
+| I18 | P1 (sol F3) | Undrained stream could leak/backpressure the engine | FIXED: daemon-side drain goroutine in CreateGoal (durable path is persist+publish) |
+| I19 | P1 | Empty analysis model always degraded (lookup with empty provider fails) | FIXED: per-run resolution — config model → the run's model → typed degrade (wrapper analysisTarget) |
+| I20 | P1 | Resource index maintained but never consumed; MCP validation unwired | FIXED: wrapper RecallResources (index recall, listing fallback on cold/empty) + KnownMCPs from the index wired in the daemon |
+| I21 | P1 | ## Context recalled memory only (no knowledge graph) | FIXED: one fused recall split BY LANE — graph-lane hits render as knowledge (both chitta domains, one query) |
+| I22 | P1 | Chat silently ran persona-less on composition failure | FIXED: persona error FAILS the exchange before the model call; TestChatPersona |
+| I23 | P1 | Named root runs lost all middleware sections | FIXED: adapter APPENDS the composed dynamic sections to the agent body (identity preserved); wrapper composes dynamic-only for agent runs; test |
+| I24 | P1 (terra) | Scheduler bypassed the middleware | FIXED: scheduler.New receives the wrapped engine |
+| I25 | P2 (sol F10) | Verify claims exceeded tests | FIXED: order/persistence/concurrency/persona/agent-run tests added; adapter budget-CLAMP conformance scenario remains open (recorded: 3-line clamp asserted by wrapper budget forwarding; the tier-2 loop-bound scenario follows with the contracttest budget case) |
+| I26 | P2 (sol F11) | OnChange ran full chitta sync inline (blocks the watcher) | FIXED: coalescing worker channel; callback only signals; initial signal replaces the boot sync (no seam gap) |
+
+Verification after fixes: full backend suite 24 pkgs green; -race green
+on intent/chat/server/engine; golangci-lint 0; CONTRACT_CHANGE=1 task
+gates:backend OK.
+
 ## Phase-2 gate — Resource index (2026-11-24)
 
 - gpt-6.1-terra: FAIL — 5×P1 + 1×P2 (all fixed below).
