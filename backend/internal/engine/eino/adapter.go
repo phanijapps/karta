@@ -24,6 +24,7 @@ import (
 	"zbot/backend/internal/domain"
 	"zbot/backend/internal/engine"
 	"zbot/backend/internal/eventbus"
+	"zbot/backend/internal/progress"
 	"zbot/backend/internal/providers"
 	"zbot/backend/internal/registry"
 	"zbot/backend/internal/store"
@@ -292,13 +293,19 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 	}
 	emit(domain.EventSession, fmt.Sprintf("goal: %s", in.goal))
 
-	// Bounded loop over the spike-verified Generate + WithTools.
+	// Progress-aware bounded loop (the operator's agentzero shape):
+	// soft budget nudges, auto-extension for productive work, early
+	// kill ONLY when the progress tracker says the agent is stuck.
 	var tokensIn, tokensOut int64
 	var childMsgs []*schema.Message // child's retained conversation (P1-2)
-	steps := in.maxSteps
-	if steps <= 0 || steps > MaxSteps {
-		steps = MaxSteps
+	softBudget := in.maxSteps       // from the intent complexity (0 = default)
+	if softBudget <= 0 || softBudget > MaxSteps {
+		softBudget = MaxSteps
 	}
+	hardBudget := softBudget * 2                   // hard stop at 2x soft
+	tracker := progress.New()                      // per-run scoring
+	maxExtensions := 3                             // productive agents can earn up to 3 windows
+	steps := hardBudget + maxExtensions*softBudget // absolute ceiling
 	for step := 0; step < steps; step++ {
 		if ctx.Err() != nil {
 			emit(domain.EventSession, "run cancelled")
@@ -306,54 +313,41 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 			return "", fmt.Errorf("engine: cancelled")
 		}
 
+		// Progress-aware steering (the agentzero shape):
+		// 1. Kill only when genuinely stuck (warned + sinking score).
+		if tracker.ShouldStop() {
+			emit(domain.EventAgentStep, "engine: stopping — agent stuck (progress score "+fmt.Sprint(tracker.Score())+")")
+			_ = a.st.FinishExecution(in.execID, "failed", "stuck: no progress", tokensIn, tokensOut)
+			return "", fmt.Errorf("engine: stuck (score %d after %d iterations)", tracker.Score(), tracker.Iterations())
+		}
+		// 2. At the soft budget: extend if productive, nudge otherwise.
+		if step > 0 && step%softBudget == 0 {
+			if tracker.ShouldExtend(maxExtensions) {
+				tracker.Extend()
+				emit(domain.EventAgentStep, fmt.Sprintf("engine: extending run (productive, score %d, extension %d)", tracker.Score(), tracker.Extensions()))
+			}
+		}
+		tracker.Tick()
+
 		// Build messages. Root: compaction-aware session history. Child:
 		// a FRESH context — system prompt + the delegated task only (the
 		// parent embeds needed context in the task; inheriting the whole
 		// session transcript pollutes the child and bills the parent's
 		// history twice).
 		var msgs []*schema.Message
-		if in.isChild && childMsgs != nil {
-			msgs = childMsgs // retained child conversation (tool rounds feed back)
-		} else {
-			msgs = append(msgs, schema.SystemMessage(in.systemPrompt))
+		msgs, childMsgs, err = a.buildMessages(in, childMsgs)
+		if err != nil {
+			emit(domain.EventAgentStep, "engine: "+err.Error())
+			_ = a.st.FinishExecution(in.execID, "failed", err.Error(), tokensIn, tokensOut)
+			return "", err
 		}
-		if in.isChild {
-			if childMsgs == nil {
-				msgs = append(msgs, schema.UserMessage(in.goal))
-				childMsgs = msgs
-			}
-		} else {
-			hw, err := a.st.RootWindowFull(in.sessionID, in.execID, 200)
-			if err != nil {
-				emit(domain.EventAgentStep, "engine: history error: "+err.Error())
-				return "", fmt.Errorf("engine: history: %w", err)
-			}
-			if hw.Summary != nil {
-				msgs = append(msgs, schema.SystemMessage(hw.Summary.Content))
-			}
-			for _, m := range hw.Rows {
-				switch m.Role {
-				case "user":
-					msgs = append(msgs, schema.UserMessage(m.Content))
-				case "assistant":
-					am := &schema.Message{Role: schema.Assistant, Content: m.Content}
-					if m.ToolCalls != "" {
-						_ = json.Unmarshal([]byte(m.ToolCalls), &am.ToolCalls)
-					}
-					msgs = append(msgs, am)
-				case "tool":
-					msgs = append(msgs, &schema.Message{Role: schema.Tool, Content: m.Content, ToolCallID: m.ToolCallID, ToolName: m.ToolName})
-				}
-			}
-		}
-
 		// Offer tools on all but the final step: the agent's allowlist
 		// plus the delegate tool when this run's depth grant allows. The
 		// offered set is ALSO the execution inventory (an allowlist binds
 		// execution, not just the menu; the delegate tool is executable).
 		var opts []model.Option
 		var offered []tools.Tool
-		if step < steps-1 {
+		if step < steps-1 && step < hardBudget-1 { // suppress tools only near the absolute ceiling
 			if in.toolAllow != nil && len(in.toolAllow) == 0 {
 				offered = nil // tools: [] is an EXPLICIT no-tools inventory
 			} else {
@@ -363,6 +357,11 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 				offered = append(offered, a.delegateTool(ctx, events, in))
 			}
 			offered = append(offered, wardToolSet(in)...)
+			// Inject progress nudges (advisory user messages, not system
+			// prompts — the model sees them as steering, not overrides).
+			if nudge := tracker.Nudge(step, softBudget, hardBudget); nudge != "" {
+				msgs = append(msgs, schema.UserMessage(nudge))
+			}
 			var toolInfos []*schema.ToolInfo
 			for _, t := range offered {
 				d := t.Def()
@@ -419,9 +418,12 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 		for _, tc := range out.ToolCalls {
 			result := execOffered(ctx, offered, tc.Function.Name, tc.Function.Arguments)
 			content := result.Output
+			errText := ""
 			if result.Err != nil {
 				content = "error: " + result.Err.Error()
+				errText = result.Err.Error()
 			}
+			tracker.Record(tc.Function.Name, tc.Function.Arguments, errText)
 			// Tool event.
 			payload, _ := json.Marshal(map[string]any{"tool": tc.Function.Name, "output": content})
 			_ = a.st.AppendEvent(store.Event{
