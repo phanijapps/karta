@@ -1,0 +1,167 @@
+package wardtools
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"zbot/backend/internal/wards"
+)
+
+// newTestHost bootstraps a temp vault with the seeded templates.
+func newTestHost(t *testing.T) (*Host, *wards.Vault) {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "wards")
+	if err := wards.Bootstrap(context.Background(), root); err != nil {
+		t.Fatalf("vault bootstrap: %v", err)
+	}
+	vault, err := wards.Open(context.Background(), root)
+	if err != nil {
+		t.Fatalf("vault open: %v", err)
+	}
+	// One research ward to enter.
+	ward := filepath.Join(root, "stock-analysis")
+	if err := os.MkdirAll(ward, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for rel, content := range map[string]string{
+		"ward-conf.yaml": `
+archetype: research
+layout:
+  kind: directory
+  children:
+    - { id: canonical, match: "{ward}.md", kind: file, format: markdown }
+    - { id: log, match: log.md, kind: file, format: markdown }
+    - id: tasks
+      match: tasks
+      kind: directory
+      required: false
+      children:
+        - { id: task, match: "*.md", kind: file, required: false, repeat: true, format: markdown }
+`,
+		"stock-analysis.md": "# Stock Analysis\nthe canonical page\n",
+		"AGENTS.md":         "# Working here\n\nsources/ is immutable intake.\n",
+		"log.md":            "log\n",
+	} {
+		if err := os.WriteFile(filepath.Join(ward, rel), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return NewHost(vault), vault
+}
+
+func TestUseTool(t *testing.T) {
+	host, vault := newTestHost(t)
+	use := UseTool{Host: host, Vault: vault}
+	ctx := context.Background()
+
+	t.Run("enters an existing ward with the packet", func(t *testing.T) {
+		res := use.Exec(ctx, `{"name":"stock-analysis"}`)
+		if res.Err != nil {
+			t.Fatalf("Exec: %v", res.Err)
+		}
+		for _, want := range []string{"ACTIVE WARD: stock-analysis", "digest", "UNTRUSTED LAYOUT DATA", "sources/ is immutable intake", "file canonical ({ward}.md)"} {
+			if !strings.Contains(res.Output, want) {
+				t.Fatalf("packet missing %q:\n%s", want, res.Output)
+			}
+		}
+		view := host.Active()
+		if view == nil || view.Name != "stock-analysis" || view.Constitution == "" || view.Digest == "" {
+			t.Fatalf("host state: %+v", view)
+		}
+	})
+
+	t.Run("unknown ward refuses with the roster", func(t *testing.T) {
+		res := use.Exec(ctx, `{"name":"nope"}`)
+		if res.Err == nil || !strings.Contains(res.Err.Error(), "stock-analysis") {
+			t.Fatalf("want roster in error, got %v", res.Err)
+		}
+	})
+
+	t.Run("switching wards replaces without touching disk", func(t *testing.T) {
+		before, _ := os.ReadFile(filepath.Join(vault.Root(), "stock-analysis", "AGENTS.md"))
+		create := CreateTool{Host: host, Vault: vault}
+		if res := create.Exec(ctx, `{"name":"india-analysis","archetype":"research"}`); res.Err != nil {
+			t.Fatalf("create: %v", res.Err)
+		}
+		after, _ := os.ReadFile(filepath.Join(vault.Root(), "stock-analysis", "AGENTS.md"))
+		if string(before) != string(after) {
+			t.Fatal("switching wards disturbed the previous ward")
+		}
+		if view := host.Active(); view.Name != "india-analysis" {
+			t.Fatalf("switch: %+v", view)
+		}
+	})
+}
+
+func TestCreateTool(t *testing.T) {
+	host, vault := newTestHost(t)
+	create := CreateTool{Host: host, Vault: vault}
+	ctx := context.Background()
+
+	t.Run("instantiates a lint-clean mini bot and enters it", func(t *testing.T) {
+		res := create.Exec(ctx, `{"name":"market-research","archetype":"research"}`)
+		if res.Err != nil {
+			t.Fatalf("create: %v", res.Err)
+		}
+		dir := filepath.Join(vault.Root(), "market-research")
+		for _, want := range []string{"market-research.md", "ward-conf.yaml", "AGENTS.md", "log.md", "spec.md", "plan.md"} {
+			if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
+				t.Fatalf("created ward missing %s: %v", want, err)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(dir, "canonical.md")); !os.IsNotExist(err) {
+			t.Fatal("canonical starter must be renamed to <name>.md")
+		}
+		if host.Active() == nil || host.Active().Name != "market-research" {
+			t.Fatal("create must enter the ward")
+		}
+	})
+
+	t.Run("existing ward refused", func(t *testing.T) {
+		res := create.Exec(ctx, `{"name":"stock-analysis","archetype":"generic"}`)
+		if res.Err == nil || !strings.Contains(res.Err.Error(), "already exists") {
+			t.Fatalf("want exists error, got %v", res.Err)
+		}
+	})
+
+	t.Run("task-specific name refused", func(t *testing.T) {
+		for _, bad := range []string{"AMD-Stock", "spy_options", "x"} {
+			res := create.Exec(ctx, `{"name":"`+bad+`","archetype":"generic"}`)
+			if res.Err == nil || !strings.Contains(res.Err.Error(), "reusable domain category") {
+				t.Fatalf("name %q must refuse, got %v", bad, res.Err)
+			}
+		}
+	})
+
+	t.Run("unknown archetype refused", func(t *testing.T) {
+		res := create.Exec(ctx, `{"name":"fine-name","archetype":"ebook"}`)
+		if res.Err == nil || !strings.Contains(res.Err.Error(), "unknown archetype") {
+			t.Fatalf("want archetype error, got %v", res.Err)
+		}
+	})
+}
+
+func TestDigestChange(t *testing.T) {
+	host, vault := newTestHost(t)
+	use := UseTool{Host: host, Vault: vault}
+	ctx := context.Background()
+	if res := use.Exec(ctx, `{"name":"stock-analysis"}`); res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if host.RefreshDigest() {
+		t.Fatal("no edits — digest must match")
+	}
+	// The user edits the constitution concurrently.
+	agentsMD := filepath.Join(vault.Root(), "stock-analysis", "AGENTS.md")
+	if err := os.WriteFile(agentsMD, []byte("# changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !host.RefreshDigest() {
+		t.Fatal("constitution edit must change the digest")
+	}
+	var _ = errors.New // reserved
+}

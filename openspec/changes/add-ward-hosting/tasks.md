@@ -2,7 +2,7 @@
 
 ## 1. Hosting state + ward tools
 
-- [ ] 1.1 `internal/wardtools`: hosting state (per-session active
+- [x] 1.1 `internal/wardtools`: hosting state (per-session active
   ward: name, dir, conf, digest, constitution) + `ward_use` (exact
   index match; typed unknown error listing wards) + `ward_create`
   (template instantiation: atomic copies, canonical rename, existing
