@@ -211,4 +211,3 @@ func (s *stubChatService) SyncIn(sessionID string, afterSeq int64, limit int) ([
 	return nil, afterSeq, false, nil
 }
 func (s *stubChatService) SessionBusy(string) bool { return false }
-

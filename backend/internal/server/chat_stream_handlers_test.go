@@ -43,7 +43,6 @@ func (s *scriptedStreamChat) SyncIn(sessionID string, afterSeq int64, limit int)
 }
 func (s *scriptedStreamChat) SessionBusy(string) bool { return false }
 
-
 func newStreamDaemon(t *testing.T, svc ChatService) *httptest.Server {
 	t.Helper()
 	// Chat endpoints need no providers store; nil keeps the test minimal.
@@ -190,7 +189,6 @@ func (i *instrumentedStreamChat) SyncIn(sessionID string, afterSeq int64, limit 
 }
 func (i *instrumentedStreamChat) SessionBusy(string) bool { return false }
 
-
 // TestStreamWriterDropsInsteadOfBlocking (gate finding #2): a full buffer
 // drops frames — send NEVER blocks the exchange on a stalled reader.
 func TestStreamWriterDropsInsteadOfBlocking(t *testing.T) {
@@ -293,4 +291,3 @@ func (g *gappedStreamChat) SyncIn(sessionID string, afterSeq int64, limit int) (
 	return nil, afterSeq, false, nil
 }
 func (g *gappedStreamChat) SessionBusy(string) bool { return false }
-

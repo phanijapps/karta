@@ -11,8 +11,8 @@ package chat
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -377,7 +377,6 @@ func (c *deltaCoalescer) close() {
 	}
 	c.flushLocked()
 }
-
 
 // windowToChatMessages maps a HistoryWindow to provider messages; the
 // summary becomes a system message.

@@ -497,7 +497,9 @@ func TestResearchSessionBusyGuard(t *testing.T) {
 	// Overlapping sends (sync and streaming) fail typed while the run is live.
 	for _, send := range []func() SendOutcome{
 		func() SendOutcome { return svc.SendIn(context.Background(), "research-busy", "second", "p", "m") },
-		func() SendOutcome { return svc.SendStreamIn(context.Background(), "research-busy", "second", "p", "m", nil) },
+		func() SendOutcome {
+			return svc.SendStreamIn(context.Background(), "research-busy", "second", "p", "m", nil)
+		},
 	} {
 		out := send()
 		if !errors.Is(out.Err, ErrSessionBusy) {

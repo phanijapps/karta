@@ -215,16 +215,21 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "session vanished after create")
 		return
 	}
-	writeJSON(w, http.StatusCreated, sessionView(sess, false))
+	writeJSON(w, http.StatusCreated, sessionView(sess, false, time.Time{}))
 }
 
 // sessionView maps a store row to the contract Session shape.
-func sessionView(sess *zbotstore.Session, hasMessages bool) apigen.Session {
+// updatedAt carries the session's recency hint (latest message time,
+// falling back to creation) when the caller has one.
+func sessionView(sess *zbotstore.Session, hasMessages bool, updatedAt time.Time) apigen.Session {
+	if updatedAt.IsZero() {
+		updatedAt = sess.CreatedAt
+	}
 	return apigen.Session{
 		Id: apigen.Id(sess.ID), Type: apigen.SessionType(sess.Type),
 		Status: sessionStatus(hasMessages),
 		Title:  nilStrPtr(sess.Title), Ward: nilStrPtr(sess.Ward),
-		CreatedAt: sess.CreatedAt, UpdatedAt: sess.CreatedAt,
+		CreatedAt: sess.CreatedAt, UpdatedAt: updatedAt,
 	}
 }
 
@@ -248,7 +253,12 @@ func (s *Server) GetSession(w http.ResponseWriter, r *http.Request, sessionId ap
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, sessionView(sess, latest > 0))
+	updatedRaw, err := s.db.SessionUpdated(string(sessionId))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sessionView(sess, latest > 0, parseTime(updatedRaw)))
 }
 
 // CancelSession stops a session's active run.

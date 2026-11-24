@@ -127,6 +127,10 @@ func (s *Server) StreamChatMessage(w http.ResponseWriter, r *http.Request) {
 	// before any stream opens (contract: invalid references fail first).
 	sessionID := sessionIDOf(req.SessionId)
 	if sessionID != chat.DefaultSessionID {
+		if s.db == nil {
+			writeError(w, http.StatusServiceUnavailable, "unavailable", "session store not wired")
+			return
+		}
 		sess, err := s.db.Session(sessionID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", err.Error())

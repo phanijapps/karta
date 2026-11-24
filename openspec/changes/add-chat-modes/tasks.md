@@ -63,7 +63,7 @@
 
 ## 4. Review and hardening
 
-- [ ] 4.1 Phase gates (gpt-6.1-terra + gpt-6.1-sol) after each group;
+- [x] 4.1 Phase gates (gpt-6.1-terra + gpt-6.1-sol) after each group;
   fix P0/P1, P2s fix or record. Verify: ledger zero open P0/P1.
-- [ ] 4.2 zbot-reviewer + `task verify` green + status WAITING FOR
+- [x] 4.2 zbot-reviewer + `task verify` green + status WAITING FOR
   HUMAN REVIEW. Verify: reviewer zero open P0/P1; verify exits zero.

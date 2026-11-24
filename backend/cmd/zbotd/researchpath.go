@@ -12,8 +12,8 @@ import (
 	"zbot/backend/internal/config"
 	"zbot/backend/internal/domain"
 	"zbot/backend/internal/registry"
-	"zbot/backend/internal/sysprompt"
 	zbotstore "zbot/backend/internal/store"
+	"zbot/backend/internal/sysprompt"
 )
 
 // wireSessionModel wires the add-chat-modes session plumbing: the

@@ -1,12 +1,12 @@
 package wardtools
 
 import (
-	"sync"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"zbot/backend/internal/wards"

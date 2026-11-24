@@ -981,7 +981,7 @@ func newWardVault(t *testing.T) *wards.Vault {
 		t.Fatal(err)
 	}
 	files := map[string]string{
-		"ward-conf.yaml": "archetype: research\nlayout:\n  kind: directory\n  children:\n    - { id: canonical, match: \"{ward}.md\", kind: file, format: markdown }\n",
+		"ward-conf.yaml":    "archetype: research\nlayout:\n  kind: directory\n  children:\n    - { id: canonical, match: \"{ward}.md\", kind: file, format: markdown }\n",
 		"stock-analysis.md": "# Stock Analysis\nthe canonical page\n",
 		"AGENTS.md":         "# Working here\n\nsources/ is immutable intake.\n",
 	}

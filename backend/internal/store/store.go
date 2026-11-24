@@ -284,12 +284,12 @@ func (s *Store) Append(m Message) (Message, error) {
 // and the session navigator). UpdatedAt is the recency hint: the
 // latest message time, falling back to creation.
 type SessionInfo struct {
-	ID         string
-	Title      string
-	Type       string
-	Ward       string
-	CreatedAt  string
-	UpdatedAt  string
+	ID          string
+	Title       string
+	Type        string
+	Ward        string
+	CreatedAt   string
+	UpdatedAt   string
 	HasMessages bool
 }
 
@@ -322,6 +322,22 @@ func (s *Store) SetSessionTitle(sessionID, title string) error {
 		return fmt.Errorf("store: set session title: %w", err)
 	}
 	return nil
+}
+
+// SessionUpdated returns the session's recency hint — the latest
+// message time, falling back to creation (the list endpoint's rule;
+// single-session reads reuse it for contract fidelity).
+func (s *Store) SessionUpdated(sessionID string) (string, error) {
+	var updated string
+	err := s.db.QueryRow(`SELECT COALESCE((SELECT MAX(created_at) FROM messages WHERE session_id = ?), created_at)
+		FROM sessions WHERE id = ?`, sessionID, sessionID).Scan(&updated)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("store: session updated: %w", err)
+	}
+	return updated, nil
 }
 
 // SetSessionWard rebinds a session's sticky ward ("" unbinds). The

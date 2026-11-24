@@ -124,7 +124,34 @@ confirmed. 2 P1 + 7 P2 findings — all addressed:
 - **P2-4 — Research session auto-titling.** Design decision 4 wants
   titles auto-derived from the first exchange's intent; POST
   accepts titles, shells show "Research" until then.
+- **P2-5 — add-ward-hosting overlap.** This change wired the root-run
+  ## Active Ward composition in the ADAPTER (D6) and children's
+  wardHost inheritance (file tools) because research sessions needed
+  them; add-ward-hosting's remaining tasks (ward_entered/created event
+  kinds, child-prompt Active Ward section, delegate-description guard,
+  its own phase gates) are untouched and still open there. The chat
+  ward plane (its 3.5.4 daemon wiring) was superseded by the session
+  model — seams and tests remain, chatwards.go deleted here.
 
 ## Final review
 
-(pending — zbot-reviewer + task verify)
+**zbot-reviewer (final gate): open P0/P1 = 0.** All five fix groups
+from the phase gates verified as holding (failure propagation with
+sound exec-id conventions; busy guard incl. the documented race
+window; every frontend fix; the test ledger; the full boundary
+checklist — engine isolation, FSD, dependency graph, contract-first,
+eventbus, AGENTS.md coverage). Two fresh P2s, both FIXED on receipt:
+
+- **F-1 (P2) nil-db panic window in the SSE pre-stream 404 probe** —
+  FIXED: `StreamChatMessage` guards `s.db == nil` → 503 (matching the
+  sibling handlers; production always wires the store).
+- **F-2 (P2) sessionView reported updated_at = created_at** — FIXED:
+  `store.SessionUpdated` derives the same recency rule as the list
+  endpoint (latest message time, fallback creation); GET /api/sessions/
+  {id} uses it.
+
+**task verify: exit 0** — contract lint + codegen zero drift, backend
+gates + lint (0 issues) + full suite (incl. real-LadybugDB) + budget
+gates OK, frontend check (0 errors) + build + 87 Playwright tests
+passed. Note: the suite must run without the dev stack's watchers
+(known pre-existing inotify instance exhaustion, handoff issue #3).
