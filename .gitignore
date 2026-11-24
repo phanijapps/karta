@@ -31,3 +31,4 @@ backend/bin/
 .DS_Store
 Thumbs.db
 third_party/
+backend/tmp/
