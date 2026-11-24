@@ -9,6 +9,7 @@ package server
 // Karta's sidebar with the full analysis surface.
 
 import (
+	"context"
 	"crypto/sha1"
 	"crypto/subtle"
 	"encoding/hex"
@@ -20,6 +21,7 @@ import (
 	"time"
 
 	"zbot/backend/internal/chat"
+	"zbot/backend/internal/domain"
 	apigen "zbot/backend/internal/server/apigen"
 )
 
@@ -154,6 +156,10 @@ func (s *Server) OpenAiChatCompletion(w http.ResponseWriter, r *http.Request) {
 		openAiError(w, http.StatusBadRequest, "no default model configured — set one in Karta's model picker first", "invalid_request_error", "")
 		return
 	}
+	if req.Stream != nil && *req.Stream {
+		s.openAiStream(w, r, sessionID, lastUser, providerName, modelID, string(req.Model))
+		return
+	}
 	outcome := s.chat.SendIn(r.Context(), sessionID, lastUser, providerName, modelID)
 	if outcome.Err != nil {
 		// Typed mapping: busy → OpenAI 409; everything else rides as
@@ -196,4 +202,183 @@ func (s *Server) OpenAiChatCompletion(w http.ResponseWriter, r *http.Request) {
 	choice.Message.Role = apigen.OpenAiCompletionResponseChoicesMessageRole("assistant")
 	resp.Choices = append(resp.Choices, choice)
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// openAiStream streams a completion as OpenAI chunks. Chat sessions
+// stream real content deltas; research sessions subscribe to the
+// session's Timeline SSE and forward the live work (tool/delegation/
+// step frames, prefixed) then the final answer, then stop + [DONE].
+func (s *Server) openAiStream(w http.ResponseWriter, r *http.Request, sessionID, text, providerName, modelID, model string) {
+	// Busy check BEFORE any header/status: a busy research session
+	// answers the typed 409 as JSON (never under a committed SSE 200).
+	if strings.Contains(model, "research") && s.chat.SessionBusy(sessionID) {
+		openAiError(w, http.StatusConflict, "a research run is already live in this session", "server_error", "session_busy")
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		openAiError(w, http.StatusInternalServerError, "streaming not supported", "server_error", "")
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	sw := newStreamWriter(w, flusher)
+	defer sw.close()
+	id := fmt.Sprintf("chatcmpl-karta-%d", time.Now().UnixNano())
+	created := int(time.Now().Unix())
+	send := func(content string) {
+		sw.send(sseMessage{event: "", payload: chunkFrame(id, created, model, content, nil)})
+	}
+	// end delivers the stream's conclusion through the ordered,
+	// non-droppable path: optional message chunk, finish_reason, [DONE].
+	end := func(err error) {
+		var tail []sseMessage
+		if err != nil {
+			tail = append(tail, sseMessage{event: "", payload: chunkFrame(id, created, model, "error: "+err.Error(), nil)})
+		}
+		reason := apigen.OpenAiCompletionChunkChoicesFinishReason("stop")
+		if err != nil {
+			reason = apigen.OpenAiCompletionChunkChoicesFinishReason("error")
+		}
+		tail = append(tail, sseMessage{event: "", payload: chunkFrame(id, created, model, "", &reason)})
+		tail = append(tail, doneFrame())
+		sw.finishAll(tail)
+	}
+	runCtx := context.WithoutCancel(r.Context())
+	sw.send(sseMessage{event: "", payload: chunkFrame(id, created, model, "", nil)}) // role opener
+
+	if strings.Contains(model, "research") {
+		// Watch the session's Timeline while the run works.
+		watchCtx, cancel := context.WithCancel(runCtx)
+		defer cancel()
+		sub := s.bus.Subscribe(watchCtx, sessionID)
+		done := make(chan chat.SendOutcome, 1)
+		go func() { done <- s.chat.SendIn(runCtx, sessionID, text, providerName, modelID) }()
+		for {
+			select {
+			case evt, ok := <-sub.Events():
+				if !ok {
+					continue
+				}
+				if line := workFrame(evt); line != "" {
+					send(line + "\n")
+				}
+			case out := <-done:
+				cancel()
+				if out.Err != nil {
+					end(out.Err)
+					return
+				}
+				reply := lastAssistant(out)
+				if reply == "" {
+					reply = "(the run produced no answer)"
+				}
+				// The answer joins the ordered tail (never a dropped frame).
+				reason := apigen.OpenAiCompletionChunkChoicesFinishReason("stop")
+				sw.finishAll([]sseMessage{
+					{event: "", payload: chunkFrame(id, created, model, reply, nil)},
+					{event: "", payload: chunkFrame(id, created, model, "", &reason)},
+					doneFrame(),
+				})
+				return
+			case <-runCtx.Done():
+				return
+			}
+		}
+	}
+	// Chat: the lean stream's deltas map 1:1; a non-streaming completer
+	// degrades to the assembled answer as one chunk in the tail.
+	sentContent := false
+	outcome := s.chat.SendStreamIn(runCtx, sessionID, text, providerName, modelID, func(d chat.Delta) {
+		if d.Kind == "content" {
+			sentContent = true
+			send(d.Text)
+		}
+	})
+	if outcome.Err != nil {
+		end(outcome.Err)
+		return
+	}
+	var tail []sseMessage
+	if reply := lastAssistant(outcome); reply != "" && !sentContent {
+		tail = append(tail, sseMessage{event: "", payload: chunkFrame(id, created, model, reply, nil)})
+	}
+	reason := apigen.OpenAiCompletionChunkChoicesFinishReason("stop")
+	tail = append(tail, sseMessage{event: "", payload: chunkFrame(id, created, model, "", &reason)}, doneFrame())
+	sw.finishAll(tail)
+}
+
+// lastAssistant returns the exchange's final assistant content.
+func lastAssistant(out chat.SendOutcome) string {
+	for i := len(out.Rows) - 1; i >= 0; i-- {
+		if out.Rows[i].Role == "assistant" && out.Rows[i].Content != "" {
+			return out.Rows[i].Content
+		}
+	}
+	return ""
+}
+
+// donePayload marks the OpenAI terminator frame (raw `data: [DONE]`).
+type donePayload struct{}
+
+// doneFrame is the stream's terminal message: `[DONE]`, queued BEHIND
+// the stop chunk so the writer's goroutine orders it last (a direct
+// write would race the drain).
+func doneFrame() sseMessage { return sseMessage{event: "", payload: donePayload{}, terminal: true} }
+
+// chunkFrame builds one OpenAI chunk in the generated shape (content
+// chunks carry role "assistant"; the final frame carries finish_reason).
+func chunkFrame(id string, created int, model, content string, finish *apigen.OpenAiCompletionChunkChoicesFinishReason) apigen.OpenAiCompletionChunk {
+	var c struct {
+		Delta struct {
+			Content *string                                       `json:"content,omitempty"`
+			Role    *apigen.OpenAiCompletionChunkChoicesDeltaRole `json:"role,omitempty"`
+		} `json:"delta"`
+		FinishReason *apigen.OpenAiCompletionChunkChoicesFinishReason `json:"finish_reason"`
+		Index        int                                              `json:"index"`
+	}
+	if content != "" {
+		c.Delta.Content = &content
+	}
+	role := apigen.OpenAiCompletionChunkChoicesDeltaRole("assistant")
+	c.Delta.Role = &role
+	c.FinishReason = finish // nil → JSON null (OpenAI content-chunk semantics)
+	c.Index = 0
+	body := apigen.OpenAiCompletionChunk{
+		Id: id, Object: apigen.OpenAiCompletionChunkObject("chat.completion.chunk"),
+		Created: created, Model: model,
+	}
+	body.Choices = append(body.Choices, c)
+	return body
+}
+
+// workFrame renders one Timeline event as a streamed work line ("" =
+// noise). Mirrors the UI's work-stream prefixes.
+func workFrame(evt domain.TimelineEvent) string {
+	const max = 400
+	clamp := func(s string) string {
+		if len(s) > max {
+			return s[:max] + "…"
+		}
+		return s
+	}
+	switch evt.Kind {
+	case domain.EventToolCall:
+		name := evt.Text
+		if evt.ToolCall != nil && evt.ToolCall.Tool != "" {
+			name = evt.ToolCall.Tool
+		}
+		return "🔧 " + clamp(name)
+	case domain.EventDelegation:
+		return "👥 " + clamp(evt.Text)
+	case domain.EventAgentStep:
+		if evt.Text == "" || strings.HasPrefix(evt.Text, "engine:") || strings.HasPrefix(evt.Text, "Pre-execution") {
+			return ""
+		}
+		return "🧠 " + clamp(evt.Text)
+	default:
+		return ""
+	}
 }

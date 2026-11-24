@@ -123,6 +123,15 @@ func (h *Host) Reenter(ctx context.Context, name string) (*WardView, error) {
 	return h.enter(ctx, name)
 }
 
+// Leave clears the active ward (the session keeps its transcript; the
+// next run starts unhosted). Fires nothing — the binding observer is
+// the daemon's to update (it calls this on leave).
+func (h *Host) Leave() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.wardName, h.wardDir, h.conf, h.constitution, h.digest, h.orchModel = "", "", nil, "", "", ""
+}
+
 // RefreshDigest re-derives the digest from disk and reports whether it
 // changed (concurrent ward modification detection — the user owns the
 // ward; a mismatch warns, never fails).

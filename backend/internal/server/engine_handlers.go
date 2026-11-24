@@ -282,6 +282,37 @@ func (s *Server) GetSession(w http.ResponseWriter, r *http.Request, sessionId ap
 	writeJSON(w, http.StatusOK, s.sessionView(sess, latest > 0, parseTime(updatedRaw)))
 }
 
+// LeaveWard clears the session's ward binding (the session becomes a
+// research shell again; the engine host drops the ward).
+func (s *Server) LeaveWard(w http.ResponseWriter, r *http.Request, sessionId apigen.SessionId) {
+	if s.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "session store not wired")
+		return
+	}
+	sid := string(sessionId)
+	if sid == "default" {
+		writeError(w, http.StatusConflict, "not_bound", "the quick chat has no ward binding")
+		return
+	}
+	sess, err := s.db.Session(sid)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if sess == nil {
+		writeError(w, http.StatusNotFound, "not_found", "no such session")
+		return
+	}
+	if err := s.db.SetSessionWard(sid, ""); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if s.wardDropper != nil {
+		s.wardDropper(sid)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // CancelSession stops a session's active run.
 func (s *Server) CancelSession(w http.ResponseWriter, r *http.Request, sessionId apigen.SessionId) {
 	if err := s.engine.Cancel(r.Context(), string(sessionId)); err != nil {

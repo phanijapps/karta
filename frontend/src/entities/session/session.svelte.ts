@@ -5,6 +5,7 @@
 import {
   createSession,
   ensureWarden,
+  leaveWard,
   getDefaultModel,
   getSessionState,
   listSessions,
@@ -268,6 +269,17 @@ export function createSessions() {
     analysis = payload as SessionAnalysis;
   }
 
+  /** Leave the active session's ward (clears the binding; the session
+   * re-groups under Research; the roster refreshes). */
+  async function leaveActiveWard() {
+    const res = await leaveWard(activeId);
+    if (res.ok) {
+      await loadRoster();
+    } else {
+      sendError = res.error;
+    }
+  }
+
   /** Clear the ACTIVE session's transcript locally after a daemon clear. */
   function clearedLocally(sessionId: string) {
     transcripts = { ...transcripts, [sessionId]: [] };
@@ -279,6 +291,7 @@ export function createSessions() {
     loadRoster,
     select,
     selectWard,
+    leaveActiveWard,
     newResearch,
     reconcile,
     clearedLocally,

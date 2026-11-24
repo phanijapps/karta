@@ -387,3 +387,126 @@ func TestExecutorChangedSpecRestartsAndCollisions(t *testing.T) {
 		t.Fatalf("colliding names must resolve distinctly: %v", names)
 	}
 }
+
+// TestExecutorHardening (harden-mcp-and-ux): binary resolution finds
+// shell-only tool dirs; a crash-looping server backs off instead of
+// re-dialing on every Refresh; failures carry the typed taxonomy.
+func TestExecutorHardening(t *testing.T) {
+	// NOT parallel: the resolveBinary subtest sets HOME.
+
+	t.Run("resolveBinary: bare names resolve to a shell PATH dir", func(t *testing.T) {
+		// A fake tool dir under HOME: a bare command resolves there.
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		dir := filepath.Join(home, ".local", "bin")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		bin := filepath.Join(dir, "fake-tool")
+		if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if got := resolveBinary("fake-tool"); got != bin {
+			t.Fatalf("resolveBinary: got %q want %q", got, bin)
+		}
+		// Absolute paths pass through; unknown names fall back verbatim.
+		if resolveBinary("/usr/bin/env") != "/usr/bin/env" {
+			t.Fatal("absolute must pass through")
+		}
+		if resolveBinary("definitely-not-a-real-binary-xyz") != "definitely-not-a-real-binary-xyz" {
+			t.Fatal("unknown must fall back verbatim")
+		}
+	})
+
+	t.Run("backoff: a dead server is not re-dialed inside its window", func(t *testing.T) {
+		ex := &Executor{
+			Specs: func() []ServerSpec {
+				return []ServerSpec{{Name: "dead", Spec: registry.MCPSpec{Command: "/nonexistent/binary"}}}
+			},
+			Log: func(string, ...any) {},
+		}
+		ex.Refresh(context.Background())
+		n := ex.failuresOf("dead")
+		if n != 1 {
+			t.Fatalf("first failure counted: %d", n)
+		}
+		// Inside the backoff window: Refresh must NOT try again.
+		ex.Refresh(context.Background())
+		if ex.failuresOf("dead") != 1 {
+			t.Fatal("backoff window violated: re-dialed too early")
+		}
+		if backoffFor(1) != 2*time.Second || backoffFor(10) > 2*time.Minute {
+			t.Fatalf("backoff schedule: %v %v", backoffFor(1), backoffFor(10))
+		}
+	})
+
+	t.Run("typed failures", func(t *testing.T) {
+		bin := echoBin(t)
+		ex := &Executor{
+			Specs: func() []ServerSpec {
+				return []ServerSpec{{Name: "echo", Spec: registry.MCPSpec{Command: bin, Args: []string{"1"}}}}
+			},
+			Log: func(string, ...any) {},
+		}
+		ex.Refresh(context.Background())
+		tool := ex.Tools()[0]
+		res := tool.Exec(context.Background(), `{not json`)
+		f, ok := AsFailure(res.Err)
+		if !ok || f.Kind != FailBadArgs {
+			t.Fatalf("bad args must be typed: %v", res.Err)
+		}
+		if f.Server != "echo" {
+			t.Fatalf("server named: %+v", f)
+		}
+	})
+}
+
+// TestExecutorGateFixes: backoff GROWS across expired retries; a
+// stale tool on a deconfigured server is typed (never a panic).
+func TestExecutorGateFixes(t *testing.T) {
+	t.Run("backoff grows", func(t *testing.T) {
+		ex := &Executor{
+			Specs: func() []ServerSpec {
+				return []ServerSpec{{Name: "dead", Spec: registry.MCPSpec{Command: "/nonexistent/binary"}}}
+			},
+			Log: func(string, ...any) {},
+		}
+		ex.Refresh(context.Background()) // failure 1 → 2s window
+		// Expire the window manually and retry: the count must grow.
+		expire := func() {
+			ex.mu.Lock()
+			if s := ex.servers["dead"]; s != nil {
+				s.notBefore = time.Now().Add(-time.Second)
+			}
+			ex.mu.Unlock()
+		}
+		expire()
+		ex.Refresh(context.Background()) // failure 2 → 4s
+		expire()
+		ex.Refresh(context.Background()) // failure 3 → 8s
+		if n := ex.failuresOf("dead"); n != 3 {
+			t.Fatalf("backoff must grow across retries: failures=%d", n)
+		}
+	})
+
+	t.Run("stale tool on deconfigured server is typed", func(t *testing.T) {
+		bin := echoBin(t)
+		ex := &Executor{
+			Specs: func() []ServerSpec {
+				return []ServerSpec{{Name: "echo", Spec: registry.MCPSpec{Command: bin, Args: []string{"1"}}}}
+			},
+			Log: func(string, ...any) {},
+		}
+		ex.Refresh(context.Background())
+		tool := ex.Tools()[0]
+		// Deconfigure + mark dead: the stale tool must return typed
+		// unavailable, not dereference a nil session.
+		ex.Specs = func() []ServerSpec { return nil }
+		ex.Refresh(context.Background())
+		res := tool.Exec(context.Background(), `{}`)
+		f, ok := AsFailure(res.Err)
+		if !ok || f.Kind != FailUnavailable {
+			t.Fatalf("stale tool must be typed unavailable, got %v", res.Err)
+		}
+	})
+}

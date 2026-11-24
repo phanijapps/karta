@@ -9,6 +9,7 @@
   let draft = $state('');
   let sending = $state(false);
   let transcriptEl: HTMLElement;
+  let composerEl: HTMLTextAreaElement;
   // Live stream state (volatile view; the transcript stays the truth).
   let reasoning = $state('');
   let content = $state('');
@@ -186,6 +187,17 @@
       event.preventDefault();
       void send();
     }
+  }
+  /** Leave the active session's ward, then hand focus to the composer
+   * (the strip — and the focused button — disappears on success). */
+  async function leaveWard() {
+    const sid = sessions.activeId;
+    const leftName = ward; // capture BEFORE the binding clears (derived)
+    await sessions.leaveActiveWard();
+    if (sessions.activeId !== sid || sessions.activeWard) return; // failed or switched
+    announced = `Left ${leftName}. The session moved under Research.`;
+    await tick();
+    composerEl?.focus();
   }
   async function extend() {
     const res = await continueSession(sessions.activeId, 25);
@@ -366,6 +378,11 @@
         <FolderOpen size={14} aria-hidden="true" />
         <span>{ward}</span>
         <span class="muted">· research</span>
+        {#if sessions.activeId.startsWith('ward-')}
+          <span class="muted ward-note">· the warden always lives here</span>
+        {:else}
+          <button type="button" class="leave-ward" aria-label={`Leave ward ${ward}`} onclick={() => void leaveWard()}>Leave</button>
+        {/if}
       </div>
     {/if}
     <!-- Continue bar (research sessions near budget) -->
@@ -381,6 +398,7 @@
       <label class="sr-only" for="composer-input">{isResearch ? 'Research question' : 'Message Karta'}</label>
       <textarea
         id="composer-input"
+        bind:this={composerEl}
         bind:value={draft}
         onkeydown={onkeydown}
         placeholder={sessionPlaceholder}
@@ -466,6 +484,8 @@
   .work-more summary { cursor: pointer; color: var(--ds-color-muted, #888); font-size: .68rem; }
   .work-more pre { max-width: 36rem; max-height: 8rem; overflow: auto; margin: .2rem 0 0; padding: .3rem .5rem; border-radius: 4px; background: var(--ds-color-field, #1a1a1a); font-size: .68rem; white-space: pre-wrap; }
   .composer-region { padding: .75rem clamp(.75rem, 3vw, 2rem) .5rem; display: grid; gap: .4rem; border-top: 1px solid var(--ds-color-border, #333); background: var(--ds-color-sidebar, #161616); min-width: 0; max-width: 100%; overflow: hidden; }
+  .ward-bar .leave-ward { margin-left: auto; background: none; border: none; color: var(--ds-color-muted, #888); font-size: .72rem; cursor: pointer; text-decoration: underline; }
+  .ward-bar .ward-note { font-size: .68rem; }
   .ward-bar { display: flex; align-items: center; gap: .45rem; padding: .35rem .7rem; border-radius: 8px; border: 1px solid color-mix(in oklch, var(--ds-color-success, #22c55e) 40%, transparent); background: color-mix(in oklch, var(--ds-color-success, #22c55e) 10%, transparent); font-size: .8rem; color: var(--ds-color-success, #22c55e); }
   .continue-bar { display: flex; align-items: center; justify-content: space-between; padding: .4rem .7rem; border-radius: 8px; border: 1px solid var(--ds-color-danger, #e5484d); font-size: .8rem; }
   .continue-btn { display: inline-flex; align-items: center; gap: .3rem; padding: .25rem .7rem; border-radius: 6px; border: 1px solid var(--ds-color-border, #333); background: var(--ds-color-surface, #1e1e1e); color: inherit; font-size: .78rem; cursor: pointer; }

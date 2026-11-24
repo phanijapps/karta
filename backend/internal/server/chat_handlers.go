@@ -288,9 +288,20 @@ func (sw *streamWriter) write(msg sseMessage) {
 		}
 	}
 	start := time.Now()
-	data, err := json.Marshal(msg.payload)
+	var data []byte
+	var err error
+	if _, isDone := msg.payload.(donePayload); isDone {
+		data = []byte("[DONE]")
+	} else {
+		data, err = json.Marshal(msg.payload)
+	}
 	if err == nil {
-		_, err = fmt.Fprintf(sw.w, "event: %s\ndata: %s\n\n", msg.event, data)
+		if msg.event == "" {
+			// OpenAI chunk framing: bare data lines (no event name).
+			_, err = fmt.Fprintf(sw.w, "data: %s\n\n", data)
+		} else {
+			_, err = fmt.Fprintf(sw.w, "event: %s\ndata: %s\n\n", msg.event, data)
+		}
 	}
 	if err == nil {
 		sw.flusher.Flush() // inside the timed section: slow flushes strike too
@@ -347,13 +358,27 @@ func (sw *streamWriter) send(msg sseMessage) {
 // the writer drains the queue, or immediately once dead-and-draining.
 // Sync mode: the handler's own goroutine writes it directly.
 func (sw *streamWriter) finish(msg sseMessage) {
+	sw.finishAll([]sseMessage{msg})
+}
+
+// finishAll delivers an ORDERED terminal sequence after the exchange
+// completed: every frame goes through the blocking (non-droppable)
+// path in order — volatile `send` may drop frames under a slow client,
+// but the stream's conclusion (final answer, finish_reason, [DONE])
+// never is. Sync mode writes directly.
+func (sw *streamWriter) finishAll(msgs []sseMessage) {
 	if !sw.deadlineOK {
-		sw.write(msg)
+		for _, m := range msgs {
+			sw.write(m)
+		}
 		return
 	}
-	select {
-	case sw.ch <- msg:
-	case <-sw.done:
+	for _, m := range msgs {
+		select {
+		case sw.ch <- m:
+		case <-sw.done:
+			return
+		}
 	}
 }
 

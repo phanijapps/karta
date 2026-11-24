@@ -4,6 +4,7 @@
 package apigen
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -458,6 +459,57 @@ func (e MessageRole) Valid() bool {
 	}
 }
 
+// Defines values for OpenAiCompletionChunkChoicesDeltaRole.
+const (
+	OpenAiCompletionChunkChoicesDeltaRoleAssistant OpenAiCompletionChunkChoicesDeltaRole = "assistant"
+)
+
+// Valid indicates whether the value is a known member of the OpenAiCompletionChunkChoicesDeltaRole enum.
+func (e OpenAiCompletionChunkChoicesDeltaRole) Valid() bool {
+	switch e {
+	case OpenAiCompletionChunkChoicesDeltaRoleAssistant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OpenAiCompletionChunkChoicesFinishReason.
+const (
+	OpenAiCompletionChunkChoicesFinishReasonError       OpenAiCompletionChunkChoicesFinishReason = "error"
+	OpenAiCompletionChunkChoicesFinishReasonLessThannil OpenAiCompletionChunkChoicesFinishReason = "<nil>"
+	OpenAiCompletionChunkChoicesFinishReasonStop        OpenAiCompletionChunkChoicesFinishReason = "stop"
+)
+
+// Valid indicates whether the value is a known member of the OpenAiCompletionChunkChoicesFinishReason enum.
+func (e OpenAiCompletionChunkChoicesFinishReason) Valid() bool {
+	switch e {
+	case OpenAiCompletionChunkChoicesFinishReasonError:
+		return true
+	case OpenAiCompletionChunkChoicesFinishReasonLessThannil:
+		return true
+	case OpenAiCompletionChunkChoicesFinishReasonStop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OpenAiCompletionChunkObject.
+const (
+	ChatCompletionChunk OpenAiCompletionChunkObject = "chat.completion.chunk"
+)
+
+// Valid indicates whether the value is a known member of the OpenAiCompletionChunkObject enum.
+func (e OpenAiCompletionChunkObject) Valid() bool {
+	switch e {
+	case ChatCompletionChunk:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for OpenAiCompletionRequestMessagesRole.
 const (
 	OpenAiCompletionRequestMessagesRoleAssistant OpenAiCompletionRequestMessagesRole = "assistant"
@@ -499,13 +551,13 @@ func (e OpenAiCompletionRequestModel) Valid() bool {
 
 // Defines values for OpenAiCompletionResponseChoicesFinishReason.
 const (
-	Stop OpenAiCompletionResponseChoicesFinishReason = "stop"
+	OpenAiCompletionResponseChoicesFinishReasonStop OpenAiCompletionResponseChoicesFinishReason = "stop"
 )
 
 // Valid indicates whether the value is a known member of the OpenAiCompletionResponseChoicesFinishReason enum.
 func (e OpenAiCompletionResponseChoicesFinishReason) Valid() bool {
 	switch e {
-	case Stop:
+	case OpenAiCompletionResponseChoicesFinishReasonStop:
 		return true
 	default:
 		return false
@@ -1515,6 +1567,33 @@ type ModelList struct {
 	Models []Model `json:"models"`
 }
 
+// OpenAiCompletionChunk defines model for OpenAiCompletionChunk.
+type OpenAiCompletionChunk struct {
+	Choices []struct {
+		Delta struct {
+			Content *string                                `json:"content,omitempty"`
+			Role    *OpenAiCompletionChunkChoicesDeltaRole `json:"role,omitempty"`
+		} `json:"delta"`
+
+		// FinishReason Null on content chunks; `stop` on the final frame, `error` on a failed run (OpenAI chunk semantics).
+		FinishReason *OpenAiCompletionChunkChoicesFinishReason `json:"finish_reason"`
+		Index        int                                       `json:"index"`
+	} `json:"choices"`
+	Created int                         `json:"created"`
+	Id      string                      `json:"id"`
+	Model   string                      `json:"model"`
+	Object  OpenAiCompletionChunkObject `json:"object"`
+}
+
+// OpenAiCompletionChunkChoicesDeltaRole defines model for OpenAiCompletionChunk.Choices.Delta.Role.
+type OpenAiCompletionChunkChoicesDeltaRole string
+
+// OpenAiCompletionChunkChoicesFinishReason Null on content chunks; `stop` on the final frame, `error` on a failed run (OpenAI chunk semantics).
+type OpenAiCompletionChunkChoicesFinishReason string
+
+// OpenAiCompletionChunkObject defines model for OpenAiCompletionChunk.Object.
+type OpenAiCompletionChunkObject string
+
 // OpenAiCompletionRequest defines model for OpenAiCompletionRequest.
 type OpenAiCompletionRequest struct {
 	Messages []struct {
@@ -1531,7 +1610,11 @@ type OpenAiCompletionRequest struct {
 	} `json:"metadata,omitempty"`
 	Model OpenAiCompletionRequestModel `json:"model"`
 
-	// Stream Accepted and ignored (non-streaming v1).
+	// Stream When true, the response is chunked SSE: `chat.completion.chunk`
+	// frames then a `data: [DONE]` terminator. Chat sessions stream
+	// real content deltas; research sessions stream the live work
+	// (tool/delegation/step frames as content, prefixed) and the
+	// final answer as the last content chunk. False/absent = JSON.
 	Stream *bool `json:"stream,omitempty"`
 }
 
@@ -2173,6 +2256,11 @@ type SearchSkillMarketplaceParams struct {
 	Q string `form:"q" json:"q"`
 }
 
+// OpenAiChatCompletion200JSONResponseBody defines parameters for OpenAiChatCompletion.
+type OpenAiChatCompletion200JSONResponseBody struct {
+	union json.RawMessage
+}
+
 // SendChatMessageJSONRequestBody defines body for SendChatMessage for application/json ContentType.
 type SendChatMessageJSONRequestBody = ChatSend
 
@@ -2235,6 +2323,68 @@ type UpdateSkillJSONRequestBody = SkillUpdate
 
 // OpenAiChatCompletionJSONRequestBody defines body for OpenAiChatCompletion for application/json ContentType.
 type OpenAiChatCompletionJSONRequestBody = OpenAiCompletionRequest
+
+// AsOpenAiCompletionResponse returns the union data inside the OpenAiChatCompletion200JSONResponseBody as a OpenAiCompletionResponse
+func (t OpenAiChatCompletion200JSONResponseBody) AsOpenAiCompletionResponse() (OpenAiCompletionResponse, error) {
+	var body OpenAiCompletionResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromOpenAiCompletionResponse overwrites any union data inside the OpenAiChatCompletion200JSONResponseBody as the provided OpenAiCompletionResponse
+func (t *OpenAiChatCompletion200JSONResponseBody) FromOpenAiCompletionResponse(v OpenAiCompletionResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeOpenAiCompletionResponse performs a merge with any union data inside the OpenAiChatCompletion200JSONResponseBody, using the provided OpenAiCompletionResponse
+func (t *OpenAiChatCompletion200JSONResponseBody) MergeOpenAiCompletionResponse(v OpenAiCompletionResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsOpenAiCompletionChunk returns the union data inside the OpenAiChatCompletion200JSONResponseBody as a OpenAiCompletionChunk
+func (t OpenAiChatCompletion200JSONResponseBody) AsOpenAiCompletionChunk() (OpenAiCompletionChunk, error) {
+	var body OpenAiCompletionChunk
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromOpenAiCompletionChunk overwrites any union data inside the OpenAiChatCompletion200JSONResponseBody as the provided OpenAiCompletionChunk
+func (t *OpenAiChatCompletion200JSONResponseBody) FromOpenAiCompletionChunk(v OpenAiCompletionChunk) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeOpenAiCompletionChunk performs a merge with any union data inside the OpenAiChatCompletion200JSONResponseBody, using the provided OpenAiCompletionChunk
+func (t *OpenAiChatCompletion200JSONResponseBody) MergeOpenAiCompletionChunk(v OpenAiCompletionChunk) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t OpenAiChatCompletion200JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *OpenAiChatCompletion200JSONResponseBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -2334,6 +2484,9 @@ type ServerInterface interface {
 	// StreamSessionEvents Stream the session's Timeline Tree events over SSE
 	// (GET /api/sessions/{sessionId}/events)
 	StreamSessionEvents(w http.ResponseWriter, r *http.Request, sessionId SessionId)
+	// LeaveWard Leave the session's ward (clear the binding)
+	// (POST /api/sessions/{sessionId}/leave-ward)
+	LeaveWard(w http.ResponseWriter, r *http.Request, sessionId SessionId)
 	// ResumeSession Resume a waiting session with user input
 	// (POST /api/sessions/{sessionId}/resume)
 	ResumeSession(w http.ResponseWriter, r *http.Request, sessionId SessionId)
@@ -2583,6 +2736,12 @@ func (_ Unimplemented) ContinueSession(w http.ResponseWriter, r *http.Request, s
 // StreamSessionEvents Stream the session's Timeline Tree events over SSE
 // (GET /api/sessions/{sessionId}/events)
 func (_ Unimplemented) StreamSessionEvents(w http.ResponseWriter, r *http.Request, sessionId SessionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// LeaveWard Leave the session's ward (clear the binding)
+// (POST /api/sessions/{sessionId}/leave-ward)
+func (_ Unimplemented) LeaveWard(w http.ResponseWriter, r *http.Request, sessionId SessionId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3415,6 +3574,32 @@ func (siw *ServerInterfaceWrapper) StreamSessionEvents(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// LeaveWard operation middleware
+func (siw *ServerInterfaceWrapper) LeaveWard(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "sessionId" -------------
+	var sessionId SessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sessionId", chi.URLParam(r, "sessionId"), &sessionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sessionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LeaveWard(w, r, sessionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ResumeSession operation middleware
 func (siw *ServerInterfaceWrapper) ResumeSession(w http.ResponseWriter, r *http.Request) {
 
@@ -4014,6 +4199,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/sessions/{sessionId}/state", wrapper.GetSessionState)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/sessions/{sessionId}/leave-ward", wrapper.LeaveWard)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/sessions/{sessionId}/cancel", wrapper.CancelSession)

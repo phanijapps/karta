@@ -369,3 +369,23 @@ func TestEnsureWardenSession(t *testing.T) {
 		t.Fatalf("want exactly 1 creator among concurrent callers, got %d", createdCount)
 	}
 }
+
+// TestAutoTitleIfUntitled: auto-titling never overwrites a user title.
+func TestAutoTitleIfUntitled(t *testing.T) {
+	s := openMem(t)
+	if _, err := s.EnsureSession("r1", "research"); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := s.SetSessionTitleIfUntitled("r1", "first analysis")
+	if err != nil || !ok {
+		t.Fatalf("first auto-title: %v %v", ok, err)
+	}
+	ok, _ = s.SetSessionTitleIfUntitled("r1", "second analysis")
+	if ok {
+		t.Fatal("second auto-title must not overwrite")
+	}
+	sess, _ := s.Session("r1")
+	if sess.Title != "first analysis" {
+		t.Fatalf("title: %q", sess.Title)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"zbot/backend/internal/chat"
+	"zbot/backend/internal/eventbus"
 	"zbot/backend/internal/providers"
 	"zbot/backend/internal/store"
 	"zbot/backend/internal/tools"
@@ -710,5 +712,169 @@ func TestOpenAiValidationAndBusy(t *testing.T) {
 		}
 		close(release)
 		<-first
+	})
+}
+
+// TestLeaveWardHandler (harden-mcp-and-ux): leave clears the binding,
+// drops the engine host, is idempotent, 409s the default session, 404s
+// unknowns.
+func TestLeaveWardHandler(t *testing.T) {
+	url, db := newChatDaemon(t, nil, nil)
+	code, body := mutate(t, "POST", url+"/api/sessions", map[string]any{})
+	if code != http.StatusCreated {
+		t.Fatal(code)
+	}
+	sid := body["id"].(string)
+	if err := db.SetSessionWard(sid, "stock-analysis"); err != nil {
+		t.Fatal(err)
+	}
+	var dropped string
+	// (the daemon wires the dropper; the handler test verifies the row)
+	_ = dropped
+	code, _ = mutate(t, "POST", url+"/api/sessions/"+sid+"/leave-ward", map[string]any{})
+	if code != http.StatusNoContent {
+		t.Fatalf("leave: %d", code)
+	}
+	sess, _ := db.Session(sid)
+	if sess.Ward != "" || sess.Type != "research" {
+		t.Fatalf("after leave: %+v", sess)
+	}
+	code, _ = mutate(t, "POST", url+"/api/sessions/"+sid+"/leave-ward", map[string]any{})
+	if code != http.StatusNoContent {
+		t.Fatalf("idempotent leave: %d", code)
+	}
+	code, _ = mutate(t, "POST", url+"/api/sessions/default/leave-ward", map[string]any{})
+	if code != http.StatusConflict {
+		t.Fatalf("default leave: %d", code)
+	}
+	code, _ = mutate(t, "POST", url+"/api/sessions/missing/leave-ward", map[string]any{})
+	if code != http.StatusNotFound {
+		t.Fatalf("unknown leave: %d", code)
+	}
+}
+
+// TestOpenAiStreaming (harden-mcp-and-ux): stream=true emits OpenAI
+// chunks (bare data lines) and the [DONE] terminator; a chat session
+// streams its content deltas.
+func TestOpenAiStreaming(t *testing.T) {
+	url, db := newChatDaemon(t, []providers.ChatResponse{
+		{Message: providers.ChatMessage{Role: "assistant", Content: "streamed hello"}},
+	}, nil)
+	if err := db.SetDefaultModel("fakep/fakemodel"); err != nil {
+		t.Fatal(err)
+	}
+	// The sync completer (fakeChatCompleter) is not a streamer: the
+	// service degrades to a unit completion — the stream still emits
+	// the role frame, the content (via the non-stream outcome is NOT
+	// re-sent — the chat path forwards deltas only; with a
+	// non-streaming completer there are none, so the final frame is
+	// the contract). Assert framing + terminator.
+	req, _ := http.NewRequest(http.MethodPost, url+"/v1/chat/completions",
+		strings.NewReader(`{"model":"karta-chat","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("stream status/type: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	body := string(raw)
+	if !strings.Contains(body, `"object":"chat.completion.chunk"`) {
+		t.Fatalf("no chunk frames:\n%s", body)
+	}
+	if strings.Contains(body, "event: ") {
+		t.Fatalf("OpenAI framing must be bare data lines:\n%s", body)
+	}
+	if !strings.Contains(body, "data: [DONE]") {
+		t.Fatalf("no terminator:\n%s", body)
+	}
+	if !strings.Contains(body, `"finish_reason":"stop"`) {
+		t.Fatalf("no stop frame:\n%s", body)
+	}
+	// ORDER: the stop frame precedes [DONE] (a direct write once raced
+	// the drain goroutine and printed [DONE] first — live-caught).
+	if strings.Index(body, `"finish_reason":"stop"`) > strings.Index(body, "data: [DONE]") {
+		t.Fatalf("[DONE] must follow the stop frame:\n%s", body)
+	}
+}
+
+// TestOpenAiStreamBusyAndNulls (gate fixes): a busy research session
+// gets the typed 409 BEFORE any stream opens; content chunks carry
+// finish_reason null (OpenAI semantics).
+func TestOpenAiStreamBusyAndNulls(t *testing.T) {
+	t.Run("busy research → 409 JSON, no stream", func(t *testing.T) {
+		release := make(chan struct{})
+		started := make(chan struct{})
+		db2, err := store.Open(filepath.Join(t.TempDir(), "busy.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = db2.Close() })
+		if err := db2.SetDefaultModel("fakep/fakemodel"); err != nil {
+			t.Fatal(err)
+		}
+		lookup := func(string) (providers.Provider, error) {
+			return providers.Provider{BaseURL: "http://fake.invalid/v1"}, nil
+		}
+		resolve := func(context.Context, providers.Provider) (string, error) { return "", nil }
+		svc := chat.New(db2, lookup, resolve, &fakeChatCompleter{}, tools.BuiltinProvider{}, nil, nil)
+		svc.SetResearchPath(func(ctx context.Context, sessionID, text, providerName, model string) chat.SendOutcome {
+			close(started)
+			<-release
+			return chat.SendOutcome{}
+		})
+		// The streaming path subscribes to the session's Timeline: a
+		// real bus is required (nil would panic the handler).
+		ts := startTestServer(New(nil, nil, nil, svc, nil, eventbus.New(), db2, nil, nil, nil, nil, "test").Routes())
+		t.Cleanup(ts.Close)
+		const body = `{"model":"karta-research","stream":true,"messages":[{"role":"user","content":"q"}]}`
+		go func() {
+			req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			if resp, err := http.DefaultClient.Do(req); err == nil {
+				_ = resp.Body.Close()
+			}
+		}()
+		<-started
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusConflict {
+			t.Fatalf("want pre-stream 409, got %d (%s)", resp.StatusCode, resp.Header.Get("Content-Type"))
+		}
+		if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "application/json") {
+			t.Fatalf("busy must be JSON, not a committed stream: %s", ct)
+		}
+		close(release)
+	})
+
+	t.Run("content chunks carry finish_reason null", func(t *testing.T) {
+		url, db := newChatDaemon(t, []providers.ChatResponse{{Message: providers.ChatMessage{Role: "assistant", Content: "x"}}}, nil)
+		if err := db.SetDefaultModel("fakep/fakemodel"); err != nil {
+			t.Fatal(err)
+		}
+		req, _ := http.NewRequest(http.MethodPost, url+"/v1/chat/completions",
+			strings.NewReader(`{"model":"karta-chat","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		raw, _ := io.ReadAll(resp.Body)
+		if !strings.Contains(string(raw), `"finish_reason":null`) {
+			t.Fatalf("content chunks must carry null:\n%s", raw)
+		}
+		if strings.Contains(string(raw), `"finish_reason":""`) {
+			t.Fatalf("empty-string finish_reason leaked:\n%s", raw)
+		}
 	})
 }

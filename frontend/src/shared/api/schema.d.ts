@@ -848,6 +848,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/{sessionId}/leave-ward": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leave the session's ward (clear the binding)
+         * @description Clears the session's ward binding: the session stays a
+         *     research session and becomes a shell again (re-groups under
+         *     Research); the engine's in-memory ward host drops the ward so
+         *     the next run does not pre-load it. The transcript is untouched
+         *     (history is the truth). Idempotent (204 when already unbound).
+         *     The default chat session cannot leave (409).
+         */
+        post: operations["leaveWard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/{sessionId}/cancel": {
         parameters: {
             query?: never;
@@ -1144,7 +1169,13 @@ export interface components {
                 role: "system" | "user" | "assistant";
                 content: string;
             }[];
-            /** @description Accepted and ignored (non-streaming v1). */
+            /**
+             * @description When true, the response is chunked SSE: `chat.completion.chunk`
+             *     frames then a `data: [DONE]` terminator. Chat sessions stream
+             *     real content deltas; research sessions stream the live work
+             *     (tool/delegation/step frames as content, prefixed) and the
+             *     final answer as the last content chunk. False/absent = JSON.
+             */
             stream?: boolean;
             metadata?: {
                 /**
@@ -1172,6 +1203,26 @@ export interface components {
                 };
                 /** @enum {string} */
                 finish_reason: "stop";
+            }[];
+        };
+        OpenAiCompletionChunk: {
+            id: string;
+            /** @enum {string} */
+            object: "chat.completion.chunk";
+            created: number;
+            model: string;
+            choices: {
+                index: number;
+                delta: {
+                    /** @enum {string} */
+                    role?: "assistant";
+                    content?: string;
+                };
+                /**
+                 * @description Null on content chunks; `stop` on the final frame, `error` on a failed run (OpenAI chunk semantics).
+                 * @enum {string|null}
+                 */
+                finish_reason: "stop" | "error" | null;
             }[];
         };
         OpenAiError: {
@@ -2963,13 +3014,14 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The completion (OpenAI shape). */
+            /** @description The completion (JSON) — or, with stream=true, chunked SSE (chat.completion.chunk frames, [DONE] terminator). */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OpenAiCompletionResponse"];
+                    "application/json": components["schemas"]["OpenAiCompletionResponse"] | components["schemas"]["OpenAiCompletionChunk"];
+                    "text/event-stream": components["schemas"]["OpenAiCompletionChunk"];
                 };
             };
             /** @description Invalid request (the OpenAI error shape). */
@@ -3144,6 +3196,36 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    leaveWard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unbound (or already unbound). No body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The default chat session has no ward binding. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     cancelSession: {

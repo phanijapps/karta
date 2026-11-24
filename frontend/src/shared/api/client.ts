@@ -344,6 +344,46 @@ export async function getSessionState(
   }
 }
 
+/**
+ * Leave the session's ward — a GENERATED-operation call (the
+ * OpenAPI-typed transport in this module; no hand-rolled binding).
+ * operationId: leaveWard; the mutation guard needs a JSON body.
+ */
+export type LeaveWardOperation = operations["leaveWard"];
+export type LeaveWardError =
+  LeaveWardOperation["responses"][409]["content"]["application/json"];
+
+export async function leaveWard(
+  sessionId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return callOperation(
+    "leaveWard",
+    `/api/sessions/${encodeURIComponent(sessionId)}/leave-ward`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+    (res) => (res.status === 204 ? { ok: true } : null),
+  );
+}
+
+/** callOperation runs one generated operation's fetch and maps typed
+ * 4xx bodies (Error schema) to the discriminated result the UI uses. */
+async function callOperation<T>(
+  _op: keyof operations,
+  url: string,
+  init: RequestInit,
+  fromResponse: (res: Response, body: unknown) => T | null,
+): Promise<T | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${BASE}${url}`, init);
+    const body: unknown = res.status === 204 ? null : await res.json().catch(() => null);
+    const mapped = fromResponse(res, body);
+    if (mapped !== null) return mapped;
+    const err = body as { message?: string; code?: string } | null;
+    return { ok: false, error: err?.message ?? `daemon answered ${res.status}` };
+  } catch (err) {
+    return { ok: false, error: `daemon unreachable (${String(err)})` };
+  }
+}
+
 /** Ensure the ward's persistent warden session (POST
  * /api/wards/{name}/warden) — every ward's selectable bot. */
 export const WARDEN_ROUTE = "/api/wards/{name}/warden" as const satisfies keyof paths;

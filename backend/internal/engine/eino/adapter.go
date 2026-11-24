@@ -440,6 +440,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 			})
 			toolEvt := domain.TimelineEvent{
 				ID: a.idGen(), SessionID: in.sessionID, Kind: domain.EventToolCall,
+				Text:     tc.Function.Name, // the name rides Text too: every SSE consumer (UI work stream, /v1 frames) renders it
 				ToolCall: &domain.ToolCallPayload{Tool: tc.Function.Name, Output: content},
 			}
 			if in.isChild || in.agentName != "" {

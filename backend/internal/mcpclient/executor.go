@@ -9,6 +9,7 @@ package mcpclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"sort"
@@ -18,7 +19,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"zbot/backend/internal/registry"
 	"zbot/backend/internal/tools"
 )
 
@@ -28,10 +28,38 @@ const execClientName = "karta"
 // callTimeout bounds one tool call.
 const callTimeout = 60 * time.Second
 
-// ServerSpec names one enabled stdio server to run.
-type ServerSpec struct {
-	Name string
-	Spec registry.MCPSpec
+// Failure kinds (the Timeline shows WHY an MCP call failed).
+const (
+	FailTimeout     = "timeout"       // the call exceeded callTimeout
+	FailUnavailable = "unavailable"   // the server cannot start / re-dial
+	FailProtocol    = "protocol"      // the server answered a protocol error
+	FailServer      = "server_error"  // the tool reported isError
+	FailBadArgs     = "bad_arguments" // the model's arguments did not decode
+)
+
+// ExecFailure is the typed EXECUTION failure (the probe Failure is the
+// settings-plane JSON shape; this one rides tool results — the engine
+// maps Kind → Timeline text).
+type ExecFailure struct {
+	Kind   string
+	Server string
+	Tool   string
+	Err    error
+}
+
+func (f *ExecFailure) Error() string {
+	return fmt.Sprintf("mcp %s.%s: %s: %v", f.Server, f.Tool, f.Kind, f.Err)
+}
+
+func (f *ExecFailure) Unwrap() error { return f.Err }
+
+// AsFailure reports the typed MCP execution failure behind err, if any.
+func AsFailure(err error) (*ExecFailure, bool) {
+	var f *ExecFailure
+	if errors.As(err, &f) {
+		return f, true
+	}
+	return nil, false
 }
 
 // Executor keeps configured stdio MCP servers connected and executes
@@ -51,12 +79,17 @@ type Executor struct {
 	servers map[string]*managedServer
 }
 
-// managedServer is one live stdio session.
+// managedServer is one live stdio session (or a dead one awaiting
+// backoff).
 type managedServer struct {
 	name    string
 	spec    ServerSpec
 	session *mcp.ClientSession
 	tools   []*mcp.Tool
+	// startFailures counts consecutive start failures (backoff); a
+	// healthy start resets it. notBefore gates Refresh re-dials.
+	startFailures int
+	notBefore     time.Time
 }
 
 func (e *Executor) logf(format string, args ...any) {
@@ -80,15 +113,16 @@ func (e *Executor) Refresh(ctx context.Context) {
 		e.servers = map[string]*managedServer{}
 	}
 	type liveEntry struct {
-		spec ServerSpec
-		dead bool // session dropped by a failed call
+		spec      ServerSpec
+		dead      bool // session dropped by a failed call
+		notBefore time.Time
 	}
 	specKey := func(s ServerSpec) string {
 		return strings.Join(append([]string{s.Spec.Command, s.Spec.URL}, append(s.Spec.Args, envPairs(s.Spec.Env)...)...), "|")
 	}
 	live := make(map[string]liveEntry, len(e.servers))
 	for name, s := range e.servers {
-		live[name] = liveEntry{spec: s.spec, dead: s.session == nil}
+		live[name] = liveEntry{spec: s.spec, dead: s.session == nil, notBefore: s.notBefore}
 	}
 	e.mu.Unlock()
 	for _, want := range desired {
@@ -96,7 +130,13 @@ func (e *Executor) Refresh(ctx context.Context) {
 		if ok && !cur.dead && specKey(cur.spec) == specKey(want) {
 			continue // healthy + unchanged
 		}
-		if ok { // changed spec (or dead): drop, restart below
+		// Backoff FIRST: a crash-looping server (dead, unchanged spec)
+		// is retried on its schedule, not on every Refresh (which
+		// Tools() calls per model round). A spec CHANGE resets it.
+		if ok && cur.dead && specKey(cur.spec) == specKey(want) && time.Now().Before(cur.notBefore) {
+			continue
+		}
+		if ok && !cur.dead { // live but changed spec: close, restart below
 			e.mu.Lock()
 			if s := e.servers[want.Name]; s != nil && s.session != nil {
 				_ = s.session.Close()
@@ -104,8 +144,17 @@ func (e *Executor) Refresh(ctx context.Context) {
 			delete(e.servers, want.Name)
 			e.mu.Unlock()
 		}
+		// A DEAD entry (unchanged spec, window expired) is kept in place:
+		// recordStartFailure below bumps its count so the backoff GROWS
+		// (2s → 4s → 8s…) across successive failed retries.
+		if ok && cur.dead && specKey(cur.spec) != specKey(want) {
+			e.mu.Lock() // spec changed: reset the failure history
+			delete(e.servers, want.Name)
+			e.mu.Unlock()
+		}
 		if err := e.start(ctx, want); err != nil {
-			e.logf("server %q failed to start: %v (tools absent)", want.Name, err)
+			e.recordStartFailure(want, err)
+			e.logf("server %q failed to start (%d in a row): %v (tools absent; retry in %s)", want.Name, e.failuresOf(want.Name), err, backoffFor(e.failuresOf(want.Name)))
 		}
 	}
 	// Drop deconfigured servers.
@@ -133,7 +182,7 @@ func (e *Executor) Refresh(ctx context.Context) {
 func (e *Executor) start(ctx context.Context, want ServerSpec) error {
 	dialCtx, cancel := context.WithTimeout(ctx, DefaultDeadline)
 	defer cancel()
-	cmd := exec.Command(want.Spec.Command, want.Spec.Args...)
+	cmd := exec.Command(resolveBinary(want.Spec.Command), want.Spec.Args...)
 	cmd.Env = append(cmd.Environ(), envPairs(want.Spec.Env)...)
 	client := mcp.NewClient(&mcp.Implementation{Name: execClientName, Version: "0.0"}, nil)
 	sess, err := client.Connect(dialCtx, &mcp.CommandTransport{Command: cmd}, nil)
@@ -167,6 +216,30 @@ func (e *Executor) start(ctx context.Context, want ServerSpec) error {
 	e.mu.Unlock()
 	e.logf("server %q live (%d tools)", want.Name, len(live))
 	return nil
+}
+
+// recordStartFailure bumps a server's consecutive-failure count and
+// schedules its retry (backoff). A dead entry (no session) is kept so
+// the backoff state survives between Refresh calls.
+func (e *Executor) recordStartFailure(want ServerSpec, err error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	s := e.servers[want.Name]
+	if s == nil {
+		s = &managedServer{name: want.Name, spec: want}
+		e.servers[want.Name] = s
+	}
+	s.startFailures++
+	s.notBefore = time.Now().Add(backoffFor(s.startFailures))
+}
+
+func (e *Executor) failuresOf(name string) int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if s := e.servers[name]; s != nil {
+		return s.startFailures
+	}
+	return 0
 }
 
 func envPairs(env map[string]string) []string {
@@ -235,33 +308,50 @@ func (t *mcpTool) Exec(ctx context.Context, argsJSON string) tools.Result {
 	defer cancel()
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return tools.Result{Err: fmt.Errorf("mcp %s.%s: bad arguments: %w", t.server, t.tool.Name, err)}
+		return tools.Result{Err: &ExecFailure{Kind: FailBadArgs, Server: t.server, Tool: t.tool.Name, Err: err}}
 	}
 	e := t.exec
 	e.mu.Lock()
 	srv := e.servers[t.server]
 	e.mu.Unlock()
 	if srv == nil || srv.session == nil {
-		// Fail-soft: re-dial once (the server may have died).
+		// Fail-soft: re-dial once (the server may have died) — honoring
+		// the restart backoff (a crash-looping server is not re-dialed
+		// from every stale tool call inside its window).
+		if srv != nil && time.Now().Before(srv.notBefore) {
+			return tools.Result{Err: &ExecFailure{Kind: FailUnavailable, Server: t.server, Tool: t.tool.Name,
+				Err: fmt.Errorf("server down; retry in %s", time.Until(srv.notBefore).Round(time.Second))}}
+		}
+		started := false
 		if e.Specs != nil {
 			for _, want := range e.Specs() {
 				if want.Name == t.server {
 					if err := e.start(ctx, want); err != nil {
-						return tools.Result{Err: fmt.Errorf("mcp %s unavailable: %w", t.server, err)}
+						e.recordStartFailure(want, err)
+						return tools.Result{Err: &ExecFailure{Kind: FailUnavailable, Server: t.server, Tool: t.tool.Name, Err: err}}
 					}
-					e.mu.Lock()
-					srv = e.servers[t.server]
-					e.mu.Unlock()
+					started = true
 					break
 				}
 			}
 		}
-		if srv == nil {
-			return tools.Result{Err: fmt.Errorf("mcp %s unavailable", t.server)}
+		if started {
+			e.mu.Lock()
+			srv = e.servers[t.server]
+			e.mu.Unlock()
+		}
+		// Re-check BOTH: a deconfigured server (Specs no longer lists it)
+		// leaves a dead entry whose session is nil — typed, never a panic.
+		if srv == nil || srv.session == nil {
+			return tools.Result{Err: &ExecFailure{Kind: FailUnavailable, Server: t.server, Tool: t.tool.Name, Err: errors.New("server not running")}}
 		}
 	}
 	res, err := srv.session.CallTool(callCtx, &mcp.CallToolParams{Name: t.tool.Name, Arguments: args})
 	if err != nil {
+		kind := FailProtocol
+		if callCtx.Err() == context.DeadlineExceeded {
+			kind = FailTimeout
+		}
 		// The session may be dead — drop it so the next call re-dials.
 		e.mu.Lock()
 		if cur := e.servers[t.server]; cur == srv {
@@ -269,7 +359,10 @@ func (t *mcpTool) Exec(ctx context.Context, argsJSON string) tools.Result {
 			delete(e.servers, t.server)
 		}
 		e.mu.Unlock()
-		return tools.Result{Err: fmt.Errorf("mcp %s.%s: %w", t.server, t.tool.Name, err)}
+		return tools.Result{Err: &ExecFailure{Kind: kind, Server: t.server, Tool: t.tool.Name, Err: err}}
+	}
+	if res != nil && res.IsError {
+		return tools.Result{Err: &ExecFailure{Kind: FailServer, Server: t.server, Tool: t.tool.Name, Err: errors.New(strings.TrimSpace(contentText(res)))}}
 	}
 	return tools.Result{Output: contentText(res)}
 }

@@ -327,3 +327,29 @@ func (r *recordingCompleter) Complete(ctx context.Context, provider, model, syst
 	r.onCall(provider, model)
 	return r.inner.Complete(ctx, provider, model, system, user)
 }
+
+// TestAutoTitleFromAnalysis (harden-mcp-and-ux): an untitled research
+// session is named from the first analysis's primary intent; the
+// hook fires with a slug; SlugTitle bounds and sanitizes.
+func TestAutoTitleFromAnalysis(t *testing.T) {
+	fc := &fakeCompleter{responses: []string{wrapperContract}}
+	w := newWrapper(fc, wrapSnap(), nil)
+	var titled []string
+	w.Cfg.TitleSession = func(sessionID, title string) { titled = append(titled, sessionID+"="+title) }
+	if _, err := w.RunGoal(context.Background(), domain.GoalRequest{SessionID: "s-untitled", Goal: "g", Model: "p/m"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(titled) != 1 || titled[0] != "s-untitled=do research" {
+		t.Fatalf("auto-title: %v", titled)
+	}
+	for _, tc := range []struct{ in, want string }{
+		{"Comparative research: AMD vs NVIDIA (datacenter) — 2026!", "comparative research amd vs nvidia datacenter 2026"},
+		{"Émigré café", "migr caf"},
+		{"", ""},
+		{strings.Repeat("x", 100), strings.Repeat("x", 64)},
+	} {
+		if got := SlugTitle(tc.in); got != tc.want {
+			t.Fatalf("SlugTitle(%q) = %q want %q", tc.in, got, tc.want)
+		}
+	}
+}

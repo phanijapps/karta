@@ -96,6 +96,15 @@ func (a *Adapter) SetMCPTools(fn func() []tools.Tool) { a.mcpTools = fn }
 // the next run pre-loads from the binding). Best-effort by contract.
 func (a *Adapter) SetWardBinder(fn func(sessionID, ward string)) { a.wardBinder = fn }
 
+// DropWard clears the session's in-memory ward (Leave): the next run
+// starts unhosted instead of pre-loading the ward the user left.
+func (a *Adapter) DropWard(sessionID string) {
+	if a.wardVault == nil {
+		return
+	}
+	a.wardHost(sessionID).Leave()
+}
+
 // EnsureWard re-enters a session's bound ward on a fresh host (daemon
 // restart recovery: the binding survives in the session row, the host
 // does not). A host that already carries a ward keeps it — its state

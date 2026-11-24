@@ -54,7 +54,12 @@ type Server struct {
 	// activeRuns is the live-run set for roster views (working
 	// badges); refreshed before each list.
 	activeRuns map[string]bool
+	// wardDropper clears the engine's in-memory ward host on Leave.
+	wardDropper func(sessionID string)
 }
+
+// SetWardDropper wires the engine's host-reset for leave-ward.
+func (s *Server) SetWardDropper(fn func(sessionID string)) { s.wardDropper = fn }
 
 // SetV1Token arms the /v1 bearer check (server.api_token; empty keeps
 // the channel open on loopback).

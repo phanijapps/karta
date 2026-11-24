@@ -299,8 +299,15 @@ func run(ctx context.Context, homeFlag string) error {
 				// Per-ward orchestrator: a bound ward's model override
 				// runs the hosted session (analysis + root run).
 				OrchestratorModel: wardOrchestratorModel(wardVault, db),
-				AnalysisModel:     cfg.Intent.Model,
-				ComposePersona:    composePersona,
+				// Auto-title untitled research sessions from the first
+				// analysis (never overwrites a user title).
+				TitleSession: func(sessionID, title string) {
+					if _, err := db.SetSessionTitleIfUntitled(sessionID, title); err != nil {
+						log.Printf("zbotd: session %s auto-title failed: %v", sessionID, err)
+					}
+				},
+				AnalysisModel:  cfg.Intent.Model,
+				ComposePersona: composePersona,
 				Persist: func(ev domain.TimelineEvent) {
 					// Attempted-durable-first, the engine's own posture.
 					// The stored payload carries text AND the typed
@@ -372,6 +379,7 @@ func run(ctx context.Context, homeFlag string) error {
 	// The OpenAI-compatible channel's optional bearer guard
 	// (server.api_token; empty = loopback posture).
 	daemonSrv.SetV1Token(cfg.Server.ApiToken)
+	daemonSrv.SetWardDropper(eng.DropWard)
 	daemonSrv.SetSkillHub(skillhub.NewHTTPIndexClient(), skillhub.NewGitHubRepoFetcher(), skillStore)
 	// Probed MCP tools flow into the resource index (bounded context:
 	// indexing is best-effort, never blocks the probe response).

@@ -50,6 +50,34 @@ type Config struct {
 	// BEFORE analysis and the run — the ward's own model orchestrates
 	// hosted sessions (the per-ward orchestrator).
 	OrchestratorModel func(sessionID string) string
+	// TitleSession names an untitled session from its first analysis
+	// (the daemon wires store.SetSessionTitle guarded by title == "").
+	// Nil = no auto-titling.
+	TitleSession func(sessionID, title string)
+}
+
+// SlugTitle turns a primary intent into a navigation label: ASCII
+// letters/digits, dashes, ≤ 64 chars, human-cased ("comparative
+// research on amd vs nvidia").
+func SlugTitle(intent string) string {
+	var b strings.Builder
+	space := false
+	for _, r := range strings.ToLower(intent) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			if space && b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			space = false
+			b.WriteRune(r)
+		default:
+			space = true
+		}
+		if b.Len() >= 64 {
+			break
+		}
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // applyOrchestrator lets the session's ward override the run's model
@@ -126,6 +154,14 @@ func (w *Wrapper) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 		}
 	}
 
+	// 2b) Auto-title: an untitled research session takes its name from
+	// the first analysis's primary intent (user titles always win —
+	// the daemon's TitleSession checks the row).
+	if analysis.PrimaryIntent != "" && w.Cfg.TitleSession != nil && req.SessionID != "" {
+		if title := SlugTitle(analysis.PrimaryIntent); title != "" {
+			w.Cfg.TitleSession(req.SessionID, title)
+		}
+	}
 	// 3) Compose the run's prompt. AGENT-NAMED runs: dynamic sections
 	// ONLY (the engine APPENDS them to the agent's body — the agent's
 	// identity is never replaced); root runs: persona + dynamic.

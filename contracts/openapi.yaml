@@ -1146,11 +1146,18 @@ paths:
               $ref: '#/components/schemas/OpenAiCompletionRequest'
       responses:
         '200':
-          description: The completion (OpenAI shape).
+          description: >-
+            The completion (JSON) — or, with stream=true, chunked SSE
+            (chat.completion.chunk frames, [DONE] terminator).
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OpenAiCompletionResponse'
+                oneOf:
+                  - $ref: '#/components/schemas/OpenAiCompletionResponse'
+                  - $ref: '#/components/schemas/OpenAiCompletionChunk'
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/OpenAiCompletionChunk'
         '400':
           description: Invalid request (the OpenAI error shape).
           content:
@@ -1305,6 +1312,30 @@ paths:
                 $ref: '#/components/schemas/SessionState'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/sessions/{sessionId}/leave-ward:
+    post:
+      operationId: leaveWard
+      summary: Leave the session's ward (clear the binding)
+      description: |
+        Clears the session's ward binding: the session stays a
+        research session and becomes a shell again (re-groups under
+        Research); the engine's in-memory ward host drops the ward so
+        the next run does not pre-load it. The transcript is untouched
+        (history is the truth). Idempotent (204 when already unbound).
+        The default chat session cannot leave (409).
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '204':
+          description: Unbound (or already unbound). No body.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The default chat session has no ward binding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/sessions/{sessionId}/cancel:
     post:
       operationId: cancelSession
@@ -1990,7 +2021,12 @@ components:
                 maxLength: 262144
         stream:
           type: boolean
-          description: Accepted and ignored (non-streaming v1).
+          description: |
+            When true, the response is chunked SSE: `chat.completion.chunk`
+            frames then a `data: [DONE]` terminator. Chat sessions stream
+            real content deltas; research sessions stream the live work
+            (tool/delegation/step frames as content, prefixed) and the
+            final answer as the last content chunk. False/absent = JSON.
         metadata:
           type: object
           additionalProperties: false
@@ -2043,6 +2079,46 @@ components:
               finish_reason:
                 type: string
                 enum: [stop]
+    OpenAiCompletionChunk:
+      type: object
+      additionalProperties: false
+      required: [id, object, created, model, choices]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [chat.completion.chunk]
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [index, delta, finish_reason]
+            properties:
+              index:
+                type: integer
+              delta:
+                type: object
+                additionalProperties: false
+                properties:
+                  role:
+                    type: string
+                    enum: [assistant]
+                  content:
+                    type: string
+              finish_reason:
+                type: [string, "null"]
+                enum: [stop, error, null]
+                description: >-
+                  Null on content chunks; `stop` on the final frame,
+                  `error` on a failed run (OpenAI chunk semantics).
     OpenAiError:
       type: object
       additionalProperties: false

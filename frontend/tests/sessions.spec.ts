@@ -422,3 +422,42 @@ test('research runs stream their work live (Timeline SSE → work stream)', asyn
   // The analysis card ALSO lands live (mid-run, from the SSE event).
   await expect(page.getByLabel('Task Analysis')).toContainText('nvda-check');
 });
+
+test('leaving a ward: the strip offers Leave (non-warden), clears the binding, focus returns to the composer', async ({ page }) => {
+  await mockBase(page);
+  // r-stock is bound but NOT a warden → Leave shows.
+  await mockSessions(page);
+  await mockTranscripts(page);
+  await mockStates(page);
+  let left = 0;
+  await page.route((url) => url.pathname === '/api/sessions/r-stock/leave-ward', (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    left++;
+    return route.fulfill({ status: 204 });
+  });
+  // After leaving, the roster reports r-stock unbound.
+  let leftOnce = false;
+  await page.route((url) => url.pathname === '/api/sessions', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ sessions: [
+        { id: 'default', type: 'chat', status: 'completed', updated_at: NOW },
+        { id: 'r-stock', type: 'research', status: 'completed', ...(leftOnce ? {} : { ward: 'stock-analysis' }), updated_at: NOW },
+      ], truncated: false }),
+    });
+  });
+  await page.goto('/');
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
+  await expect(page.getByLabel('Active ward')).toContainText('stock-analysis');
+  const leave = page.getByRole('button', { name: 'Leave ward stock-analysis' });
+  await expect(leave).toBeVisible();
+  leftOnce = true;
+  await leave.click();
+  await expect.poll(() => left).toBe(1);
+  await expect(page.getByLabel('Active ward')).toHaveCount(0);
+  // Focus handed to the composer; the screen reader hears why.
+  await expect(page.getByRole('textbox', { name: 'Research question' })).toBeFocused();
+  // The announcement lives in the polite live region (sr-only).
+  await expect(page.locator('[aria-live="polite"]')).toContainText('Left stock-analysis');
+});

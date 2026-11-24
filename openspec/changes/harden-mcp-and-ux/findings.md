@@ -1,0 +1,99 @@
+# Findings — harden-mcp-and-ux
+
+## Phase gates
+
+### Gate 1 — gpt-6.1-terra (backend)
+
+Verdict: leave-ward, auto-titling, tool-event text, terminator
+ordering, boundaries all confirmed. 5 P1 + 3 P2 — ALL FIXED:
+
+- **G1-1 (P1) backoff never grows** — FIXED: the dead entry is kept
+  across retries (unchanged spec) so recordStartFailure bumps the
+  count (2s → 4s → 8s…); a spec CHANGE resets. Test: two expired
+  windows → failures=3.
+- **G1-2 (P1) busy 409 after a committed 200** — FIXED: the busy
+  check precedes the headers/status. Test: status 409 + JSON
+  content-type (never a stream). Found the test server needed a real
+  bus (a nil bus panicked the research path).
+- **G1-3 (P1) content chunks emitted finish_reason "" (invalid)** —
+  FIXED: contract `type: [string, "null"]` (OpenAPI 3.1 — `nullable`
+  is invalid there), FinishReason a pointer → JSON null on content
+  chunks. Test pins `"finish_reason":null` and no empty-string leak.
+- **G1-4 (P1) the final status chunk could drop** — FIXED:
+  `streamWriter.finishAll` — an ORDERED, blocking (non-droppable)
+  terminal sequence for answer + finish_reason + [DONE]; sync-mode
+  writers write directly.
+- **G1-5 (P1) stale tool panicked on a dead entry** — FIXED: both
+  `srv` and `srv.session` re-checked after the redial attempt → typed
+  FailUnavailable. Test: deconfigured server + stale tool.
+- **G1-6..8 (P2)** — FIXED: Exec-side redial honors the backoff window
+  (typed "retry in Ns"); error frames carry the message as a content
+  chunk before `finish_reason: error`; node discovery lists
+  `~/.local/node-v*/bin` newest-first (no version pin).
+
+### Gate 2 — gpt-6.1-sol (frontend)
+
+Verdict: guard compliance (JSON content type), roster refresh, warden
+UX, auto-title rendering, FSD/runes all confirmed. 1 P1 + 1 P2 —
+BOTH FIXED:
+
+- **G2-1 (P1) hand-rolled leaveWard binding** — FIXED: routed through
+  `callOperation` keyed on the generated `operations["leaveWard"]`
+  (typed 409 body), the module's generated-transport pattern.
+- **G2-2 (P2) Leave removed the focused control without a handoff** —
+  FIXED: an awaited handler captures the ward name BEFORE the binding
+  clears (the test caught the derived reading empty: "Left ."),
+  announces "Left <ward>. The session moved under Research." in the
+  polite live region, and focuses the composer after `tick()`;
+  accessible name "Leave ward <ward>". Playwright-pinned.
+
+## Decisions (recorded during implementation)
+
+- **D1 — Work frames as chunk content.** OpenAI clients render only
+  `delta.content`; a custom field would be dropped. Prefix markers
+  (🔧 tool, 👥 delegation, 🧠 step) keep research runs legible.
+- **D2 — `[DONE]` is the writer's TERMINAL frame.** A direct write
+  after `finish()` raced the drain goroutine and printed `[DONE]`
+  BEFORE the stop frame (live-caught). The terminator is now a
+  `donePayload` message queued behind the stop chunk; the handler test
+  pins the ORDER.
+- **D3 — tool_call bus events carry `Text` = tool name.** The name
+  lived only in the structured payload; every SSE consumer (the UI's
+  work stream, /v1 frames) rendered empty labels. Now both.
+- **D4 — Backoff check precedes the drop.** The first Refresh order
+  (drop dead entry → check backoff) re-dialed on every Tools() call
+  because the backoff state lived on the dropped entry. Check first;
+  a spec CHANGE still resets.
+- **D5 — Binary resolution is additive**: as-written first (absolute
+  or PATH), then HOME tool dirs; unknown names fall back verbatim so
+  exec reports the familiar "not found".
+- **D6 — Leave keeps the transcript** (history is the truth) and drops
+  the in-memory host too (otherwise the next run pre-loads the ward
+  the user just left). Wardens show a note instead of Leave — a
+  warden's binding IS its identity.
+- **D7 — Auto-titles never overwrite** (`SetSessionTitleIfUntitled`):
+  a user's name always wins; the slug is a label (spaced words), not
+  a URL slug.
+
+## Live-verified
+
+- /v1 chat stream: `content → stop → [DONE]` (ordered).
+- /v1 research stream: 6 chunk frames — 🔧/🧠 work frames then the
+  sourced AMD figure (`$13.4B Q3 2026`, ir.amd.com), stop, [DONE].
+- The operator's bare `command: npx` config (which failed before the
+  resolver) connects — `brave-mcp live (9 tools)`.
+
+## P2s (recorded, not blocking)
+
+- **P2-1 — Leave on wardens.** Hidden by design (D6); a "retire this
+  ward's warden" surface is a later change if wanted.
+- **P2-2 — Streaming error frames carry no message** (OpenAI has no
+  spec'd error frame; `finish_reason: error` only). The non-stream
+  JSON path carries the message.
+
+## Final review
+
+(pending — zbot-reviewer)
+
+`task verify`: exit 0 after the gate fixes (gates + codegen zero
+drift + lint 0 + suites + budget OK; 92 Playwright).
