@@ -12,6 +12,7 @@ import (
 	"crypto/sha1"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -22,14 +23,27 @@ import (
 	apigen "zbot/backend/internal/server/apigen"
 )
 
-// openAiSessionID derives the conversation's stable session id from its
-// first user message (OpenAI clients resend full history; the first
-// message is the conversation's identity).
-func openAiSessionID(req apigen.OpenAiCompletionRequest) string {
+// openAiSessionID derives the conversation's stable session id: a
+// client-supplied metadata.chat_id when present (the PREFERRED
+// identity — clients with real conversation ids never collide), else
+// the sha1[:16] of the first user message (OpenAI clients resend full
+// history; the first message is the fallback identity — two distinct
+// conversations with an IDENTICAL opening share a session, a recorded
+// protocol-inherent trade-off). The requested model's type suffix
+// keeps a hash collision from inheriting the WRONG session type.
+func openAiSessionID(req apigen.OpenAiCompletionRequest, typ string) string {
+	if req.Metadata != nil && req.Metadata.ChatId != nil && strings.TrimSpace(*req.Metadata.ChatId) != "" {
+		id := strings.TrimSpace(*req.Metadata.ChatId)
+		if len(id) > 64 {
+			sum := sha1.Sum([]byte(id))
+			id = hex.EncodeToString(sum[:])[:16]
+		}
+		return "owui-" + id + "-" + typ
+	}
 	for _, m := range req.Messages {
 		if m.Role == "user" {
 			sum := sha1.Sum([]byte(m.Content))
-			return "owui-" + hex.EncodeToString(sum[:])[:16]
+			return "owui-" + hex.EncodeToString(sum[:])[:16] + "-" + typ
 		}
 	}
 	return ""
@@ -90,19 +104,24 @@ func (s *Server) OpenAiChatCompletion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req apigen.OpenAiCompletionRequest
-	if err := decodeJSON(w, r, &req); err != nil {
-		return // decodeJSON wrote the typed 400
-	}
-	sessionID := openAiSessionID(req)
-	if sessionID == "" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "messages must carry at least one user message")
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&req); err != nil {
+		openAiError(w, http.StatusBadRequest, "invalid request body: "+err.Error(), "invalid_request_error", "")
 		return
 	}
-	// The model maps to the session TYPE: ensure the row exists with
-	// that type (idempotent; the type is immutable at creation).
+	if len(req.Messages) == 0 {
+		openAiError(w, http.StatusBadRequest, "messages must not be empty", "invalid_request_error", "")
+		return
+	}
+	// The model maps to the session TYPE (the id carries it as a
+	// suffix, so a hash collision can never inherit the wrong type).
 	typ := "research"
 	if strings.Contains(string(req.Model), "chat") {
 		typ = "chat"
+	}
+	sessionID := openAiSessionID(req, typ)
+	if sessionID == "" {
+		openAiError(w, http.StatusBadRequest, "messages must carry at least one user message", "invalid_request_error", "")
+		return
 	}
 	if _, err := s.db.EnsureSession(sessionID, typ); err != nil {
 		openAiError(w, http.StatusInternalServerError, "session ensure failed: "+err.Error(), "server_error", "")
@@ -119,7 +138,7 @@ func (s *Server) OpenAiChatCompletion(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if strings.TrimSpace(lastUser) == "" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "the last user message must not be empty")
+		openAiError(w, http.StatusBadRequest, "the last user message must not be empty", "invalid_request_error", "")
 		return
 	}
 	// The chat service resolves the model from the daemon's configured

@@ -31,6 +31,10 @@ export function createSessions() {
   // the analysis card and the context panel render from this, never
   // from transcript parsing).
   let analysis = $state<SessionAnalysis | null>(null);
+  // Analysis generation: only the LATEST request's response may land
+  // (switching sessions mid-fetch must not leak another session's
+  // analysis into the active card/panel).
+  let analysisGeneration = 0;
   let sendError = $state('');
 
   const groups = $derived.by<SessionGroups>(() => {
@@ -123,10 +127,10 @@ export function createSessions() {
 
   /** Refresh the active session's analysis from the state surface. */
   async function loadAnalysis(sessionId: string) {
-    if (sessionId === activeId) {
-      const state = await getSessionState(sessionId);
-      analysis = state?.intent_analysis ?? null;
-    }
+    const mine = ++analysisGeneration;
+    const state = await getSessionState(sessionId);
+    if (mine !== analysisGeneration || sessionId !== activeId) return; // stale
+    analysis = state?.intent_analysis ?? null;
   }
 
   /** Switch the active session (loads its transcript on first visit). */
@@ -135,6 +139,7 @@ export function createSessions() {
     activeId = sessionId;
     sendError = '';
     analysis = null;
+    analysisGeneration++; // pending state fetches for the old session are stale
     if (!(sessionId in transcripts)) {
       try {
         await loadTranscript(sessionId);

@@ -36,11 +36,13 @@
 - [x] 3.1 Draft clears at send start; composer stays usable during
   runs. Verify: Playwright (text gone immediately after Enter).
 - [x] 3.2 Task Analysis card + context-panel skills render from
-  session state (live SSE event while in-flight). Verify: Playwright
-  with a stubbed state endpoint (card shows for research session,
-  absent for chat; panel lists packet skills). — sessions.spec.ts:
-  state-mocked card (intent/budget/skills/dropped), no card for chat,
-  context-panel skills from state.
+  session state — card renders regardless of transcript emptiness,
+  refreshed at load/select/reconcile (completion time: research sends
+  complete as units). Verify: Playwright with a stubbed state
+  endpoint. — sessions.spec.ts: state-mocked card
+  (intent/budget/skills/dropped), no card for chat, context-panel
+  skills from state. Live in-flight SSE refresh = P2-4 (the events
+  subscription is the Timeline-Tree surface).
 - [x] 3.3 Final-answer persistence: INVESTIGATED — NO BUG. The NVDA
   run's final report IS the transcript's last row (seq 42, 2790
   chars; the earlier post-mortem misread a truncated query). The

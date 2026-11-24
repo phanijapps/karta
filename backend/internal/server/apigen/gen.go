@@ -1491,6 +1491,14 @@ type OpenAiCompletionRequest struct {
 		Content string                              `json:"content"`
 		Role    OpenAiCompletionRequestMessagesRole `json:"role"`
 	} `json:"messages"`
+	Metadata *struct {
+		// ChatId Client-supplied stable conversation identifier — when
+		// present it IS the session identity (preferred over the
+		// first-message hash). Clients with real conversation
+		// ids (OpenWebUI pipelines and future builds) pass it so
+		// distinct conversations never share a session.
+		ChatId *string `json:"chat_id,omitempty"`
+	} `json:"metadata,omitempty"`
 	Model OpenAiCompletionRequestModel `json:"model"`
 
 	// Stream Accepted and ignored (non-streaming v1).

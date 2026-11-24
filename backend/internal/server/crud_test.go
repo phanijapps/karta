@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"zbot/backend/internal/chat"
@@ -514,6 +515,53 @@ func TestOpenAiChannel(t *testing.T) {
 		}
 		if owui != 1 {
 			t.Fatalf("stable session id broken: %d chat owui sessions", owui)
+		}
+	})
+
+	t.Run("metadata.chat_id is the identity; type suffix isolates collisions", func(t *testing.T) {
+		// Client-supplied chat_id wins over the content hash.
+		code, _ := mutate(t, "POST", url+"/v1/chat/completions", map[string]any{
+			"model":    "karta-chat",
+			"messages": msgs("identical opening"),
+			"metadata": map[string]any{"chat_id": "conv-42"},
+		})
+		if code != http.StatusOK {
+			t.Fatalf("chat_id completion: %d", code)
+		}
+		rows, err := db.ListSessions(20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var found bool
+		for _, r := range rows {
+			if strings.Contains(r.ID, "conv-42") && r.Type == "chat" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("chat_id session missing: %+v", rows)
+		}
+		// Same opening, different model → DIFFERENT session (type
+		// suffix): a hash collision cannot inherit the wrong type.
+		if code, _ := mutate(t, "POST", url+"/v1/chat/completions", map[string]any{
+			"model": "karta-research", "messages": msgs("identical opening"),
+		}); code != http.StatusOK {
+			t.Fatalf("research completion: %d", code)
+		}
+		rows, _ = db.ListSessions(20)
+		var hashChat, hashResearch bool
+		for _, r := range rows {
+			if strings.HasPrefix(r.ID, "owui-") {
+				if strings.HasSuffix(r.ID, "-chat") && r.Type == "chat" {
+					hashChat = true
+				}
+				if strings.HasSuffix(r.ID, "-research") && r.Type == "research" {
+					hashResearch = true
+				}
+			}
+		}
+		if !hashChat || !hashResearch {
+			t.Fatalf("type-suffixed ids: chat=%v research=%v rows=%+v", hashChat, hashResearch, rows)
 		}
 	})
 

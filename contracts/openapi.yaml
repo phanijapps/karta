@@ -1110,7 +1110,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAiCompletionResponse'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: Invalid request (the OpenAI error shape).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAiError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
@@ -1922,6 +1926,20 @@ components:
         stream:
           type: boolean
           description: Accepted and ignored (non-streaming v1).
+        metadata:
+          type: object
+          additionalProperties: false
+          properties:
+            chat_id:
+              type: string
+              minLength: 1
+              maxLength: 128
+              description: |
+                Client-supplied stable conversation identifier — when
+                present it IS the session identity (preferred over the
+                first-message hash). Clients with real conversation
+                ids (OpenWebUI pipelines and future builds) pass it so
+                distinct conversations never share a session.
     OpenAiCompletionResponse:
       type: object
       additionalProperties: false

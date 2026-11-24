@@ -1118,6 +1118,16 @@ export interface components {
             }[];
             /** @description Accepted and ignored (non-streaming v1). */
             stream?: boolean;
+            metadata?: {
+                /**
+                 * @description Client-supplied stable conversation identifier — when
+                 *     present it IS the session identity (preferred over the
+                 *     first-message hash). Clients with real conversation
+                 *     ids (OpenWebUI pipelines and future builds) pass it so
+                 *     distinct conversations never share a session.
+                 */
+                chat_id?: string;
+            };
         };
         OpenAiCompletionResponse: {
             id: string;
@@ -2862,7 +2872,15 @@ export interface operations {
                     "application/json": components["schemas"]["OpenAiCompletionResponse"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description Invalid request (the OpenAI error shape). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiError"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             /** @description A research run is already live in the target session (session_busy) — the OpenAI error shape carries the message. */
             409: {

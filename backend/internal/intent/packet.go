@@ -182,10 +182,26 @@ func correctionAdvice(code string) string {
 	}
 }
 
+// requestDelimiters are the tag strings that could close or reopen
+// the advisory block from inside the data — all stripped (both cases).
+var requestDelimiters = []string{
+	"<user-request>", "</user-request>",
+	"<intent-data>", "</intent-data>",
+	"<intent-data/", "<user-request/",
+}
+
 // EscapeRequest renders the user request as embedded advisory data:
-// control characters stripped, length bounded, no fence markers.
+// control characters stripped, length bounded, no fence markers, and
+// NONE of the advisory block's own delimiters survive inside it (a
+// request containing "</user-request>" cannot escape the block).
 func EscapeRequest(goal string) string {
-	return advisory(strings.ReplaceAll(strings.ReplaceAll(goal, "```", "′′′"), "<intent-data>", ""), PacketRequestLimit)
+	out := goal
+	for _, d := range requestDelimiters {
+		out = strings.ReplaceAll(out, d, "")
+		out = strings.ReplaceAll(out, strings.ToUpper(d), "")
+		out = strings.ReplaceAll(out, strings.ToLower(d), "")
+	}
+	return advisory(strings.ReplaceAll(out, "```", "′′′"), PacketRequestLimit)
 }
 
 // RequestBlock renders the escaped request block for the user message.

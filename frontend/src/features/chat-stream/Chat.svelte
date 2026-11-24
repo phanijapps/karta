@@ -151,24 +151,11 @@
   {/if}
   <span class="sr-only" aria-live="polite">{announced}</span>
   <div class="transcript" bind:this={transcriptEl} aria-label="Conversation transcript">
-    {#if sessions.loading}
-      <div class="chat-empty"><Sparkles size={28} strokeWidth={1.2} /><p class="muted">Loading the conversation…</p></div>
-    {:else if sessions.messages.length === 0}
-      <div class="chat-empty">
-        <Sparkles size={28} strokeWidth={1.2} />
-        {#if isResearch}
-          <h3>A research session</h3>
-          <p class="muted">Ask a research question — intent analysis runs, skills are provisioned, wards and delegation come into play. Everything stays local.</p>
-        {:else}
-          <h3>A conversation that stays yours</h3>
-          <p class="muted">One persistent conversation — every message is kept locally, forever. Pick a model above.</p>
-        {/if}
-      </div>
-    {:else}
-      {#if analysisCard}
-        <!-- Task Analysis card: the research exchange header, rendered
-             from SESSION STATE (never transcript parsing). -->
-        <article class="analysis-card" aria-label="Task Analysis">
+    {#if analysisCard}
+      <!-- Task Analysis card: the research exchange header, rendered
+             from SESSION STATE (never transcript parsing) — shown even
+             while the first exchange is still pending. -->
+      <article class="analysis-card" aria-label="Task Analysis">
           <header class="analysis-head">
             <Microscope size={16} aria-hidden="true" />
             <strong>Research</strong>
@@ -204,7 +191,21 @@
             <p class="muted analysis-note">Analysis degraded: {analysisCard.reason}</p>
           {/if}
         </article>
-      {/if}
+    {/if}
+    {#if sessions.loading}
+      <div class="chat-empty"><Sparkles size={28} strokeWidth={1.2} /><p class="muted">Loading the conversation…</p></div>
+    {:else if sessions.messages.length === 0}
+      <div class="chat-empty">
+        <Sparkles size={28} strokeWidth={1.2} />
+        {#if isResearch}
+          <h3>A research session</h3>
+          <p class="muted">Ask a research question — intent analysis runs, skills are provisioned, wards and delegation come into play. Everything stays local.</p>
+        {:else}
+          <h3>A conversation that stays yours</h3>
+          <p class="muted">One persistent conversation — every message is kept locally, forever. Pick a model above.</p>
+        {/if}
+      </div>
+    {:else}
       {#each sessions.messages as m (m.id)}
         {#if m.role === 'tool'}
           <article class="tool-row" aria-label={`Tool ${m.tool_name ?? 'call'}`}>
@@ -357,7 +358,10 @@
   .analysis-meta dd { margin: 0; }
   .skills-row { display: flex; gap: .35rem; flex-wrap: wrap; }
   .skill-chip { display: inline-flex; align-items: center; gap: .25rem; font-size: .7rem; padding: .12rem .5rem; border-radius: 6px; background: color-mix(in oklch, var(--accent, #6366f1) 12%, transparent); color: var(--accent, #6366f1); border: 1px solid color-mix(in oklch, var(--accent, #6366f1) 25%, transparent); }
-  .skill-chip.dropped { opacity: .55; text-decoration: line-through; }
+  /* Dropped chips: explicit label + strikethrough carry the state —
+   * NO opacity reduction (whole-element alpha breaks text contrast in
+   * the light theme). */
+  .skill-chip.dropped { color: var(--ds-color-muted, #666); text-decoration: line-through; }
   /* Delegation tree */
   .del-tree { border: 1px solid var(--ds-color-border, #333); border-radius: 12px; padding: .5rem .8rem; background: var(--ds-color-surface, #1e1e1e); max-width: min(48rem, 90%); font-size: .78rem; }
   .del-title { display: flex; align-items: center; gap: .35rem; margin: 0 0 .3rem; font-size: .66rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-color-muted, #888); }

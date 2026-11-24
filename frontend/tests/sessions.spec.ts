@@ -288,15 +288,18 @@ test('the draft clears the instant a send starts (not on completion)', async ({ 
   await mockTranscripts(page);
   await mockStates(page);
   // A send that never completes: if the draft waited for it, the text
-  // would sit in the composer for the whole run.
-  await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
-    if (route.request().method() === 'GET') return route.fallback();
-    return new Promise(() => {});
+  // would sit in the composer for the whole run. Quick chat streams —
+  // hang the SSE endpoint it actually posts to.
+  let sendStarted = false;
+  await page.route('**/api/chat/send', async (route) => {
+    sendStarted = true;
+    await new Promise(() => {});
   });
   await page.goto('/');
   const input = page.getByRole('textbox', { name: 'Message Karta' });
   await input.fill('long research question');
   await input.press('Enter');
+  await expect.poll(() => sendStarted).toBe(true);
   await expect(page.getByLabel('Assistant is working')).toBeVisible();
   await expect(input).toHaveValue('');
 });

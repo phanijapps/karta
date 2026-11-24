@@ -89,8 +89,11 @@ var _ = sql.ErrNoRows
 func (s *Store) LatestEventOfKind(sessionID, kind string) (*Event, error) {
 	var e Event
 	var execID, parentID sql.NullString
+	// rowid = insertion order (single writer): strictly monotonic,
+	// unlike the lexicographic RFC3339Nano text whose variable-width
+	// fractions (".1Z" vs ".11Z") can misorder.
 	err := s.db.QueryRow(`SELECT id, session_id, execution_id, parent_id, kind, payload, created_at
-		FROM timeline_events WHERE session_id = ? AND kind = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+		FROM timeline_events WHERE session_id = ? AND kind = ? ORDER BY rowid DESC LIMIT 1`,
 		sessionID, kind).Scan(&e.ID, &e.SessionID, &execID, &parentID, &e.Kind, &e.Payload, &e.CreatedAt)
 	e.ExecutionID, e.ParentID = execID.String, parentID.String
 	if err == sql.ErrNoRows {

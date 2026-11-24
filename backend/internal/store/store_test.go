@@ -302,3 +302,28 @@ func TestMigrateSessionType(t *testing.T) {
 		t.Fatalf("reopen row: %+v", sess)
 	}
 }
+
+// TestLatestEventOfKindFractionalOrdering (gate fix): the latest-event
+// read orders by insertion, not by RFC3339Nano text — unequal
+// fractional widths (".1Z" vs ".11Z") must not misorder the result.
+func TestLatestEventOfKindFractionalOrdering(t *testing.T) {
+	s := openMem(t)
+	if _, err := s.EnsureSession("default", "chat"); err != nil {
+		t.Fatal(err)
+	}
+	// Hand-craft created_at strings whose text order inverts their
+	// time order: .1Z is EARLIER than .11Z but sorts AFTER it.
+	for _, ts := range []string{"2026-01-01T00:00:00.11Z", "2026-01-01T00:00:00.1Z"} {
+		if _, err := s.db.Exec(`INSERT INTO timeline_events (id, session_id, kind, payload, created_at)
+			VALUES (?, 'default', 'intent_analysis', '{}', ?)`, "evt-"+ts, ts); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ev, err := s.LatestEventOfKind("default", "intent_analysis")
+	if err != nil || ev == nil {
+		t.Fatalf("latest: %v %v", ev, err)
+	}
+	if ev.CreatedAt != "2026-01-01T00:00:00.1Z" {
+		t.Fatalf("insertion order must win over text order: %q", ev.CreatedAt)
+	}
+}
