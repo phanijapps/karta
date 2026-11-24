@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -43,10 +42,13 @@ type Message struct {
 	CreatedAt        time.Time
 }
 
-// Session is a conversation row ('default' — the eternal chat).
+// Session is a conversation row (the session model: type + ward
+// binding; 'default' — the eternal quick chat — is type chat).
 type Session struct {
 	ID        string
 	Title     string
+	Type      string
+	Ward      string
 	CreatedAt time.Time
 }
 
@@ -54,7 +56,8 @@ var schemaSQL = `
 CREATE TABLE IF NOT EXISTS sessions (
     id          TEXT PRIMARY KEY,
     title       TEXT,
-    mode        TEXT NOT NULL DEFAULT 'chat',
+    type        TEXT NOT NULL DEFAULT 'chat',
+    ward        TEXT,
     created_at  TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS executions (
@@ -136,22 +139,40 @@ type Store struct {
 // migrateReasoning adds the messages.reasoning column to databases created
 // before it existed (guarded: absent column only). The house pattern for a
 // schema with no migration framework.
-// migrateSessionMode adds the mode column to pre-existing sessions
-// tables (add-chat-modes). Idempotent.
-func migrateSessionMode(db *sql.DB) error {
-	_, err := db.Exec(`ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'chat'`)
-	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
-		return fmt.Errorf("store: migrate session mode: %w", err)
+// migrateSessionType carries pre-existing sessions tables to the
+// session model (add-chat-modes): the toggle-era `mode` column RENAMES
+// to `type` (SQLite ≥3.25), and the `ward` binding column is added.
+// Fresh databases already carry both in schemaSQL. Idempotent.
+func migrateSessionType(db *sql.DB) error {
+	cols, err := tableColumns(db, "sessions")
+	if err != nil {
+		return err
+	}
+	if _, hasType := cols["type"]; !hasType {
+		if _, hasMode := cols["mode"]; hasMode {
+			if _, err := db.Exec(`ALTER TABLE sessions RENAME COLUMN mode TO type`); err != nil {
+				return fmt.Errorf("store: migrate session type (rename): %w", err)
+			}
+		} else if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN type TEXT NOT NULL DEFAULT 'chat'`); err != nil {
+			return fmt.Errorf("store: migrate session type (add): %w", err)
+		}
+	}
+	if _, hasWard := cols["ward"]; !hasWard {
+		if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN ward TEXT`); err != nil {
+			return fmt.Errorf("store: migrate session ward: %w", err)
+		}
 	}
 	return nil
 }
 
-func migrateReasoning(db *sql.DB) error {
-	rows, err := db.Query(`PRAGMA table_info(messages)`)
+// tableColumns lists one table's column names (migration guards).
+func tableColumns(db *sql.DB, table string) (map[string]bool, error) {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
 	if err != nil {
-		return fmt.Errorf("store: reasoning migration probe: %w", err)
+		return nil, fmt.Errorf("store: probe %s columns: %w", table, err)
 	}
 	defer func() { _ = rows.Close() }()
+	cols := map[string]bool{}
 	for rows.Next() {
 		var cid int
 		var name, ctype string
@@ -159,14 +180,23 @@ func migrateReasoning(db *sql.DB) error {
 		var dflt any
 		var pk int
 		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			return fmt.Errorf("store: reasoning migration scan: %w", err)
+			return nil, fmt.Errorf("store: scan %s columns: %w", table, err)
 		}
-		if name == "reasoning" {
-			return nil // already present
-		}
+		cols[name] = true
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("store: reasoning migration rows: %w", err)
+		return nil, fmt.Errorf("store: %s columns rows: %w", table, err)
+	}
+	return cols, nil
+}
+
+func migrateReasoning(db *sql.DB) error {
+	cols, err := tableColumns(db, "messages")
+	if err != nil {
+		return err
+	}
+	if cols["reasoning"] {
+		return nil // already present
 	}
 	if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN reasoning TEXT`); err != nil {
 		return fmt.Errorf("store: reasoning migration alter: %w", err)
@@ -190,7 +220,8 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("store: bootstrap schema: %w", err)
 	}
-	if err := migrateSessionMode(db); err != nil {
+	if err := migrateSessionType(db); err != nil {
+		_ = db.Close()
 		return nil, err
 	}
 	if err := migrateReasoning(db); err != nil {
@@ -203,12 +234,13 @@ func Open(path string) (*Store, error) {
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
 
-// EnsureSession idempotently ensures the session row exists and returns
-// its root execution id (created lazily, concurrently safe).
-func (s *Store) EnsureSession(sessionID string) (rootExecID string, err error) {
+// EnsureSession idempotently ensures the session row exists (typed at
+// CREATION only — the type is immutable afterwards) and returns its
+// root execution id (created lazily, concurrently safe).
+func (s *Store) EnsureSession(sessionID, typ string) (rootExecID string, err error) {
 	// Session row.
-	if _, err = s.db.Exec(`INSERT INTO sessions (id, created_at) VALUES (?, ?)
-		ON CONFLICT(id) DO NOTHING`, sessionID, now()); err != nil {
+	if _, err = s.db.Exec(`INSERT INTO sessions (id, type, created_at) VALUES (?, ?, ?)
+		ON CONFLICT(id) DO NOTHING`, sessionID, typ, now()); err != nil {
 		return "", fmt.Errorf("store: ensure session: %w", err)
 	}
 	// Root execution row (one per session by convention: id derived).
@@ -248,15 +280,26 @@ func (s *Store) Append(m Message) (Message, error) {
 	return m, nil
 }
 
-// SessionInfo is one session row (for consumers like the distiller).
+// SessionInfo is one session row (for consumers like the distiller
+// and the session navigator). UpdatedAt is the recency hint: the
+// latest message time, falling back to creation.
 type SessionInfo struct {
-	ID        string
-	CreatedAt string
+	ID         string
+	Title      string
+	Type       string
+	Ward       string
+	CreatedAt  string
+	UpdatedAt  string
+	HasMessages bool
 }
 
-// ListSessions returns up to limit sessions, newest first.
+// ListSessions returns up to limit sessions, most recently active
+// first (the sidebar's ordering).
 func (s *Store) ListSessions(limit int) ([]SessionInfo, error) {
-	rows, err := s.db.Query(`SELECT id, created_at FROM sessions ORDER BY created_at DESC LIMIT ?`, limit)
+	rows, err := s.db.Query(`SELECT id, COALESCE(title,''), COALESCE(type,'chat'), COALESCE(ward,''), created_at,
+		COALESCE((SELECT MAX(created_at) FROM messages WHERE session_id = sessions.id), created_at) AS updated_at,
+		EXISTS(SELECT 1 FROM messages WHERE session_id = sessions.id) AS has_messages
+		FROM sessions ORDER BY updated_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -264,12 +307,31 @@ func (s *Store) ListSessions(limit int) ([]SessionInfo, error) {
 	var out []SessionInfo
 	for rows.Next() {
 		var info SessionInfo
-		if err := rows.Scan(&info.ID, &info.CreatedAt); err != nil {
+		if err := rows.Scan(&info.ID, &info.Title, &info.Type, &info.Ward, &info.CreatedAt, &info.UpdatedAt, &info.HasMessages); err != nil {
 			return nil, err
 		}
 		out = append(out, info)
 	}
 	return out, rows.Err()
+}
+
+// SetSessionTitle names a session (research sessions carry display
+// names; chat does not).
+func (s *Store) SetSessionTitle(sessionID, title string) error {
+	if _, err := s.db.Exec(`UPDATE sessions SET title = NULLIF(?, '') WHERE id = ?`, title, sessionID); err != nil {
+		return fmt.Errorf("store: set session title: %w", err)
+	}
+	return nil
+}
+
+// SetSessionWard rebinds a session's sticky ward ("" unbinds). The
+// ward tools fire this on ward_use/ward_create; the binding drives the
+// sidebar grouping and the next run's pre-loaded ward context.
+func (s *Store) SetSessionWard(sessionID, ward string) error {
+	if _, err := s.db.Exec(`UPDATE sessions SET ward = NULLIF(?, '') WHERE id = ?`, ward, sessionID); err != nil {
+		return fmt.Errorf("store: set session ward: %w", err)
+	}
+	return nil
 }
 
 // Replay returns rows with seq > afterSeq in order, bounded by limit.
@@ -301,8 +363,8 @@ func (s *Store) LatestSeq(sessionID string) (int64, error) {
 func (s *Store) Session(sessionID string) (*Session, error) {
 	var sess Session
 	var created string
-	err := s.db.QueryRow(`SELECT id, COALESCE(title,''), created_at FROM sessions WHERE id = ?`, sessionID).
-		Scan(&sess.ID, &sess.Title, &created)
+	err := s.db.QueryRow(`SELECT id, COALESCE(title,''), COALESCE(type,'chat'), COALESCE(ward,''), created_at FROM sessions WHERE id = ?`, sessionID).
+		Scan(&sess.ID, &sess.Title, &sess.Type, &sess.Ward, &created)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

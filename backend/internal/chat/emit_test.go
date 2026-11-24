@@ -59,13 +59,13 @@ func TestEmitPersistsAndPublishes(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	bus := eventbus.New()
-	sub := bus.Subscribe(context.Background(), SessionID)
+	sub := bus.Subscribe(context.Background(), DefaultSessionID)
 	svc := newEmitService(t, db, bus)
 
-	svc.emitEvent(store.Message{ID: "m1", Role: "user", Content: "hi", Seq: 1}, "exec1", "")
-	svc.emitToolEvent("exec1", "clock_now", tools.Result{Output: "now"})
+	svc.emitEvent(store.Message{ID: "m1", SessionID: DefaultSessionID, Role: "user", Content: "hi", Seq: 1}, "exec1", "")
+	svc.emitToolEvent(DefaultSessionID, "exec1", "clock_now", tools.Result{Output: "now"})
 
-	persisted, err := db.Events(SessionID, "", 16)
+	persisted, err := db.Events(DefaultSessionID, "", 16)
 	if err != nil {
 		t.Fatalf("read events: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestEmitSkipsPublishWhenPersistFails(t *testing.T) {
 				t.Fatalf("open store: %v", err)
 			}
 			bus := eventbus.New()
-			sub := bus.Subscribe(context.Background(), SessionID)
+			sub := bus.Subscribe(context.Background(), DefaultSessionID)
 			svc := newEmitService(t, db, bus)
 
 			// Persist failure: close the DB so AppendEvent errors.
@@ -103,10 +103,10 @@ func TestEmitSkipsPublishWhenPersistFails(t *testing.T) {
 		})
 	}
 	newCase("emitEvent", func(svc *Service) {
-		svc.emitEvent(store.Message{ID: "m1", Role: "user", Content: "hi", Seq: 1}, "exec1", "")
+		svc.emitEvent(store.Message{ID: "m1", SessionID: DefaultSessionID, Role: "user", Content: "hi", Seq: 1}, "exec1", "")
 	})
 	newCase("emitToolEvent", func(svc *Service) {
-		svc.emitToolEvent("exec1", "clock_now", tools.Result{Output: "now"})
+		svc.emitToolEvent(DefaultSessionID, "exec1", "clock_now", tools.Result{Output: "now"})
 	})
 }
 
@@ -124,10 +124,10 @@ func TestEmitSwallowsClosedBus(t *testing.T) {
 	svc := newEmitService(t, db, bus)
 
 	// Must not panic; the swallow is the pinned (documented) behavior.
-	svc.emitEvent(store.Message{ID: "m1", Role: "user", Content: "hi", Seq: 1}, "exec1", "")
-	svc.emitToolEvent("exec1", "clock_now", tools.Result{Output: "now"})
+	svc.emitEvent(store.Message{ID: "m1", SessionID: DefaultSessionID, Role: "user", Content: "hi", Seq: 1}, "exec1", "")
+	svc.emitToolEvent(DefaultSessionID, "exec1", "clock_now", tools.Result{Output: "now"})
 
-	persisted, err := db.Events(SessionID, "", 16)
+	persisted, err := db.Events(DefaultSessionID, "", 16)
 	if err != nil {
 		t.Fatalf("read events: %v", err)
 	}

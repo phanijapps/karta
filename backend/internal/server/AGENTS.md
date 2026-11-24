@@ -63,8 +63,14 @@ mcpclient; never imports clients, engine, or UI code.
   from zbotd): Host enforcement is then skipped — an explicit trust
   decision putting an unauthenticated API on the network — while the
   Origin rule keeps comparing hosts.
-- Goal/session/SSE operations ride the generated `Unimplemented` stubs
-  (501) until their owning change lands.
+- Session CRUD (add-chat-modes): `GET /api/sessions` lists the roster
+  (type + ward binding, recency-ordered — the sidebar's grouping data;
+  cursor = offset), `POST /api/sessions` creates research shells, and
+  `GET /api/sessions/{id}` reads one. Chat sends are SESSION-scoped
+  (`session_id` on send/sync/clear; the SERVICE routes by type — no
+  mode branch in the handlers); unknown ids fail typed 404. Remaining
+  goal/SSE operations ride the generated `Unimplemented` stubs (501)
+  until their owning change lands.
 - Error mapping (`writeMutationError`, providers_handlers.go):
   `ErrUnknownProvider` → 404; `ErrNameExists`/`ErrCapacity`/
   `ErrOriginProtected` → 409 (`duplicate_name`/`provider_limit`/

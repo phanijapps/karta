@@ -2,8 +2,11 @@ package chat
 
 import (
 	"context"
+	"fmt"
 
 	"zbot/backend/internal/domain"
+	"zbot/backend/internal/providers"
+	"zbot/backend/internal/store"
 	"zbot/backend/internal/tools"
 )
 
@@ -22,6 +25,12 @@ func (s *Service) SetExtraTools(fn func() []tools.Tool) { s.extraTools = fn }
 // the persona when the session hosts a ward).
 func (s *Service) SetActiveWard(fn func() string) { s.activeWard = fn }
 
+// SetContext wires the memory-recall seam: the lean exchange injects
+// the recalled facts as a ## Context system message after the persona
+// (the type gates the PIPELINE, never the knowledge — memory runs in
+// both session types). Nil disables recall.
+func (s *Service) SetContext(fn func(ctx context.Context, text string) []string) { s.recall = fn }
+
 // staticProvider serves a fixed tool list (mounting extra planes like
 // the ward tools without a registry).
 type staticProvider struct{ list []tools.Tool }
@@ -29,23 +38,96 @@ type staticProvider struct{ list []tools.Tool }
 // Tools returns the fixed list.
 func (p staticProvider) Tools() []tools.Tool { return p.list }
 
-// SetResearchPath wires the research-mode execution route: the full
-// engine pipeline (intent analysis, skills, wards, delegation).
-func (s *Service) SetResearchPath(fn func(ctx context.Context, text, providerName, model string) SendOutcome) {
+// SetResearchPath wires the research-session execution route: the full
+// engine pipeline (intent analysis, skills, wards, delegation) in the
+// named session. Chat sessions always run the lean exchange; research
+// sessions never do when this is wired. The persona is the SAME on
+// both routes.
+func (s *Service) SetResearchPath(fn func(ctx context.Context, sessionID, text, providerName, model string) SendOutcome) {
 	s.researchPath = fn
 }
 
-// Send runs one serialized exchange (synchronous: no deltas).
-func (s *Service) Send(ctx context.Context, text, providerName, model string) SendOutcome {
-	return s.SendMode(ctx, text, providerName, model, "")
+// SendIn runs one serialized exchange in the named session (synchronous:
+// no deltas). The session's TYPE routes: chat → the lean exchange,
+// research → the engine pipeline when wired.
+func (s *Service) SendIn(ctx context.Context, sessionID, text, providerName, model string) SendOutcome {
+	sess, err := s.resolveSession(sessionID)
+	if err != nil {
+		return SendOutcome{Err: err}
+	}
+	if s.isResearch(sess) {
+		return s.researchPath(ctx, sess.ID, text, providerName, model)
+	}
+	return s.runExchange(ctx, sess, text, providerName, model, nil, nil)
 }
 
-// SendMode runs one exchange with an explicit chat mode. Empty mode =
-// chat (the lean default). Research mode routes through the engine's
-// full pipeline when wired; the persona is the SAME in both modes.
-func (s *Service) SendMode(ctx context.Context, text, providerName, model, mode string) SendOutcome {
-	if domain.NormalizeChatMode(mode) == domain.ChatModeResearch && s.researchPath != nil {
-		return s.researchPath(ctx, text, providerName, model)
+// SendStreamIn runs the same serialized exchange, streaming volatile
+// deltas (reasoning, then/interleaved content) to onDelta and to the
+// bus (coalesced). Persistence semantics are IDENTICAL to SendIn: rows
+// append in the same order, the assistant row persists once at
+// completion with its reasoning, and durable-before-volatile holds on
+// every emit. Research sessions complete as units (the engine pipeline
+// is not a token stream): the delta callback never fires for them.
+func (s *Service) SendStreamIn(ctx context.Context, sessionID, text, providerName, model string, onDelta func(Delta)) SendOutcome {
+	sess, err := s.resolveSession(sessionID)
+	if err != nil {
+		return SendOutcome{Err: err}
 	}
-	return s.runExchange(ctx, text, providerName, model, nil, nil)
+	if s.isResearch(sess) {
+		return s.researchPath(ctx, sess.ID, text, providerName, model)
+	}
+	sc, ok := s.completer.(StreamingCompleter)
+	if !ok {
+		// Degenerate but honest: the completer cannot stream.
+		return s.runExchange(ctx, sess, text, providerName, model, nil, nil)
+	}
+	coal := newDeltaCoalescer(s, sess.ID, onDelta)
+	defer coal.close()
+	complete := func(ctx context.Context, p providers.Provider, token string, messages []providers.ChatMessage, offered []providers.ChatToolDef) (providers.ChatResponse, error) {
+		return sc.ChatCompletionStream(ctx, p, model, token, messages, offered, func(d providers.ChatStreamDelta) {
+			coal.push(Delta{Kind: string(d.Kind), Text: d.Text})
+		})
+	}
+	return s.runExchange(ctx, sess, text, providerName, model, complete, coal.flush)
 }
+
+// isResearch reports whether the exchange should run the research
+// pipeline: the session is typed research AND the path is wired
+// (unwired falls back to the lean exchange — wiring-incomplete tests).
+func (s *Service) isResearch(sess *store.Session) bool {
+	return domain.NormalizeSessionType(sess.Type) == domain.SessionTypeResearch && s.researchPath != nil
+}
+
+// resolveSession loads the session row for routing, creating the
+// default quick-chat on first use. Unknown ids are typed errors
+// (ErrUnknownSession); the server maps those to 404.
+func (s *Service) resolveSession(sessionID string) (*store.Session, error) {
+	if sessionID == "" {
+		sessionID = DefaultSessionID
+	}
+	sess, err := s.store.Session(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if sess == nil {
+		if sessionID != DefaultSessionID {
+			return nil, fmt.Errorf("%w: %s", ErrUnknownSession, sessionID)
+		}
+		if _, err := s.store.EnsureSession(sessionID, string(domain.SessionTypeChat)); err != nil {
+			return nil, err
+		}
+		sess, err = s.store.Session(sessionID)
+		if err != nil {
+			return nil, err
+		}
+		if sess == nil {
+			return nil, fmt.Errorf("chat: default session vanished after ensure")
+		}
+	}
+	return sess, nil
+}
+
+// streamCompleteFn bridges the shared exchange loop to a completion call;
+// nil means the synchronous completer. Streaming implementations return the
+// assembled response (the provider client assembles fragments).
+type streamCompleteFn func(ctx context.Context, p providers.Provider, token string, messages []providers.ChatMessage, offered []providers.ChatToolDef) (providers.ChatResponse, error)

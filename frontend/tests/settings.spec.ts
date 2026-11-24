@@ -104,9 +104,9 @@ test('narrow settings, internal scroll and focus recovery from drawer', async ({
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('sidebar shows the single persistent conversation', async ({ page }) => {
+test('sidebar shows the session navigator with the quick chat', async ({ page }) => {
   await mockChat(page);
   await page.goto('/');
-  await expect(page.getByText('One persistent conversation').first()).toBeVisible();
-  await expect(page.getByText('lives here forever')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Quick Chat/ })).toBeVisible();
+  await expect(page.getByText('Always here · lean mode')).toBeVisible();
 });

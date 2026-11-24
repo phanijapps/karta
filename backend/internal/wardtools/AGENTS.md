@@ -9,9 +9,12 @@ layout template + digest.
 ## Responsibility
 
 - `Host` — the session's sticky-ward state (thread-safe; read by the
-  engine for children and by the intent wrapper for the ## Active Ward
-  section at run start). `Active()` returns a read-only `WardView`;
+  engine for children and for the ## Active Ward section on hosted
+  runs). `Active()` returns a read-only `WardView`;
   `RefreshDigest()` detects concurrent ward edits (warn-only).
+  `SetOnEnter` wires the post-enter observer (the engine adapter binds
+  it to the session-row ward binding — add-chat-modes); `Reenter` is
+  the wiring-side enter (daemon restart recovery from the binding).
 - `UseTool` / `CreateTool` — root-only structural tools. ward_use:
   exact index match (typed unknown error with the roster); the RESULT
   carries the Active Ward packet (mid-run entry can't retro-edit the

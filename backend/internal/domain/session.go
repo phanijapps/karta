@@ -33,27 +33,27 @@ const (
 	SessionFailed SessionStatus = "failed"
 )
 
-// ChatMode is the chat surface's execution mode: chat (lean pipeline)
-// or research (full pipeline). The mode gates the pipeline, never the
-// persona.
-type ChatMode string
+// SessionType is a session's pipeline depth, set at creation and
+// immutable afterwards (add-chat-modes: the session model — no mode
+// toggle; the session's type IS the mode).
+type SessionType string
 
 const (
-	// ChatModeChat is the lean mode: no intent analysis, no ward
-	// tools, no delegation. Memory recall still runs.
-	ChatModeChat ChatMode = "chat"
-	// ChatModeResearch is the full pipeline: intent analysis, skills
-	// provision, ward tools, delegation, progress budgets.
-	ChatModeResearch ChatMode = "research"
+	// SessionTypeChat is the lean pipeline: no intent analysis, no ward
+	// tools, no delegation. Memory recall still runs. Exactly ONE such
+	// session exists ("default", the persistent quick chat).
+	SessionTypeChat SessionType = "chat"
+	// SessionTypeResearch is the full pipeline through the engine:
+	// intent analysis, skills provision, ward tools, delegation,
+	// progress budgets. Many sessions, each its own conversation.
+	SessionTypeResearch SessionType = "research"
 )
 
-// NormalizeChatMode maps aliases to canonical values (fast→chat,
-// deep→research; unknown → chat).
-func NormalizeChatMode(mode string) ChatMode {
-	switch mode {
-	case "research", "deep":
-		return ChatModeResearch
-	default:
-		return ChatModeChat
+// NormalizeSessionType maps a stored type string to its canonical
+// value (unknown → chat, the safe lean default).
+func NormalizeSessionType(typ string) SessionType {
+	if typ == string(SessionTypeResearch) {
+		return SessionTypeResearch
 	}
+	return SessionTypeChat
 }

@@ -133,7 +133,7 @@ func TestSendStreamReasoningPersistsOnce(t *testing.T) {
 	svc := newStreamService(t, fc, bus)
 
 	var got []string
-	out := svc.SendStream(context.Background(), "hi", "p", "m", func(d Delta) {
+	out := svc.SendStreamIn(context.Background(), DefaultSessionID, "hi", "p", "m", func(d Delta) {
 		got = append(got, d.Kind+":"+d.Text)
 	})
 	if out.Err != nil {
@@ -167,7 +167,7 @@ func TestSendStreamHundredDeltasOneRowInvariant(t *testing.T) {
 	fc := &fakeStreamCompleter{scripts: [][]providers.ChatStreamDelta{script}}
 	svc := newStreamService(t, fc, eventbus.New())
 
-	out := svc.SendStream(context.Background(), "hi", "p", "m", nil)
+	out := svc.SendStreamIn(context.Background(), DefaultSessionID, "hi", "p", "m", nil)
 	if out.Err != nil {
 		t.Fatal(out.Err)
 	}
@@ -177,7 +177,7 @@ func TestSendStreamHundredDeltasOneRowInvariant(t *testing.T) {
 	if len(out.Rows[1].Content) != 300 {
 		t.Fatalf("content assembly wrong: %d bytes", len(out.Rows[1].Content))
 	}
-	events, err := svc.store.Events(SessionID, "", 64)
+	events, err := svc.store.Events(DefaultSessionID, "", 64)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestSendStreamToolRound(t *testing.T) {
 		{{Kind: providers.DeltaReasoning, Text: "r2"}, {Kind: providers.DeltaContent, Text: "final"}},
 	}}
 	svc := newStreamService(t, fc, eventbus.New())
-	out := svc.SendStream(context.Background(), "hi", "p", "m", nil)
+	out := svc.SendStreamIn(context.Background(), DefaultSessionID, "hi", "p", "m", nil)
 	if out.Err != nil {
 		t.Fatal(out.Err)
 	}
@@ -234,7 +234,7 @@ func TestSendStreamFailureMidStream(t *testing.T) {
 	svc := newStreamService(t, fc, bus)
 	bus.Close() // volatile leg must swallow ErrClosed — F-15 family
 
-	out := svc.SendStream(context.Background(), "hi", "p", "m", func(Delta) {})
+	out := svc.SendStreamIn(context.Background(), DefaultSessionID, "hi", "p", "m", func(Delta) {})
 	if out.Err != nil || len(out.Rows) != 2 {
 		t.Fatalf("closed bus must not kill the exchange: err=%v rows=%d", out.Err, len(out.Rows))
 	}
@@ -245,7 +245,7 @@ func TestSendStreamFailureMidStream(t *testing.T) {
 		errs: []error{nil, &providers.Failure{Reason: providers.ReasonUnreachable}},
 	}
 	svc2 := newStreamService(t, fc2, eventbus.New())
-	out2 := svc2.SendStream(context.Background(), "hi", "p", "m", nil)
+	out2 := svc2.SendStreamIn(context.Background(), DefaultSessionID, "hi", "p", "m", nil)
 	if out2.Err == nil {
 		t.Fatal("want typed failure")
 	}
@@ -264,11 +264,11 @@ func TestSendStreamBusDeltasCoalesced(t *testing.T) {
 	}
 	fc := &fakeStreamCompleter{scripts: [][]providers.ChatStreamDelta{script}}
 	bus := eventbus.New()
-	sub := bus.Subscribe(context.Background(), SessionID)
+	sub := bus.Subscribe(context.Background(), DefaultSessionID)
 	svc := newStreamService(t, fc, bus)
 
 	var direct int
-	out := svc.SendStream(context.Background(), "hi", "p", "m", func(Delta) { direct++ })
+	out := svc.SendStreamIn(context.Background(), DefaultSessionID, "hi", "p", "m", func(Delta) { direct++ })
 	if out.Err != nil || direct != 50 {
 		t.Fatalf("direct leg must see every fragment: %d, err %v", direct, out.Err)
 	}
@@ -318,7 +318,7 @@ func TestCoalescerCloseVsTickRace(t *testing.T) {
 	bus := eventbus.New()
 	s := newStreamService(t, svc, bus)
 	for i := 0; i < 200; i++ {
-		c := newDeltaCoalescer(s, nil)
+		c := newDeltaCoalescer(s, DefaultSessionID, nil)
 		c.push(Delta{Kind: "content", Text: "x"})
 		// tick and close race every iteration; -race arbitrates.
 		go c.tick()
@@ -339,7 +339,7 @@ func TestSendStreamIntentRowKeepsReasoning(t *testing.T) {
 		{{Kind: providers.DeltaContent, Text: "done"}},
 	}}
 	svc := newStreamService(t, fc, eventbus.New())
-	out := svc.SendStream(context.Background(), "time?", "p", "m", nil)
+	out := svc.SendStreamIn(context.Background(), DefaultSessionID, "time?", "p", "m", nil)
 	if out.Err != nil {
 		t.Fatal(out.Err)
 	}
@@ -356,7 +356,7 @@ func TestSendStreamIntentRowKeepsReasoning(t *testing.T) {
 		t.Fatalf("intent row lost reasoning: %+v", intent)
 	}
 	// Replay confirms persistence, not just the outcome slice.
-	rows, _ := svc.store.Replay(SessionID, 0, 16)
+	rows, _ := svc.store.Replay(DefaultSessionID, 0, 16)
 	found := false
 	for _, r := range rows {
 		if r.ID == intent.ID && r.Reasoning == "need the time" {
@@ -379,12 +379,12 @@ func TestSendStreamNoDeltaAfterCompletion(t *testing.T) {
 	}}
 	bus := eventbus.New()
 	svc := newStreamService(t, fc, bus)
-	sub := bus.Subscribe(context.Background(), SessionID)
+	sub := bus.Subscribe(context.Background(), DefaultSessionID)
 
-	if out := svc.SendStream(context.Background(), "a", "p", "m", nil); out.Err != nil {
+	if out := svc.SendStreamIn(context.Background(), DefaultSessionID, "a", "p", "m", nil); out.Err != nil {
 		t.Fatal(out.Err)
 	}
-	if out := svc.SendStream(context.Background(), "b", "p", "m", nil); out.Err != nil {
+	if out := svc.SendStreamIn(context.Background(), DefaultSessionID, "b", "p", "m", nil); out.Err != nil {
 		t.Fatal(out.Err)
 	}
 	// Drain every published event in order.
@@ -423,7 +423,7 @@ func TestSendStreamAirtightInvariant(t *testing.T) {
 	}
 	fc := &fakeStreamCompleter{scripts: [][]providers.ChatStreamDelta{script}}
 	svc := newStreamService(t, fc, eventbus.New())
-	out := svc.SendStream(context.Background(), "hi", "p", "m", nil)
+	out := svc.SendStreamIn(context.Background(), DefaultSessionID, "hi", "p", "m", nil)
 	if out.Err != nil {
 		t.Fatal(out.Err)
 	}
@@ -433,7 +433,7 @@ func TestSendStreamAirtightInvariant(t *testing.T) {
 	if want := strings.Repeat("x", 300); out.Rows[1].Content != want {
 		t.Fatalf("content assembly: %d bytes", len(out.Rows[1].Content))
 	}
-	events, _ := svc.store.Events(SessionID, "", 8)
+	events, _ := svc.store.Events(DefaultSessionID, "", 8)
 	if len(events) != 2 || events[0].Kind != "session" || events[1].Kind != "session" {
 		t.Fatalf("durable events: %+v", events)
 	}

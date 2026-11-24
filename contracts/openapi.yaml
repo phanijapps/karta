@@ -923,12 +923,19 @@ paths:
   /api/chat/messages:
     get:
       operationId: syncChatMessages
-      summary: Sync the chat transcript (cursor-paginated)
+      summary: Sync a session's transcript (cursor-paginated)
       description: |
         Returns transcript rows ordered by `seq`. `next_cursor` is the last
         DELIVERED sequence (a page cursor, never the database tail); page
-        until `truncated` is false. One eternal conversation (`default`).
+        until `truncated` is false. The session model: `session_id` selects
+        the conversation (default `default`, the quick chat).
       parameters:
+        - name: session_id
+          in: query
+          description: The session whose transcript to sync (default
+            `default`, the quick chat).
+          schema:
+            $ref: '#/components/schemas/Id'
         - name: after_seq
           in: query
           description: Return only rows with seq greater than this cursor.
@@ -955,11 +962,11 @@ paths:
       operationId: sendChatMessage
       summary: Send a message and get the assistant's reply
       description: |
-        Appends the user message, runs one bounded completion (with the
-        built-in tools) against the selected model, and returns every row
-        the exchange appended in order plus the end cursor. Typed failures
-        return the persisted user row and its cursor. Synchronous;
-        streaming is a future change.
+        Appends the user message, runs one exchange against the selected
+        model, and returns every row it appended in order plus the end
+        cursor. The session's TYPE routes the exchange (chat = lean,
+        research = the full engine pipeline, completing as a unit).
+        Typed failures return the persisted user row and its cursor.
       requestBody:
         required: true
         content:
@@ -977,6 +984,24 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '502':
           $ref: '#/components/responses/ProviderFailure'
+    delete:
+      operationId: clearChat
+      summary: Clear a session's transcript (user-initiated, destructive)
+      description: |
+        Removes every message and timeline event for the named session
+        (default `default`, the quick chat). The session row itself
+        survives — the quick chat is never deleted.
+      parameters:
+        - name: session_id
+          in: query
+          description: The session to clear (default `default`).
+          schema:
+            $ref: '#/components/schemas/Id'
+      responses:
+        '204':
+          description: Cleared. No body.
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/chat/send:
     post:
@@ -1037,6 +1062,29 @@ paths:
           $ref: '#/components/responses/BadRequest'
 
   /api/sessions:
+    post:
+      operationId: createSession
+      summary: Create a research session
+      description: |
+        Creates a NEW research session (a shell — type `research`, no
+        ward binding) and returns it. The session model: research
+        sessions start empty; intent analysis moves them into wards via
+        the model's own ward_use/ward_create calls. The one chat session
+        (`default`) always exists and is never created here.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+      responses:
+        '201':
+          description: The created research session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequest'
     get:
       operationId: listSessions
       summary: List sessions (bounded, explicit truncation)
@@ -1058,7 +1106,10 @@ paths:
             maxLength: 256
       responses:
         '200':
-          description: A page of sessions. `truncated` is true when more
+          description: |
+            A page of sessions, most recently active first, each with
+            its `type` and `ward` binding (the sidebar groups: Chat /
+            Ward Bots / Research). `truncated` is true when more
             results exist.
           content:
             application/json:
@@ -1597,18 +1648,16 @@ components:
           pattern: '^[a-z0-9][a-z0-9-]{0,63}/[\s\S]+$'
           description: Qualified selection from the picker
             (`provider/model-id`).
-        mode:
+        session_id:
           type: string
-          enum: [chat, research]
-          default: chat
+          default: default
           description: |
-            The execution mode for this exchange. `chat` (aliases:
-            `fast`) skips the intent pipeline and uses the lean
-            persona prompt. `research` (aliases: `deep`) runs the
-            full pipeline through the engine — intent analysis,
-            skills provision, ward tools, delegation, progress
-            budgets. Defaults to the session's last mode (initial:
-            chat).
+            The session this exchange belongs to (an Id). The session's
+            TYPE routes it: `chat` sessions run the lean pipeline,
+            `research` sessions run the full engine pipeline (intent
+            analysis, skills provision, ward tools, delegation, progress
+            budgets). Default `default` (the quick chat). Unknown ids
+            fail 404.
 
     ChatExchange:
       type: object
@@ -1672,12 +1721,27 @@ components:
     Session:
       type: object
       additionalProperties: false
-      required: [id, status, created_at, updated_at]
+      required: [id, type, status, created_at, updated_at]
       properties:
         id:
           $ref: '#/components/schemas/Id'
+        type:
+          type: string
+          description: |
+            The session's TYPE — its pipeline depth, set at creation
+            and immutable (the session model: no mode toggle).
+          enum: [chat, research]
         status:
           $ref: '#/components/schemas/SessionStatus'
+        title:
+          type: string
+          maxLength: 256
+          description: The session's display name (research sessions).
+        ward:
+          type: string
+          maxLength: 255
+          description: The sticky ward binding (research sessions;
+            absent when the session is a shell or a chat session).
         agent:
           type: string
           maxLength: 128
@@ -1688,15 +1752,39 @@ components:
           type: string
           format: date-time
 
+    CreateSessionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: |
+            Optional display name; when absent the session is titled
+            later from its first exchange's intent.
     SessionSummary:
       type: object
       additionalProperties: false
-      required: [id, status, updated_at]
+      required: [id, type, status, updated_at]
       properties:
         id:
           $ref: '#/components/schemas/Id'
+        type:
+          type: string
+          description: The session's TYPE (chat = lean, research = full
+            pipeline); immutable after creation.
+          enum: [chat, research]
         status:
           $ref: '#/components/schemas/SessionStatus'
+        title:
+          type: string
+          maxLength: 256
+        ward:
+          type: string
+          maxLength: 255
+          description: The sticky ward binding, when the session is
+            ward-bound.
         agent:
           type: string
           maxLength: 128
@@ -1864,6 +1952,20 @@ components:
         ward_name:
           type: string
           maxLength: 64
+        recommended_skills:
+          type: array
+          description: The validated skill names provisioned for the
+            run (the ## Skills section's roster).
+          items:
+            type: string
+            maxLength: 256
+        recommended_agents:
+          type: array
+          description: The validated agent names recommended for
+            delegation.
+          items:
+            type: string
+            maxLength: 256
         dropped:
           type: array
           description: Recommended names the runtime dropped because

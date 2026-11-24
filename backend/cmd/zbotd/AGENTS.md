@@ -18,6 +18,16 @@ registry's write paths, and the MCP connection probe is wired to
 
 `main.go` composes the tool surface with `tools.Multi(tools.BuiltinProvider{}, chittaSys.ToolProvider(...))` — the builtins (clock, echo) plus the seven chitta memory/knowledge tools — and passes it to both the chat service and the engine. Duplicate tool names panic at composition (startup), never mid-run.
 
+## Session model wiring (researchpath.go)
+
+`researchpath.go` holds the add-chat-modes wiring: the ward binder
+(every engine ward enter updates the session row), the research path
+(research sessions run the wrapped engine pipeline in their own
+transcript, completing as units), and the lean-chat composition (persona
+without custom sections + chitta recall as ## Context). Quick chat is
+lean; wards and delegation live in research sessions via the engine's
+own sticky hosts.
+
 ## Intentionally thin (test-floor exemption)
 
 This main is wiring only and carries no tests BY DESIGN (go-rules.md

@@ -1,10 +1,13 @@
 package store
 
 import (
+	"database/sql"
 	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
 func openMem(t *testing.T) *Store {
@@ -23,7 +26,7 @@ func msg(role, content string) Message {
 
 func appendAll(t *testing.T, s *Store, msgs ...Message) []Message {
 	t.Helper()
-	root, err := s.EnsureSession("default")
+	root, err := s.EnsureSession("default", "research")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,11 +44,11 @@ func appendAll(t *testing.T, s *Store, msgs ...Message) []Message {
 
 func TestEnsureSessionIdempotentAndConcurrent(t *testing.T) {
 	s := openMem(t)
-	a, err := s.EnsureSession("default")
+	a, err := s.EnsureSession("default", "research")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := s.EnsureSession("default")
+	b, err := s.EnsureSession("default", "research")
 	if err != nil || a != b {
 		t.Fatalf("idempotent ensure: %q %q %v", a, b, err)
 	}
@@ -56,7 +59,7 @@ func TestEnsureSessionIdempotentAndConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			id, err := s.EnsureSession("default")
+			id, err := s.EnsureSession("default", "research")
 			if err != nil {
 				t.Error(err)
 			}
@@ -101,7 +104,7 @@ func TestAppendReplayOrderAndCursor(t *testing.T) {
 
 func TestConcurrentAppendsUniqueSeq(t *testing.T) {
 	s := openMem(t)
-	root, _ := s.EnsureSession("default")
+	root, _ := s.EnsureSession("default", "research")
 	var wg sync.WaitGroup
 	for i := 0; i < 16; i++ {
 		wg.Add(1)
@@ -153,7 +156,7 @@ func TestAppendOnlyNoMutationAPI(t *testing.T) {
 	// test pins the guarantee by asserting the message count survives a
 	// failed-append attempt (constraint violation path).
 	s := openMem(t)
-	root, _ := s.EnsureSession("default")
+	root, _ := s.EnsureSession("default", "research")
 	first, _ := s.Append(Message{ID: "msg-dup", SessionID: "default", ExecutionID: root, Role: "user", Content: "x"})
 	_, err := s.Append(Message{ID: "msg-dup", SessionID: "default", ExecutionID: root, Role: "user", Content: "y"})
 	if err == nil {
@@ -162,5 +165,140 @@ func TestAppendOnlyNoMutationAPI(t *testing.T) {
 	rows, _ := s.Replay("default", 0, 10)
 	if len(rows) != 1 || rows[0].Seq != first.Seq {
 		t.Fatalf("append-only violated: %+v", rows)
+	}
+}
+
+// TestSessionModelRoundTrip (add-chat-modes 1.1): sessions carry a
+// type set at creation (immutable on re-ensure) and a mutable ward
+// binding; the list orders by recent activity and exposes both.
+func TestSessionModelRoundTrip(t *testing.T) {
+	s := openMem(t)
+	if _, err := s.EnsureSession("default", "chat"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.EnsureSession("research-1", "research"); err != nil {
+		t.Fatal(err)
+	}
+	// Type is creation-only: re-ensuring with a different type is a
+	// no-op (the row keeps its original type).
+	if _, err := s.EnsureSession("research-1", "chat"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Ward binding: set, switch, unset.
+	if err := s.SetSessionWard("research-1", "stock-analysis"); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := s.Session("research-1")
+	if err != nil || sess == nil {
+		t.Fatalf("session: %v %v", sess, err)
+	}
+	if sess.Type != "research" || sess.Ward != "stock-analysis" {
+		t.Fatalf("want research/stock-analysis, got %s/%s", sess.Type, sess.Ward)
+	}
+	if err := s.SetSessionWard("research-1", "india-analysis"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSessionWard("research-1", ""); err != nil {
+		t.Fatal(err)
+	}
+	sess, _ = s.Session("research-1")
+	if sess.Ward != "" {
+		t.Fatalf("want unbound, got %q", sess.Ward)
+	}
+
+	// Title round-trip.
+	if err := s.SetSessionTitle("research-1", "Cloud pricing"); err != nil {
+		t.Fatal(err)
+	}
+	sess, _ = s.Session("research-1")
+	if sess.Title != "Cloud pricing" {
+		t.Fatalf("title: %q", sess.Title)
+	}
+
+	// List: recency order (activity beats creation), type + ward exposed.
+	if err := s.SetSessionWard("research-1", "stock-analysis"); err != nil {
+		t.Fatal(err)
+	}
+	root2, err := s.EnsureSession("research-2", "research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append(Message{ID: "m-r2", SessionID: "research-2", ExecutionID: root2, Role: "user", Content: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	infos, err := s.ListSessions(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(infos) != 3 {
+		t.Fatalf("want 3 sessions, got %d", len(infos))
+	}
+	if infos[0].ID != "research-2" || !infos[0].HasMessages {
+		t.Fatalf("most-recent-first broken: %+v", infos[0])
+	}
+	var r1, def *SessionInfo
+	for i := range infos {
+		switch infos[i].ID {
+		case "research-1":
+			r1 = &infos[i]
+		case "default":
+			def = &infos[i]
+		}
+	}
+	if r1 == nil || def == nil {
+		t.Fatalf("missing rows: %+v", infos)
+	}
+	if r1.Type != "research" || r1.Ward != "stock-analysis" || r1.HasMessages {
+		t.Fatalf("research-1 row: %+v", r1)
+	}
+	if def.Type != "chat" || def.Ward != "" {
+		t.Fatalf("default row: %+v", def)
+	}
+}
+
+// TestMigrateSessionType (add-chat-modes 1.1): a toggle-era database
+// (sessions.mode) renames to type and gains ward; a type-era database
+// is untouched.
+func TestMigrateSessionType(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "old.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE sessions (
+		id TEXT PRIMARY KEY, title TEXT, mode TEXT NOT NULL DEFAULT 'chat', created_at TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (id, mode, created_at) VALUES ('default', 'chat', '2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	sess, err := s.Session("default")
+	if err != nil || sess == nil {
+		t.Fatalf("session: %v %v", sess, err)
+	}
+	if sess.Type != "chat" {
+		t.Fatalf("migrated type: %q", sess.Type)
+	}
+	// Idempotent: reopening a migrated database is a no-op.
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	t.Cleanup(func() { _ = s2.Close() })
+	if sess, _ = s2.Session("default"); sess == nil || sess.Type != "chat" {
+		t.Fatalf("reopen row: %+v", sess)
 	}
 }

@@ -268,3 +268,95 @@ func stringsTooLong() string {
 	}
 	return string(b)
 }
+
+// TestSessionCRUD (add-chat-modes 1.2/2.2): POST creates a research
+// shell; GET lists sessions with type + ward (the sidebar's grouping
+// data) ordered by recent activity; GET one 404s unknowns; sends in
+// unknown sessions fail typed 404.
+func TestSessionCRUD(t *testing.T) {
+	url, db := newChatDaemon(t, nil, nil)
+
+	// Create: a research shell.
+	code, body := mutate(t, "POST", url+"/api/sessions", map[string]any{})
+	if code != http.StatusCreated {
+		t.Fatalf("create status %d: %v", code, body)
+	}
+	if body["type"] != "research" || body["id"] == "" {
+		t.Fatalf("created session: %v", body)
+	}
+	createdID := body["id"].(string)
+	if _, err := db.Session(createdID); err != nil {
+		t.Fatalf("persisted: %v", err)
+	}
+
+	// Create with a title.
+	code, body = mutate(t, "POST", url+"/api/sessions", map[string]any{"title": "Cloud pricing"})
+	if code != http.StatusCreated {
+		t.Fatalf("titled create status %d: %v", code, body)
+	}
+	if body["title"] != "Cloud pricing" {
+		t.Fatalf("title: %v", body)
+	}
+
+	// The default quick chat exists (created above by newChatDaemon's
+	// store? no — ensure it) and lists with the shells.
+	if _, err := db.EnsureSession("default", "chat"); err != nil {
+		t.Fatal(err)
+	}
+	code, body = mutate(t, "GET", url+"/api/sessions?limit=50", nil)
+	if code != http.StatusOK {
+		t.Fatalf("list status %d: %v", code, body)
+	}
+	sessions := body["sessions"].([]any)
+	if len(sessions) != 3 {
+		t.Fatalf("want 3 sessions, got %d: %v", len(sessions), body)
+	}
+	first := sessions[0].(map[string]any)
+	if first["id"] != "default" || first["type"] != "chat" {
+		t.Fatalf("default first (recency): %v", first)
+	}
+
+	// Ward binding lands in the list (the sidebar's Ward Bots group).
+	if err := db.SetSessionWard(createdID, "stock-analysis"); err != nil {
+		t.Fatal(err)
+	}
+	_, body = mutate(t, "GET", url+"/api/sessions?limit=50", nil)
+	sessions = body["sessions"].([]any)
+	found := false
+	for _, s := range sessions {
+		m := s.(map[string]any)
+		if m["id"] == createdID {
+			found = true
+			if m["ward"] != "stock-analysis" {
+				t.Fatalf("ward binding missing: %v", m)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("session %s missing from list", createdID)
+	}
+
+	// GET one: the row; unknown ids 404.
+	code, _ = mutate(t, "GET", url+"/api/sessions/"+createdID, nil)
+	if code != http.StatusOK {
+		t.Fatalf("get status %d", code)
+	}
+	code, _ = mutate(t, "GET", url+"/api/sessions/missing", nil)
+	if code != http.StatusNotFound {
+		t.Fatalf("unknown get status %d", code)
+	}
+
+	// Sends in unknown sessions fail typed 404 (nothing appended).
+	code, _ = mutate(t, "POST", url+"/api/chat/messages", map[string]any{
+		"text": "hi", "model": "p/m", "session_id": "missing",
+	})
+	if code != http.StatusNotFound {
+		t.Fatalf("unknown send status %d", code)
+	}
+
+	// Clear is session-scoped and 404s unknowns.
+	code, _ = mutate(t, "DELETE", url+"/api/chat/messages?session_id=missing", nil)
+	if code != http.StatusNotFound {
+		t.Fatalf("unknown clear status %d", code)
+	}
+}

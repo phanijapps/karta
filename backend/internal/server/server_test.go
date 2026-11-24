@@ -201,15 +201,12 @@ func newFakeChatService() ChatService { return &stubChatService{} }
 
 type stubChatService struct{}
 
-func (s *stubChatService) Send(ctx context.Context, text, providerName, model string) chat.SendOutcome {
+func (s *stubChatService) SendIn(ctx context.Context, sessionID, text, providerName, model string) chat.SendOutcome {
 	return chat.SendOutcome{Err: fmt.Errorf("stub")}
 }
-func (s *stubChatService) SendMode(ctx context.Context, text, providerName, model, mode string) chat.SendOutcome {
-	return s.Send(ctx, text, providerName, model)
+func (s *stubChatService) SendStreamIn(ctx context.Context, sessionID, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome {
+	return s.SendIn(ctx, sessionID, text, providerName, model)
 }
-func (s *stubChatService) SendStream(ctx context.Context, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome {
-	return s.Send(ctx, text, providerName, model)
-}
-func (s *stubChatService) Sync(afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error) {
+func (s *stubChatService) SyncIn(sessionID string, afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error) {
 	return nil, afterSeq, false, nil
 }

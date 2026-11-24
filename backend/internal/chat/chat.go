@@ -11,6 +11,7 @@ package chat
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -25,8 +26,13 @@ import (
 	"zbot/backend/internal/tools"
 )
 
-// SessionID is the eternal conversation's fixed identity.
-const SessionID = "default"
+// DefaultSessionID is the eternal quick-chat conversation's fixed
+// identity: the ONE chat-type session (the session model).
+const DefaultSessionID = "default"
+
+// ErrUnknownSession names a send against a session id that does not
+// exist (and is not the default, which is created on first use).
+var ErrUnknownSession = errors.New("chat: unknown session")
 
 // MaxToolRounds bounds tool execution per send.
 const MaxToolRounds = 2
@@ -66,10 +72,14 @@ type Service struct {
 	// activeWard renders the ## Active Ward section when the session
 	// hosts a ward (nil = never).
 	activeWard func() string
-	// researchPath routes research-mode exchanges through the engine
-	// (the wrapped RunGoal path). Nil = research mode falls back to
-	// the lean chat path (wiring incomplete — tests).
-	researchPath func(ctx context.Context, text, providerName, model string) SendOutcome
+	// recall injects remembered facts as a ## Context system message
+	// (chitta fused recall; nil = no memory in the lean exchange).
+	recall func(ctx context.Context, text string) []string
+	// researchPath routes research-SESSION exchanges through the
+	// engine (the wrapped RunGoal path) in the named session. Nil =
+	// research falls back to the lean exchange (wiring incomplete —
+	// tests).
+	researchPath func(ctx context.Context, sessionID, text, providerName, model string) SendOutcome
 
 	store     *store.Store
 	provider  func(name string) (providers.Provider, error)
@@ -102,45 +112,21 @@ type SendOutcome struct {
 	Err       error // typed providers failure or chat error
 }
 
-// SendStream runs the same serialized exchange, streaming volatile deltas
-// (reasoning, then/interleaved content) to onDelta and to the bus
-// (coalesced). Persistence semantics are IDENTICAL to Send: rows append in
-// the same order, the assistant row persists once at completion with its
-// reasoning, and durable-before-volatile holds on every emit.
-func (s *Service) SendStream(ctx context.Context, text, providerName, model string, onDelta func(Delta)) SendOutcome {
-	sc, ok := s.completer.(StreamingCompleter)
-	if !ok {
-		// Degenerate but honest: the completer cannot stream.
-		return s.runExchange(ctx, text, providerName, model, nil, nil)
-	}
-	coal := newDeltaCoalescer(s, onDelta)
-	defer coal.close()
-	complete := func(ctx context.Context, p providers.Provider, token string, messages []providers.ChatMessage, offered []providers.ChatToolDef) (providers.ChatResponse, error) {
-		return sc.ChatCompletionStream(ctx, p, model, token, messages, offered, func(d providers.ChatStreamDelta) {
-			coal.push(Delta{Kind: string(d.Kind), Text: d.Text})
-		})
-	}
-	return s.runExchange(ctx, text, providerName, model, complete, coal.flush)
-}
-
-// streamCompleteFn bridges the shared exchange loop to a completion call;
-// nil means the synchronous completer. Streaming implementations return the
-// assembled response (the provider client assembles fragments).
-type streamCompleteFn func(ctx context.Context, p providers.Provider, token string, messages []providers.ChatMessage, offered []providers.ChatToolDef) (providers.ChatResponse, error)
-
-// runExchange is the one exchange implementation shared by Send and
-// SendStream (no drift between the paths; both are pinned by tests).
-func (s *Service) runExchange(ctx context.Context, text, providerName, model string, stream streamCompleteFn, onBoundary func()) SendOutcome {
+// runExchange is the one LEAN exchange implementation shared by SendIn
+// and SendStreamIn (no drift between the paths; both are pinned by
+// tests). The caller already resolved sess (a chat-type session —
+// research sessions route to the engine before this runs).
+func (s *Service) runExchange(ctx context.Context, sess *store.Session, text, providerName, model string, stream streamCompleteFn, onBoundary func()) SendOutcome {
 	s.sendMu.Lock()
 	defer s.sendMu.Unlock()
-
-	root, err := s.store.EnsureSession(SessionID)
+	sessionID := sess.ID
+	root, err := s.store.EnsureSession(sessionID, sess.Type)
 	if err != nil {
 		return SendOutcome{Err: err}
 	}
 
 	// 1. Persist the user message before any network call.
-	user, err := s.store.Append(store.Message{ID: s.idGen(), SessionID: SessionID, ExecutionID: root, Role: "user", Content: text})
+	user, err := s.store.Append(store.Message{ID: s.idGen(), SessionID: sessionID, ExecutionID: root, Role: "user", Content: text})
 	if err != nil {
 		return SendOutcome{Err: err}
 	}
@@ -162,7 +148,7 @@ func (s *Service) runExchange(ctx context.Context, text, providerName, model str
 	}
 
 	// 2. Compaction-aware, exchange-complete history window.
-	hw, err := s.store.HistoryWindow(SessionID, "", HistoryBound)
+	hw, err := s.store.HistoryWindow(sessionID, "", HistoryBound)
 	if err != nil {
 		return fail(err)
 	}
@@ -183,6 +169,19 @@ func (s *Service) runExchange(ctx context.Context, text, providerName, model str
 	if persona != "" {
 		// Persona first: identity precedes any compaction summary.
 		messages = append([]providers.ChatMessage{{Role: "system", Content: persona}}, messages...)
+	}
+	if s.recall != nil {
+		// Memory recall: the lean exchange still knows what the user
+		// told it before (the session type gates the pipeline, never
+		// the knowledge).
+		if hits := s.recall(ctx, text); len(hits) > 0 {
+			var b strings.Builder
+			b.WriteString("## Context\n\nRemembered facts relevant to this message:\n")
+			for _, h := range hits {
+				b.WriteString("- " + h + "\n")
+			}
+			messages = append([]providers.ChatMessage{{Role: "system", Content: b.String()}}, messages...)
+		}
 	}
 	var usage providers.ChatUsage
 
@@ -225,7 +224,7 @@ func (s *Service) runExchange(ctx context.Context, text, providerName, model str
 		if len(res.Message.ToolCalls) == 0 || res.FinishReason != "tool_calls" {
 			// Final answer row (provenance + request usage + reasoning).
 			assistant, err := s.store.Append(store.Message{
-				ID: s.idGen(), SessionID: SessionID, ExecutionID: root, Role: "assistant",
+				ID: s.idGen(), SessionID: sessionID, ExecutionID: root, Role: "assistant",
 				Content: res.Message.Content, Reasoning: res.Message.Reasoning,
 				Provider: providerName, Model: model,
 				PromptTokens: nullInt(usage.PromptTokens), CompletionTokens: nullInt(usage.CompletionTokens),
@@ -242,7 +241,7 @@ func (s *Service) runExchange(ctx context.Context, text, providerName, model str
 		// Persist the assistant tool-call INTENT before executing.
 		intentJSON, _ := json.Marshal(res.Message.ToolCalls)
 		intent, err := s.store.Append(store.Message{
-			ID: s.idGen(), SessionID: SessionID, ExecutionID: root, Role: "assistant",
+			ID: s.idGen(), SessionID: sessionID, ExecutionID: root, Role: "assistant",
 			Content: res.Message.Content, Reasoning: res.Message.Reasoning,
 			ToolCalls: string(intentJSON),
 			Provider:  providerName, Model: model,
@@ -257,13 +256,13 @@ func (s *Service) runExchange(ctx context.Context, text, providerName, model str
 		// Execute each requested tool; persist result rows.
 		for _, call := range res.Message.ToolCalls {
 			result := tools.Execute(ctx, toolProv, call.Function.Name, call.Function.Arguments)
-			s.emitToolEvent(root, call.Function.Name, result)
+			s.emitToolEvent(sessionID, root, call.Function.Name, result)
 			content := result.Output
 			if result.Err != nil {
 				content = "error: " + result.Err.Error() // model-visible failure
 			}
 			toolRow, err := s.store.Append(store.Message{
-				ID: s.idGen(), SessionID: SessionID, ExecutionID: root, Role: "tool",
+				ID: s.idGen(), SessionID: sessionID, ExecutionID: root, Role: "tool",
 				Content: content, ToolCallID: call.ID, ToolName: call.Function.Name,
 			})
 			if err != nil {
@@ -284,6 +283,7 @@ func (s *Service) runExchange(ctx context.Context, text, providerName, model str
 // while the caller's onDelta receives every fragment directly.
 type deltaCoalescer struct {
 	s       *Service
+	session string
 	onDelta func(Delta)
 	mu      sync.Mutex
 	closed  bool
@@ -295,8 +295,8 @@ type deltaCoalescer struct {
 
 const deltaFlushInterval = 100 * time.Millisecond
 
-func newDeltaCoalescer(s *Service, onDelta func(Delta)) *deltaCoalescer {
-	c := &deltaCoalescer{s: s, onDelta: onDelta}
+func newDeltaCoalescer(s *Service, sessionID string, onDelta func(Delta)) *deltaCoalescer {
+	c := &deltaCoalescer{s: s, session: sessionID, onDelta: onDelta}
 	c.mu.Lock()
 	c.timer = time.AfterFunc(deltaFlushInterval, c.tick)
 	c.mu.Unlock()
@@ -347,7 +347,7 @@ func (c *deltaCoalescer) flushLocked() {
 		return
 	}
 	_ = c.s.bus.Publish(context.Background(), domain.TimelineEvent{ // ctx-ok: F-15-family volatile fire-and-forget emit (coalescer goroutine)
-		ID: c.s.idGen(), SessionID: SessionID, Kind: domain.EventChatDelta, Text: c.buf.String(),
+		ID: c.s.idGen(), SessionID: c.session, Kind: domain.EventChatDelta, Text: c.buf.String(),
 	})
 	c.buf.Reset()
 	c.stamp = time.Now()
@@ -370,9 +370,13 @@ func (c *deltaCoalescer) close() {
 	c.flushLocked()
 }
 
-// Sync pages the transcript for clients.
-func (s *Service) Sync(afterSeq int64, limit int) ([]store.Message, int64, bool, error) {
-	rows, err := s.store.Replay(SessionID, afterSeq, limit)
+// SyncIn pages one session's transcript for clients (empty session id
+// = the default quick chat).
+func (s *Service) SyncIn(sessionID string, afterSeq int64, limit int) ([]store.Message, int64, bool, error) {
+	if sessionID == "" {
+		sessionID = DefaultSessionID
+	}
+	rows, err := s.store.Replay(sessionID, afterSeq, limit)
 	if err != nil {
 		return nil, 0, false, err
 	}
@@ -382,12 +386,13 @@ func (s *Service) Sync(afterSeq int64, limit int) ([]store.Message, int64, bool,
 			next = r.Seq
 		}
 	}
-	latest, err := s.store.LatestSeq(SessionID)
+	latest, err := s.store.LatestSeq(sessionID)
 	if err != nil {
 		return nil, 0, false, err
 	}
 	return rows, next, latest > next, nil
 }
+
 
 // windowToChatMessages maps a HistoryWindow to provider messages; the
 // summary becomes a system message.
@@ -438,18 +443,18 @@ func (s *Service) emitEvent(m store.Message, execID, toolName string) {
 		payload["tool"] = toolName
 	}
 	payloadJSON, _ := json.Marshal(payload)
-	evt := store.Event{ID: s.idGen(), SessionID: SessionID, ExecutionID: execID, Kind: kind, Payload: string(payloadJSON)}
+	evt := store.Event{ID: s.idGen(), SessionID: m.SessionID, ExecutionID: execID, Kind: kind, Payload: string(payloadJSON)}
 	if err := s.store.AppendEvent(evt); err == nil && s.bus != nil {
-		_ = s.bus.Publish(context.Background(), domain.TimelineEvent{SessionID: SessionID, Kind: domain.TimelineEventKind(kind), Text: m.Content}) // ctx-ok: F-15 fire-and-forget emit
+		_ = s.bus.Publish(context.Background(), domain.TimelineEvent{SessionID: m.SessionID, Kind: domain.TimelineEventKind(kind), Text: m.Content}) // ctx-ok: F-15 fire-and-forget emit
 	}
 }
 
 // emitToolEvent is emitEvent for tool-call events (same F-15 semantics).
-func (s *Service) emitToolEvent(execID, name string, result tools.Result) {
+func (s *Service) emitToolEvent(sessionID, execID, name string, result tools.Result) {
 	payload, _ := json.Marshal(map[string]any{"tool": name, "output": result.Output, "error": errString(result.Err)})
-	evt := store.Event{ID: s.idGen(), SessionID: SessionID, ExecutionID: execID, Kind: "tool_call", Payload: string(payload)}
+	evt := store.Event{ID: s.idGen(), SessionID: sessionID, ExecutionID: execID, Kind: "tool_call", Payload: string(payload)}
 	if err := s.store.AppendEvent(evt); err == nil && s.bus != nil {
-		_ = s.bus.Publish(context.Background(), domain.TimelineEvent{SessionID: SessionID, Kind: domain.EventToolCall, Text: name}) // ctx-ok: F-15 fire-and-forget emit
+		_ = s.bus.Publish(context.Background(), domain.TimelineEvent{SessionID: sessionID, Kind: domain.EventToolCall, Text: name}) // ctx-ok: F-15 fire-and-forget emit
 	}
 }
 

@@ -59,24 +59,6 @@ func (e ChatMessageRole) Valid() bool {
 	}
 }
 
-// Defines values for ChatSendMode.
-const (
-	Chat     ChatSendMode = "chat"
-	Research ChatSendMode = "research"
-)
-
-// Valid indicates whether the value is a known member of the ChatSendMode enum.
-func (e ChatSendMode) Valid() bool {
-	switch e {
-	case Chat:
-		return true
-	case Research:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for ChittaToolInvokedPayloadErrorCode.
 const (
 	ChittaToolInvokedPayloadErrorCodeConflict     ChittaToolInvokedPayloadErrorCode = "conflict"
@@ -632,6 +614,24 @@ func (e ScheduleCreateMissedPolicy) Valid() bool {
 	}
 }
 
+// Defines values for SessionType.
+const (
+	SessionTypeChat     SessionType = "chat"
+	SessionTypeResearch SessionType = "research"
+)
+
+// Valid indicates whether the value is a known member of the SessionType enum.
+func (e SessionType) Valid() bool {
+	switch e {
+	case SessionTypeChat:
+		return true
+	case SessionTypeResearch:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SessionStatus.
 const (
 	SessionStatusCancelled SessionStatus = "cancelled"
@@ -656,6 +656,24 @@ func (e SessionStatus) Valid() bool {
 	case SessionStatusRunning:
 		return true
 	case SessionStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SessionSummaryType.
+const (
+	SessionSummaryTypeChat     SessionSummaryType = "chat"
+	SessionSummaryTypeResearch SessionSummaryType = "research"
+)
+
+// Valid indicates whether the value is a known member of the SessionSummaryType enum.
+func (e SessionSummaryType) Valid() bool {
+	switch e {
+	case SessionSummaryTypeChat:
+		return true
+	case SessionSummaryTypeResearch:
 		return true
 	default:
 		return false
@@ -983,28 +1001,18 @@ type ChatMessageRole string
 
 // ChatSend defines model for ChatSend.
 type ChatSend struct {
-	// Mode The execution mode for this exchange. `chat` (aliases:
-	// `fast`) skips the intent pipeline and uses the lean
-	// persona prompt. `research` (aliases: `deep`) runs the
-	// full pipeline through the engine — intent analysis,
-	// skills provision, ward tools, delegation, progress
-	// budgets. Defaults to the session's last mode (initial:
-	// chat).
-	Mode *ChatSendMode `json:"mode,omitempty"`
-
 	// Model Qualified selection from the picker (`provider/model-id`).
 	Model string `json:"model"`
-	Text  string `json:"text"`
-}
 
-// ChatSendMode The execution mode for this exchange. `chat` (aliases:
-// `fast`) skips the intent pipeline and uses the lean
-// persona prompt. `research` (aliases: `deep`) runs the
-// full pipeline through the engine — intent analysis,
-// skills provision, ward tools, delegation, progress
-// budgets. Defaults to the session's last mode (initial:
-// chat).
-type ChatSendMode string
+	// SessionId The session this exchange belongs to (an Id). The session's
+	// TYPE routes it: `chat` sessions run the lean pipeline,
+	// `research` sessions run the full engine pipeline (intent
+	// analysis, skills provision, ward tools, delegation, progress
+	// budgets). Default `default` (the quick chat). Unknown ids
+	// fail 404.
+	SessionId *string `json:"session_id,omitempty"`
+	Text      string  `json:"text"`
+}
 
 // ChatSync defines model for ChatSync.
 type ChatSync struct {
@@ -1046,6 +1054,13 @@ type CompactionStats struct {
 	Strategy       string `json:"strategy"`
 	TokensAfter    int    `json:"tokens_after"`
 	TokensBefore   int    `json:"tokens_before"`
+}
+
+// CreateSessionRequest defines model for CreateSessionRequest.
+type CreateSessionRequest struct {
+	// Title Optional display name; when absent the session is titled
+	// later from its first exchange's intent.
+	Title *string `json:"title,omitempty"`
 }
 
 // CredentialInput Explicit credential intent. `none` clears; `env` requires `env_name`; `keyring` requires a one-shot `key` on create (stored in the platform keyring, never echoed) — on edit an absent `key` retains the stored key.
@@ -1131,8 +1146,14 @@ type IntentAnalysisPayload struct {
 	PrimaryIntent *string   `json:"primary_intent,omitempty"`
 
 	// Reason Why the analysis was bypassed or failed; absent for a successful analysis.
-	Reason *string                     `json:"reason,omitempty"`
-	Status IntentAnalysisPayloadStatus `json:"status"`
+	Reason *string `json:"reason,omitempty"`
+
+	// RecommendedAgents The validated agent names recommended for delegation.
+	RecommendedAgents *[]string `json:"recommended_agents,omitempty"`
+
+	// RecommendedSkills The validated skill names provisioned for the run (the
+	RecommendedSkills *[]string                   `json:"recommended_skills,omitempty"`
+	Status            IntentAnalysisPayloadStatus `json:"status"`
 
 	// StepBudget The engine step budget derived from complexity.
 	StepBudget *int                             `json:"step_budget,omitempty"`
@@ -1471,8 +1492,22 @@ type Session struct {
 	CreatedAt time.Time     `json:"created_at"`
 	Id        Id            `json:"id"`
 	Status    SessionStatus `json:"status"`
-	UpdatedAt time.Time     `json:"updated_at"`
+
+	// Title The session's display name (research sessions).
+	Title *string `json:"title,omitempty"`
+
+	// Type The session's TYPE — its pipeline depth, set at creation
+	// and immutable (the session model: no mode toggle).
+	Type      SessionType `json:"type"`
+	UpdatedAt time.Time   `json:"updated_at"`
+
+	// Ward The sticky ward binding (research sessions; absent when the session is a shell or a chat session).
+	Ward *string `json:"ward,omitempty"`
 }
+
+// SessionType The session's TYPE — its pipeline depth, set at creation
+// and immutable (the session model: no mode toggle).
+type SessionType string
 
 // SessionList defines model for SessionList.
 type SessionList struct {
@@ -1488,11 +1523,21 @@ type SessionStatus string
 
 // SessionSummary defines model for SessionSummary.
 type SessionSummary struct {
-	Agent     *string       `json:"agent,omitempty"`
-	Id        Id            `json:"id"`
-	Status    SessionStatus `json:"status"`
-	UpdatedAt time.Time     `json:"updated_at"`
+	Agent  *string       `json:"agent,omitempty"`
+	Id     Id            `json:"id"`
+	Status SessionStatus `json:"status"`
+	Title  *string       `json:"title,omitempty"`
+
+	// Type The session's TYPE (chat = lean, research = full pipeline); immutable after creation.
+	Type      SessionSummaryType `json:"type"`
+	UpdatedAt time.Time          `json:"updated_at"`
+
+	// Ward The sticky ward binding, when the session is ward-bound.
+	Ward *string `json:"ward,omitempty"`
 }
+
+// SessionSummaryType The session's TYPE (chat = lean, research = full pipeline); immutable after creation.
+type SessionSummaryType string
 
 // Skill defines model for Skill.
 type Skill struct {
@@ -1804,8 +1849,17 @@ type NotFound = Error
 // ProviderFailure defines model for ProviderFailure.
 type ProviderFailure = ProviderError
 
+// ClearChatParams defines parameters for ClearChat.
+type ClearChatParams struct {
+	// SessionId The session to clear (default `default`).
+	SessionId *Id `form:"session_id,omitempty" json:"session_id,omitempty"`
+}
+
 // SyncChatMessagesParams defines parameters for SyncChatMessages.
 type SyncChatMessagesParams struct {
+	// SessionId The session whose transcript to sync (default `default`, the quick chat).
+	SessionId *Id `form:"session_id,omitempty" json:"session_id,omitempty"`
+
 	// AfterSeq Return only rows with seq greater than this cursor.
 	AfterSeq *int `form:"after_seq,omitempty" json:"after_seq,omitempty"`
 
@@ -1872,6 +1926,9 @@ type CreateScheduleJSONRequestBody = ScheduleCreate
 // UpdateScheduleJSONRequestBody defines body for UpdateSchedule for application/json ContentType.
 type UpdateScheduleJSONRequestBody = ScheduleCreate
 
+// CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
+type CreateSessionJSONRequestBody = CreateSessionRequest
+
 // ContinueSessionJSONRequestBody defines body for ContinueSession for application/json ContentType.
 type ContinueSessionJSONRequestBody ContinueSessionJSONBody
 
@@ -1901,7 +1958,10 @@ type ServerInterface interface {
 	// ListAgents List configured agents
 	// (GET /api/agents)
 	ListAgents(w http.ResponseWriter, r *http.Request)
-	// SyncChatMessages Sync the chat transcript (cursor-paginated)
+	// ClearChat Clear a session's transcript (user-initiated, destructive)
+	// (DELETE /api/chat/messages)
+	ClearChat(w http.ResponseWriter, r *http.Request, params ClearChatParams)
+	// SyncChatMessages Sync a session's transcript (cursor-paginated)
 	// (GET /api/chat/messages)
 	SyncChatMessages(w http.ResponseWriter, r *http.Request, params SyncChatMessagesParams)
 	// SendChatMessage Send a message and get the assistant's reply
@@ -1976,6 +2036,9 @@ type ServerInterface interface {
 	// ListSessions List sessions (bounded, explicit truncation)
 	// (GET /api/sessions)
 	ListSessions(w http.ResponseWriter, r *http.Request, params ListSessionsParams)
+	// CreateSession Create a research session
+	// (POST /api/sessions)
+	CreateSession(w http.ResponseWriter, r *http.Request)
 	// GetSession Read one session's identity and status
 	// (GET /api/sessions/{sessionId})
 	GetSession(w http.ResponseWriter, r *http.Request, sessionId SessionId)
@@ -2042,7 +2105,13 @@ func (_ Unimplemented) ListAgents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// SyncChatMessages Sync the chat transcript (cursor-paginated)
+// ClearChat Clear a session's transcript (user-initiated, destructive)
+// (DELETE /api/chat/messages)
+func (_ Unimplemented) ClearChat(w http.ResponseWriter, r *http.Request, params ClearChatParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SyncChatMessages Sync a session's transcript (cursor-paginated)
 // (GET /api/chat/messages)
 func (_ Unimplemented) SyncChatMessages(w http.ResponseWriter, r *http.Request, params SyncChatMessagesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -2192,6 +2261,12 @@ func (_ Unimplemented) ListSessions(w http.ResponseWriter, r *http.Request, para
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// CreateSession Create a research session
+// (POST /api/sessions)
+func (_ Unimplemented) CreateSession(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // GetSession Read one session's identity and status
 // (GET /api/sessions/{sessionId})
 func (_ Unimplemented) GetSession(w http.ResponseWriter, r *http.Request, sessionId SessionId) {
@@ -2323,6 +2398,39 @@ func (siw *ServerInterfaceWrapper) ListAgents(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// ClearChat operation middleware
+func (siw *ServerInterfaceWrapper) ClearChat(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ClearChatParams
+
+	// ------------- Optional query parameter "session_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "session_id", r.URL.Query(), &params.SessionId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "session_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "session_id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ClearChat(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // SyncChatMessages operation middleware
 func (siw *ServerInterfaceWrapper) SyncChatMessages(w http.ResponseWriter, r *http.Request) {
 
@@ -2331,6 +2439,19 @@ func (siw *ServerInterfaceWrapper) SyncChatMessages(w http.ResponseWriter, r *ht
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params SyncChatMessagesParams
+
+	// ------------- Optional query parameter "session_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "session_id", r.URL.Query(), &params.SessionId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "session_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "session_id", Err: err})
+		}
+		return
+	}
 
 	// ------------- Optional query parameter "after_seq" -------------
 
@@ -2848,6 +2969,20 @@ func (siw *ServerInterfaceWrapper) ListSessions(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListSessions(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSession operation middleware
+func (siw *ServerInterfaceWrapper) CreateSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSession(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3446,6 +3581,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/providers/{name}/models/refresh", wrapper.RefreshProviderModels)
 	})
 	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/chat/messages", wrapper.ClearChat)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/chat/messages", wrapper.SyncChatMessages)
 	})
 	r.Group(func(r chi.Router) {
@@ -3459,6 +3597,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/sessions", wrapper.ListSessions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/sessions", wrapper.CreateSession)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/sessions/{sessionId}", wrapper.GetSession)

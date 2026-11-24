@@ -1,6 +1,9 @@
 package eino
 
 import (
+	"context"
+	"fmt"
+	"strings"
 	"zbot/backend/internal/tools"
 	"zbot/backend/internal/wards"
 	"zbot/backend/internal/wardtools"
@@ -54,7 +57,48 @@ func (a *Adapter) wardHost(sessionID string) *wardtools.Host {
 	h, ok := a.wardHosts[sessionID]
 	if !ok {
 		h = wardtools.NewHost(a.wardVault())
+		if a.wardBinder != nil {
+			binder := a.wardBinder
+			h.SetOnEnter(func(ward string) { binder(sessionID, ward) })
+		}
 		a.wardHosts[sessionID] = h
 	}
 	return h
+}
+
+// SetWardBinder wires the session-row ward binding: every ward enter
+// (ward_use/ward_create, or EnsureWard) in a session fires fn with the
+// session id and ward name (add-chat-modes — the sidebar re-groups and
+// the next run pre-loads from the binding). Best-effort by contract.
+func (a *Adapter) SetWardBinder(fn func(sessionID, ward string)) { a.wardBinder = fn }
+
+// EnsureWard re-enters a session's bound ward on a fresh host (daemon
+// restart recovery: the binding survives in the session row, the host
+// does not). A host that already carries a ward keeps it — its state
+// is newer than the row.
+func (a *Adapter) EnsureWard(ctx context.Context, sessionID, ward string) error {
+	if a.wardVault == nil {
+		return fmt.Errorf("engine: wards not wired")
+	}
+	h := a.wardHost(sessionID)
+	if h.Active() != nil {
+		return nil
+	}
+	_, err := h.Reenter(ctx, ward)
+	return err
+}
+
+// activeWardSection renders the ## Active Ward prompt section for a
+// hosted run (the ward's own constitution + layout packet — the
+// mini-bot model: a hosted run executes as the ward's agent). Empty
+// when the run carries no ward.
+func activeWardSection(in runInput) string {
+	if in.wardHost == nil {
+		return ""
+	}
+	view := in.wardHost.Active()
+	if view == nil {
+		return ""
+	}
+	return strings.Replace(wardtools.Packet(view), "ACTIVE WARD:", "## Active Ward\n", 1)
 }

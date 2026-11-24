@@ -111,7 +111,6 @@ func run(ctx context.Context, homeFlag string) error {
 		}
 	}
 
-	// The eternal chat: local SQLite store + provider plane + builtins.
 	db, err := zbotstore.Open(paths.DataDir + "/zbot.db")
 	if err != nil {
 		return fmt.Errorf("store: %w", err)
@@ -192,9 +191,10 @@ func run(ctx context.Context, homeFlag string) error {
 	composePersona := func() (string, error) {
 		return sysprompt.Compose(cfg.SystemPrompt, reg.Snapshot())
 	}
-	// A broken composed prompt FAILS the chat exchange (the service
-	// errors before the model call) — chat never runs persona-less.
-	chatSvc.SetPersona(composePersona)
+	// The lean persona + memory recall (the session model: quick chat is
+	// persona + Context and nothing more; the research discipline joins
+	// via the wrapper's composed prompt).
+	wireLeanChat(chatSvc, cfg, reg, chittaSys)
 
 	// Engine: eino adapter over the provider plane + store + builtins;
 	// the registry snapshot supplies agent definitions (delegation).
@@ -211,8 +211,6 @@ func run(ctx context.Context, homeFlag string) error {
 		Sys:  chittaSys,
 		Host: domain.ChittaHostContext{Source: domain.SourceDistiller, AgentID: "resource-index"},
 	}
-
-	wireChatWardPlane(chatSvc, wardVault)
 
 	// Intent middleware wraps the engine for ROOT goal runs (router →
 	// analysis → composed prompt + step budget; children/chat/Resume
@@ -329,6 +327,11 @@ func run(ctx context.Context, homeFlag string) error {
 			},
 		}
 	}
+
+	// The session model (add-chat-modes): research sessions run the
+	// engine pipeline in their own transcript, and ward enters update
+	// the session-row binding.
+	wireSessionModel(chatSvc, eng, runEngine, db)
 
 	// Model catalog: load persisted entries (no provider requests), then
 	// persist every future refresh so restarts keep the catalog warm.

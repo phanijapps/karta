@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
 import { clearChat } from '../shared/api/client';
-  import { PanelLeft, PanelRight, Sun, Moon, ArrowLeft, Folder, Trash2 } from '@lucide/svelte';
+  import { PanelLeft, PanelRight, Sun, Moon, Trash2 } from '@lucide/svelte';
   import Sidebar from './Sidebar.svelte';
   import ContextPanel from './ContextPanel.svelte';
   import Chat from '../features/chat-stream/Chat.svelte';
@@ -18,7 +18,6 @@ import { clearChat } from '../shared/api/client';
   let drawer = $state<'left' | 'right' | null>(null);
   let settings = $state(false);
   let confirmClear = $state(false);
-  let placeholder = $state('');
   let view = $state<'chat' | 'schedules' | 'wards'>('chat');
   // Browser-only SPA (no SSR): read the preference synchronously so the
   // first paint matches the user's scheme instead of flashing dark.
@@ -39,16 +38,16 @@ import { clearChat } from '../shared/api/client';
   $effect(() => { document.documentElement.dataset.theme = theme; });
   function toggleLeft() { if (leftDocked) leftExpanded = !leftExpanded; else drawer = drawer === 'left' ? null : 'left'; }
   function toggleRight() { if (rightDocked) rightExpanded = !rightExpanded; else drawer = drawer === 'right' ? null : 'right'; }
-  async function showChat() { drawer = null; placeholder = ''; view = 'chat'; await tick(); main.focus(); }
-  async function showSchedules() { drawer = null; placeholder = ''; view = 'schedules'; await tick(); main.focus(); }
-  async function showWards() { drawer = null; placeholder = ''; view = 'wards'; await tick(); main.focus(); }
+  async function showChat() { drawer = null; view = 'chat'; await tick(); main.focus(); }
+  async function showSession(id: string) { drawer = null; view = 'chat'; await sessions.select(id); await tick(); main.focus(); }
+  async function showSchedules() { drawer = null; view = 'schedules'; await tick(); main.focus(); }
+  async function showWards() { drawer = null; view = 'wards'; await tick(); main.focus(); }
   async function openSettings() { drawer = null; await tick(); settings = true; }
-  async function showPlaceholder(name: string) { drawer = null; placeholder = name; view = 'chat'; await tick(); main.focus(); }
 </script>
 
 <a class="skip-link" href="#workspace">Skip to conversation</a>
 <div class="workspace" class:left-rail={!leftExpanded} class:right-open={rightExpanded}>
-  {#if leftDocked}<div class="left-panel" id="left-sidebar"><Sidebar {sessions} rail={!leftExpanded} ontoggle={toggleLeft} onselect={showChat} onplaceholder={showPlaceholder} onsettings={openSettings} onschedules={showSchedules} onwards={showWards} /></div>{/if}
+  {#if leftDocked}<div class="left-panel" id="left-sidebar"><Sidebar {sessions} rail={!leftExpanded} ontoggle={toggleLeft} onselect={showSession} onsettings={openSettings} onschedules={showSchedules} onwards={showWards} /></div>{/if}
   <div class="main-column">
     <header class="workspace-header">
       <button class="icon-button" onclick={toggleLeft} aria-label="Toggle left sidebar" aria-expanded={leftDocked ? leftExpanded : drawer === 'left'} aria-controls={leftDocked || drawer === 'left' ? 'left-sidebar' : undefined}><PanelLeft size={20} strokeWidth={1.5} /></button>
@@ -56,20 +55,20 @@ import { clearChat } from '../shared/api/client';
       <div class="header-actions"><button class="icon-button" onclick={() => (confirmClear = true)} aria-label="Clear conversation" title="Clear conversation (deletes all messages)"><Trash2 size={18} strokeWidth={1.6} /></button><button class="icon-button" onclick={() => theme = theme === 'dark' ? 'light' : 'dark'} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}>{#if theme === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}</button><button class="icon-button" onclick={toggleRight} aria-label="Toggle right sidebar" aria-expanded={rightDocked ? rightExpanded : drawer === 'right'} aria-controls={rightDocked && rightExpanded || drawer === 'right' ? 'right-sidebar' : undefined}><PanelRight size={20} strokeWidth={1.5} /></button></div>
     </header>
     <main id="workspace" bind:this={main!} tabindex="-1">
-      {#if view === 'schedules'}<Schedules onopenSession={() => { view = 'chat'; }} />{:else if view === 'wards'}<Wards />{:else if placeholder}<div class="placeholder"><Folder size={32} strokeWidth={1.2} /><h1>{placeholder}</h1><span class="badge">TODO · Coming soon</span><p class="muted">Your local configuration workspace will live here.</p><p class="muted">Not implemented. No files are read or changed.</p><button class="return" onclick={showChat}><ArrowLeft size={16} />Back to chat</button></div>{:else}<Chat {sessions} />{/if}
+      {#if view === 'schedules'}<Schedules onopenSession={() => { view = 'chat'; }} />{:else if view === 'wards'}<Wards />{:else}<Chat {sessions} />{/if}
     </main>
   </div>
-  {#if rightDocked && rightExpanded}<div class="right-panel" id="right-sidebar"><ContextPanel onclose={() => rightExpanded = false} /></div>{/if}
+  {#if rightDocked && rightExpanded}<div class="right-panel" id="right-sidebar"><ContextPanel {sessions} onclose={() => rightExpanded = false} /></div>{/if}
 </div>
-{#if drawer === 'left'}<Modal label="Workspace navigation" kind="left" onclose={() => drawer = null}><div id="left-sidebar" class="drawer-content"><Sidebar {sessions} ontoggle={() => drawer = null} onselect={showChat} onplaceholder={showPlaceholder} onsettings={openSettings} onschedules={showSchedules} onwards={showWards} /></div></Modal>{:else if drawer === 'right'}<Modal label="Session context" kind="right" onclose={() => drawer = null}><div id="right-sidebar" class="drawer-content"><ContextPanel onclose={() => drawer = null} /></div></Modal>{/if}
+{#if drawer === 'left'}<Modal label="Workspace navigation" kind="left" onclose={() => drawer = null}><div id="left-sidebar" class="drawer-content"><Sidebar {sessions} ontoggle={() => drawer = null} onselect={showSession} onsettings={openSettings} onschedules={showSchedules} onwards={showWards} /></div></Modal>{:else if drawer === 'right'}<Modal label="Session context" kind="right" onclose={() => drawer = null}><div id="right-sidebar" class="drawer-content"><ContextPanel {sessions} onclose={() => drawer = null} /></div></Modal>{/if}
 {#if confirmClear}
   <div class="form-backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) confirmClear = false; }}>
     <div class="confirm-card" role="alertdialog" aria-label="Clear conversation">
-      <h3>Clear the conversation?</h3>
-      <p class="muted">All messages will be permanently deleted from your local database. This cannot be undone.</p>
+      <h3>Clear this conversation?</h3>
+      <p class="muted">All messages in this session will be permanently deleted from your local database. This cannot be undone.</p>
       <div class="confirm-actions">
         <button class="cancel" onclick={() => (confirmClear = false)}>Cancel</button>
-        <button class="danger" onclick={async () => { await clearChat(); confirmClear = false; sessions.load(); }}>Clear everything</button>
+        <button class="danger" onclick={async () => { await clearChat(sessions.activeId); confirmClear = false; sessions.clearedLocally(sessions.activeId); }}>Clear everything</button>
       </div>
     </div>
   </div>
@@ -88,9 +87,6 @@ import { clearChat } from '../shared/api/client';
   .header-actions { margin-left: auto; display: flex; gap: var(--ds-space-1); }
   main { flex: 1; min-height: 0; outline: none; }
   .drawer-content { height: 100%; }
-  .placeholder { padding: var(--ds-space-8); height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--ds-space-4); text-align: center; }
-  .placeholder h1 { font-size: 1.75rem; font-weight: 600; }
-  .return { display: flex; align-items: center; gap: var(--ds-space-2); padding: var(--ds-space-3); border: 1px solid var(--ds-color-border); }
   @media (min-width: 768px) and (max-width: 1279px) { .workspace.right-open { grid-template-columns: 260px minmax(0, 1fr); } .workspace.left-rail.right-open { grid-template-columns: 44px minmax(0, 1fr); } }
   @media (max-width: 767px) { .workspace, .workspace.left-rail, .workspace.right-open, .workspace.left-rail.right-open { grid-template-columns: minmax(0, 1fr); } .workspace-header { padding: 0 var(--ds-space-2); } }
 

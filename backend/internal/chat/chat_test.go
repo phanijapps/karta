@@ -75,7 +75,7 @@ func newService(t *testing.T, completer Completer) (*Service, *store.Store) {
 func TestSendPlainRoundTrip(t *testing.T) {
 	fc := &fakeCompleter{responses: []providers.ChatResponse{plainResp("hello there")}}
 	svc, st := newService(t, fc)
-	out := svc.Send(context.Background(), "hi", "ollama", "m1")
+	out := svc.SendIn(context.Background(), DefaultSessionID, "hi", "ollama", "m1")
 	if out.Err != nil {
 		t.Fatalf("send: %v", out.Err)
 	}
@@ -89,7 +89,7 @@ func TestSendPlainRoundTrip(t *testing.T) {
 		t.Fatalf("cursor: %d", out.EndCursor)
 	}
 	// Durable events: session events per row, in order.
-	events, _ := st.Events(SessionID, "", 100)
+	events, _ := st.Events(DefaultSessionID, "", 100)
 	if len(events) != 2 || events[0].Kind != "session" {
 		t.Fatalf("events: %+v", events)
 	}
@@ -101,7 +101,7 @@ func TestSendOneToolRound(t *testing.T) {
 		plainResp("it is noon"),
 	}}
 	svc, st := newService(t, fc)
-	out := svc.Send(context.Background(), "time?", "ollama", "m1")
+	out := svc.SendIn(context.Background(), DefaultSessionID, "time?", "ollama", "m1")
 	if out.Err != nil {
 		t.Fatalf("send: %v", out.Err)
 	}
@@ -115,7 +115,7 @@ func TestSendOneToolRound(t *testing.T) {
 	if out.Rows[3].Content != "it is noon" {
 		t.Fatalf("final: %+v", out.Rows[3])
 	}
-	events, _ := st.Events(SessionID, "", 100)
+	events, _ := st.Events(DefaultSessionID, "", 100)
 	kinds := map[string]int{}
 	for _, e := range events {
 		kinds[e.Kind]++
@@ -138,7 +138,7 @@ func TestSendToolRoundCap(t *testing.T) {
 		plainResp("stopped asking"),
 	}}
 	svc, _ := newService(t, fc)
-	out := svc.Send(context.Background(), "loop", "ollama", "m1")
+	out := svc.SendIn(context.Background(), DefaultSessionID, "loop", "ollama", "m1")
 	if out.Err != nil {
 		t.Fatalf("send: %v", out.Err)
 	}
@@ -153,7 +153,7 @@ func TestSendToolRoundCap(t *testing.T) {
 func TestSendProviderFailureKeepsUserRow(t *testing.T) {
 	fc := &fakeCompleter{errs: []error{errProvider}}
 	svc, st := newService(t, fc)
-	out := svc.Send(context.Background(), "hello?", "ollama", "m1")
+	out := svc.SendIn(context.Background(), DefaultSessionID, "hello?", "ollama", "m1")
 	if out.Err == nil {
 		t.Fatal("want typed failure")
 	}
@@ -166,7 +166,7 @@ func TestSendProviderFailureKeepsUserRow(t *testing.T) {
 	if out.EndCursor != out.Rows[0].Seq {
 		t.Fatalf("failure cursor: %d", out.EndCursor)
 	}
-	rows, _ := st.Replay(SessionID, 0, 100)
+	rows, _ := st.Replay(DefaultSessionID, 0, 100)
 	if len(rows) != 1 {
 		t.Fatalf("transcript: %+v", rows)
 	}
@@ -178,7 +178,7 @@ func TestSendFailureAfterToolRoundKeepsCommittedRows(t *testing.T) {
 		errs:      []error{nil, errProvider},
 	}
 	svc, st := newService(t, fc)
-	out := svc.Send(context.Background(), "try tools then fail", "ollama", "m1")
+	out := svc.SendIn(context.Background(), DefaultSessionID, "try tools then fail", "ollama", "m1")
 	if out.Err == nil {
 		t.Fatal("want failure")
 	}
@@ -186,7 +186,7 @@ func TestSendFailureAfterToolRoundKeepsCommittedRows(t *testing.T) {
 	if len(out.Rows) != 3 {
 		t.Fatalf("rows: %+v", out.Rows)
 	}
-	all, _ := st.Replay(SessionID, 0, 100)
+	all, _ := st.Replay(DefaultSessionID, 0, 100)
 	if len(all) != 3 || all[2].Role == "assistant" && all[2].ToolCalls == "" {
 		t.Fatalf("committed rows: %+v", all)
 	}
@@ -198,7 +198,7 @@ func TestSendUnknownToolModelSeesError(t *testing.T) {
 		plainResp("handled"),
 	}}
 	svc, _ := newService(t, fc)
-	out := svc.Send(context.Background(), "?", "ollama", "m1")
+	out := svc.SendIn(context.Background(), DefaultSessionID, "?", "ollama", "m1")
 	if out.Err != nil {
 		t.Fatalf("send: %v", out.Err)
 	}
@@ -215,14 +215,14 @@ func TestSendSerializedTwoClients(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			out := svc.Send(context.Background(), fmt.Sprintf("q%d", i), "ollama", "m1")
+			out := svc.SendIn(context.Background(), DefaultSessionID, fmt.Sprintf("q%d", i), "ollama", "m1")
 			if out.Err != nil {
 				t.Error(out.Err)
 			}
 		}(i)
 	}
 	wg.Wait()
-	rows, _ := st.Replay(SessionID, 0, 100)
+	rows, _ := st.Replay(DefaultSessionID, 0, 100)
 	// 4 rows: two complete exchanges, user/assistant adjacent — never
 	// interleaved (user,user,assistant,assistant).
 	if len(rows) != 4 {
@@ -243,15 +243,15 @@ func TestSyncPagination(t *testing.T) {
 	}
 	svc, _ := newService(t, fc)
 	for i := 0; i < 3; i++ {
-		if out := svc.Send(context.Background(), fmt.Sprintf("q%d", i), "ollama", "m"); out.Err != nil {
+		if out := svc.SendIn(context.Background(), DefaultSessionID, fmt.Sprintf("q%d", i), "ollama", "m"); out.Err != nil {
 			t.Fatal(out.Err)
 		}
 	}
-	rows, next, truncated, err := svc.Sync(0, 3)
+	rows, next, truncated, err := svc.SyncIn(DefaultSessionID, 0, 3)
 	if err != nil || len(rows) != 3 || !truncated || next != 3 {
 		t.Fatalf("page1: rows=%d next=%d trunc=%v err=%v", len(rows), next, truncated, err)
 	}
-	rows, next, truncated, _ = svc.Sync(next, 100)
+	rows, next, truncated, _ = svc.SyncIn(DefaultSessionID, next, 100)
 	if len(rows) != 3 || truncated || next != 6 {
 		t.Fatalf("page2: rows=%d next=%d trunc=%v", len(rows), next, truncated)
 	}
@@ -264,11 +264,11 @@ func TestNeedsCompactionSurfaces(t *testing.T) {
 	}
 	svc, _ := newService(t, fc)
 	for i := 0; i < 5; i++ {
-		if out := svc.Send(context.Background(), "q", "ollama", "m"); out.Err != nil {
+		if out := svc.SendIn(context.Background(), DefaultSessionID, "q", "ollama", "m"); out.Err != nil {
 			t.Fatal(out.Err)
 		}
 	}
-	hw, err := svc.store.HistoryWindow(SessionID, "", 5)
+	hw, err := svc.store.HistoryWindow(DefaultSessionID, "", 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,11 +294,11 @@ func TestChatPersona(t *testing.T) {
 		func(context.Context, providers.Provider) (string, error) { return "tok", nil },
 		fc, tools.BuiltinProvider{}, nil, nil)
 	svc.SetPersona(func() (string, error) { return "", errors.New("role missing") })
-	if out := svc.Send(context.Background(), "hi", "p", "m"); out.Err == nil || !strings.Contains(out.Err.Error(), "role missing") {
+	if out := svc.SendIn(context.Background(), DefaultSessionID, "hi", "p", "m"); out.Err == nil || !strings.Contains(out.Err.Error(), "role missing") {
 		t.Fatalf("broken persona must fail the exchange: %+v", out.Err)
 	}
 	svc.SetPersona(func() (string, error) { return "## Role\n\nI am Karta.", nil })
-	if out := svc.Send(context.Background(), "hi", "p", "m"); out.Err != nil {
+	if out := svc.SendIn(context.Background(), DefaultSessionID, "hi", "p", "m"); out.Err != nil {
 		t.Fatalf("send: %v", out.Err)
 	}
 	if len(fc.lastMessages) == 0 || fc.lastMessages[0].Role != "system" || !strings.Contains(fc.lastMessages[0].Content, "I am Karta.") {
@@ -326,7 +326,7 @@ func TestChatWardPlane(t *testing.T) {
 	svc.SetPersona(func() (string, error) { return "## Role\n\nI am Karta.", nil })
 	svc.SetActiveWard(func() string { return "" }) // no ward yet
 
-	if out := svc.Send(context.Background(), "what wards exist", "p", "m"); out.Err != nil {
+	if out := svc.SendIn(context.Background(), DefaultSessionID, "what wards exist", "p", "m"); out.Err != nil {
 		t.Fatalf("send: %v", out.Err)
 	}
 	if len(fc.seenTools) == 0 || fc.seenTools[0] < 2 {
@@ -339,7 +339,7 @@ func TestChatWardPlane(t *testing.T) {
 
 	// A ward becomes active → the section composes after the persona.
 	svc.SetActiveWard(func() string { return "## Active Ward\n\nstock-analysis" })
-	if out := svc.Send(context.Background(), "continue", "p", "m"); out.Err != nil {
+	if out := svc.SendIn(context.Background(), DefaultSessionID, "continue", "p", "m"); out.Err != nil {
 		t.Fatalf("send 2: %v", out.Err)
 	}
 	if !strings.Contains(fc.lastMessages[0].Content, "## Active Ward") || !strings.Contains(fc.lastMessages[0].Content, "stock-analysis") {
@@ -352,3 +352,118 @@ type stubTool struct{ name string }
 
 func (s stubTool) Def() tools.Def                            { return tools.Def{Name: s.name, Description: "stub"} }
 func (s stubTool) Exec(context.Context, string) tools.Result { return tools.Result{Output: "ok"} }
+
+// TestSessionRouting (add-chat-modes 2.1): the session's TYPE routes
+// the exchange — chat sessions run the lean exchange, research
+// sessions run the wired research path (the engine pipeline), unknown
+// ids fail typed, and the default session is created on first use.
+func TestSessionRouting(t *testing.T) {
+	t.Run("chat routes lean", func(t *testing.T) {
+		fc := &fakeCompleter{responses: []providers.ChatResponse{plainResp("lean reply")}}
+		svc, st := newService(t, fc)
+		called := false
+		svc.SetResearchPath(func(ctx context.Context, sessionID, text, providerName, model string) SendOutcome {
+			called = true
+			return SendOutcome{}
+		})
+		out := svc.SendIn(context.Background(), DefaultSessionID, "hi", "p", "m")
+		if out.Err != nil || called {
+			t.Fatalf("lean route: err=%v researchCalled=%v", out.Err, called)
+		}
+		if len(out.Rows) != 2 || out.Rows[1].Content != "lean reply" {
+			t.Fatalf("rows: %+v", out.Rows)
+		}
+		sess, err := st.Session(DefaultSessionID)
+		if err != nil || sess == nil || sess.Type != "chat" {
+			t.Fatalf("default session: %v %+v", err, sess)
+		}
+	})
+	t.Run("research routes the engine path", func(t *testing.T) {
+		fc := &fakeCompleter{responses: []providers.ChatResponse{plainResp("should not run")}}
+		svc, st := newService(t, fc)
+		if _, err := st.EnsureSession("research-1", "research"); err != nil {
+			t.Fatal(err)
+		}
+		gotSession := ""
+		svc.SetResearchPath(func(ctx context.Context, sessionID, text, providerName, model string) SendOutcome {
+			gotSession = sessionID
+			return SendOutcome{Rows: []store.Message{{ID: "x", SessionID: sessionID, Seq: 1, Role: "assistant", Content: "engine ran"}}}
+		})
+		out := svc.SendIn(context.Background(), "research-1", "deep question", "p", "m")
+		if out.Err != nil {
+			t.Fatalf("research route: %v", out.Err)
+		}
+		if gotSession != "research-1" {
+			t.Fatalf("research path session: %q", gotSession)
+		}
+		if len(out.Rows) != 1 || out.Rows[0].Content != "engine ran" {
+			t.Fatalf("rows: %+v", out.Rows)
+		}
+	})
+	t.Run("research without wiring falls back lean", func(t *testing.T) {
+		fc := &fakeCompleter{responses: []providers.ChatResponse{plainResp("lean fallback")}}
+		svc, st := newService(t, fc)
+		if _, err := st.EnsureSession("research-2", "research"); err != nil {
+			t.Fatal(err)
+		}
+		out := svc.SendIn(context.Background(), "research-2", "q", "p", "m")
+		if out.Err != nil {
+			t.Fatalf("fallback: %v", out.Err)
+		}
+		if out.Rows[1].Content != "lean fallback" {
+			t.Fatalf("rows: %+v", out.Rows)
+		}
+	})
+	t.Run("unknown session fails typed", func(t *testing.T) {
+		fc := &fakeCompleter{}
+		svc, _ := newService(t, fc)
+		out := svc.SendIn(context.Background(), "nope", "hi", "p", "m")
+		if !errors.Is(out.Err, ErrUnknownSession) {
+			t.Fatalf("want ErrUnknownSession, got %v", out.Err)
+		}
+	})
+	t.Run("streaming routes research as a unit", func(t *testing.T) {
+		fc := &fakeCompleter{}
+		svc, st := newService(t, fc)
+		if _, err := st.EnsureSession("research-3", "research"); err != nil {
+			t.Fatal(err)
+		}
+		svc.SetResearchPath(func(ctx context.Context, sessionID, text, providerName, model string) SendOutcome {
+			return SendOutcome{Rows: []store.Message{{ID: "y", SessionID: sessionID, Seq: 1, Role: "assistant", Content: "unit"}}}
+		})
+		var deltas int
+		out := svc.SendStreamIn(context.Background(), "research-3", "q", "p", "m", func(Delta) { deltas++ })
+		if out.Err != nil || deltas != 0 {
+			t.Fatalf("unit completion: err=%v deltas=%d", out.Err, deltas)
+		}
+	})
+}
+
+// TestLeanContextRecall (add-chat-modes): the lean exchange injects
+// recalled facts as a ## Context system message (the type gates the
+// pipeline, never the knowledge).
+func TestLeanContextRecall(t *testing.T) {
+	fc := &fakeCompleter{responses: []providers.ChatResponse{plainResp("ok")}}
+	svc, _ := newService(t, fc)
+	svc.SetContext(func(ctx context.Context, text string) []string {
+		return []string{"user prefers concise answers", "user is in Bangalore"}
+	})
+	out := svc.SendIn(context.Background(), DefaultSessionID, "hi", "p", "m")
+	if out.Err != nil {
+		t.Fatalf("send: %v", out.Err)
+	}
+	var contextMsg string
+	for _, m := range fc.lastMessages {
+		if m.Role == "system" && strings.HasPrefix(m.Content, "## Context") {
+			contextMsg = m.Content
+		}
+	}
+	if contextMsg == "" {
+		t.Fatalf("no ## Context system message: %+v", fc.lastMessages)
+	}
+	for _, want := range []string{"user prefers concise answers", "user is in Bangalore"} {
+		if !strings.Contains(contextMsg, want) {
+			t.Fatalf("context missing %q: %q", want, contextMsg)
+		}
+	}
+}

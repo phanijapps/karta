@@ -23,14 +23,11 @@ type scriptedStreamChat struct {
 	onCall  func()
 }
 
-func (s *scriptedStreamChat) Send(ctx context.Context, text, providerName, model string) chat.SendOutcome {
+func (s *scriptedStreamChat) SendIn(ctx context.Context, sessionID, text, providerName, model string) chat.SendOutcome {
 	return chat.SendOutcome{Err: errors.New("sync unused on stream tests")}
 }
 
-func (s *scriptedStreamChat) SendMode(ctx context.Context, text, providerName, model, mode string) chat.SendOutcome {
-	return s.Send(ctx, text, providerName, model)
-}
-func (s *scriptedStreamChat) SendStream(ctx context.Context, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome {
+func (s *scriptedStreamChat) SendStreamIn(ctx context.Context, sessionID, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome {
 	if s.onCall != nil {
 		s.onCall()
 	}
@@ -41,7 +38,7 @@ func (s *scriptedStreamChat) SendStream(ctx context.Context, text, providerName,
 	}
 	return s.outcome
 }
-func (s *scriptedStreamChat) Sync(afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error) {
+func (s *scriptedStreamChat) SyncIn(sessionID string, afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error) {
 	return nil, afterSeq, false, nil
 }
 
@@ -177,19 +174,16 @@ type instrumentedStreamChat struct {
 	done  chan struct{}
 }
 
-func (i *instrumentedStreamChat) Send(ctx context.Context, text, providerName, model string) chat.SendOutcome {
-	return i.inner.Send(ctx, text, providerName, model)
+func (i *instrumentedStreamChat) SendIn(ctx context.Context, sessionID, text, providerName, model string) chat.SendOutcome {
+	return i.inner.SendIn(ctx, sessionID, text, providerName, model)
 }
 
-func (i *instrumentedStreamChat) SendMode(ctx context.Context, text, providerName, model, mode string) chat.SendOutcome {
-	return i.Send(ctx, text, providerName, model)
-}
-func (i *instrumentedStreamChat) SendStream(ctx context.Context, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome {
-	out := i.inner.SendStream(ctx, text, providerName, model, onDelta)
+func (i *instrumentedStreamChat) SendStreamIn(ctx context.Context, sessionID, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome {
+	out := i.inner.SendStreamIn(ctx, sessionID, text, providerName, model, onDelta)
 	close(i.done)
 	return out
 }
-func (i *instrumentedStreamChat) Sync(afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error) {
+func (i *instrumentedStreamChat) SyncIn(sessionID string, afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error) {
 	return nil, afterSeq, false, nil
 }
 
@@ -277,14 +271,11 @@ type gappedStreamChat struct {
 	gap   time.Duration
 }
 
-func (g *gappedStreamChat) Send(ctx context.Context, text, providerName, model string) chat.SendOutcome {
-	return g.inner.Send(ctx, text, providerName, model)
+func (g *gappedStreamChat) SendIn(ctx context.Context, sessionID, text, providerName, model string) chat.SendOutcome {
+	return g.inner.SendIn(ctx, sessionID, text, providerName, model)
 }
 
-func (g *gappedStreamChat) SendMode(ctx context.Context, text, providerName, model, mode string) chat.SendOutcome {
-	return g.Send(ctx, text, providerName, model)
-}
-func (g *gappedStreamChat) SendStream(ctx context.Context, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome {
+func (g *gappedStreamChat) SendStreamIn(ctx context.Context, sessionID, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome {
 	if onDelta != nil && len(g.inner.deltas) > 0 {
 		onDelta(g.inner.deltas[0])
 		time.Sleep(g.gap) // idle generation gap longer than the write deadline
@@ -294,6 +285,6 @@ func (g *gappedStreamChat) SendStream(ctx context.Context, text, providerName, m
 	}
 	return g.inner.outcome
 }
-func (g *gappedStreamChat) Sync(afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error) {
+func (g *gappedStreamChat) SyncIn(sessionID string, afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error) {
 	return nil, afterSeq, false, nil
 }

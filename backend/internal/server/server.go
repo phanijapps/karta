@@ -61,12 +61,14 @@ func (s *Server) SetMCPToolIndexer(fn func(server string, tools []mcpclient.Tool
 }
 
 // ChatService is the seam the chat handlers consume (the concrete
-// *chat.Service in production; a fake in handler tests).
+// *chat.Service in production; a fake in handler tests). Every method
+// is SESSION-SCOPED (the session model): the service loads the session
+// and routes by its type — chat sessions lean, research sessions
+// through the engine pipeline.
 type ChatService interface {
-	Send(ctx context.Context, text, providerName, model string) chat.SendOutcome
-	SendMode(ctx context.Context, text, providerName, model, mode string) chat.SendOutcome
-	SendStream(ctx context.Context, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome
-	Sync(afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error)
+	SendIn(ctx context.Context, sessionID, text, providerName, model string) chat.SendOutcome
+	SendStreamIn(ctx context.Context, sessionID, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome
+	SyncIn(sessionID string, afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error)
 }
 
 // New builds a server over the provider store, model catalog, and the
@@ -85,7 +87,6 @@ func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
 	// Small non-contract endpoint: the chat's default model (last-used).
 	r.Get("/api/chat/default-model", s.GetDefaultModel)
-	r.Delete("/api/chat/messages", s.ClearChat)
 	return guardMutations(apigen.HandlerFromMux(s, r))
 }
 

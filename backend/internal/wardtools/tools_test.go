@@ -1,6 +1,7 @@
 package wardtools
 
 import (
+	"sync"
 	"context"
 	"errors"
 	"os"
@@ -227,4 +228,39 @@ func TestFileTools(t *testing.T) {
 			t.Fatalf("want symlink refusal, got %v", res.Err)
 		}
 	})
+}
+
+// TestOnEnterFires (add-chat-modes): every enter (ward_use,
+// ward_create, and the adapter's EnsureWard restart recovery) fires
+// the observer exactly once per successful enter — the session-row
+// ward binding hangs off it. Failed enters never fire.
+func TestOnEnterFires(t *testing.T) {
+	host, vault := newTestHost(t)
+	var mu sync.Mutex
+	var fired []string
+	host.SetOnEnter(func(ward string) {
+		mu.Lock()
+		defer mu.Unlock()
+		fired = append(fired, ward)
+	})
+	ctx := context.Background()
+
+	use := UseTool{Host: host, Vault: vault}
+	if res := use.Exec(ctx, `{"name":"stock-analysis"}`); res.Err != nil {
+		t.Fatalf("use: %v", res.Err)
+	}
+	// Reenter via the wiring path (daemon restart recovery).
+	if _, err := host.Reenter(ctx, "stock-analysis"); err != nil {
+		t.Fatalf("reenter: %v", err)
+	}
+	// A failed enter (unknown ward) fires nothing.
+	if _, err := host.Reenter(ctx, "nope"); err == nil {
+		t.Fatal("unknown ward reenter should fail")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(fired) != 2 || fired[0] != "stock-analysis" || fired[1] != "stock-analysis" {
+		t.Fatalf("fired: %v", fired)
+	}
 }

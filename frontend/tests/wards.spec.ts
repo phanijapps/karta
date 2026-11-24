@@ -55,7 +55,7 @@ test('wards page lists the roster with lint states and canonical titles', async 
   await expect(page.getByText('Vault: /home/dev/Documents/wards')).toBeVisible();
 });
 
-test('navigation is mutually exclusive: Configuration opens from Wards', async ({ page }) => {
+test('navigation is mutually exclusive: the chat surface replaces Wards', async ({ page }) => {
   await mockChat(page);
   await page.route('**/api/wards', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ vault_root: '/v', wards: [{ name: 'a', archetype: 'research', lint_status: 'clean', finding_count: 0 }] }) }),
@@ -63,9 +63,9 @@ test('navigation is mutually exclusive: Configuration opens from Wards', async (
   await page.goto('/');
   await page.getByRole('button', { name: 'Wards' }).click();
   await expect(page.getByRole('heading', { name: 'Wards' })).toBeVisible();
-  await page.getByRole('button', { name: 'Configuration' }).click();
-  await expect(page.getByRole('heading', { name: 'Configuration' })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: /Quick Chat/ }).click();
   await expect(page.getByRole('heading', { name: 'Wards' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Send message' })).toBeVisible();
 });
 
 test('a slow earlier detail response never overwrites the selected ward', async ({ page }) => {
@@ -167,7 +167,7 @@ test('sidebar row is Wards, not the retired Code Wards placeholder', async ({ pa
   const row = page.getByRole('button', { name: 'Wards', exact: true });
   await expect(row).toBeVisible();
   await expect(page.getByText('Code Wards')).toHaveCount(0);
-  await expect(page.getByText('TODO', { exact: true })).toHaveCount(1); // only Configuration keeps its placeholder badge
+  await expect(page.getByText('TODO', { exact: true })).toHaveCount(0); // no placeholder badges remain
 });
 
 test('list failure shows an error with retry, not an empty vault', async ({ page }) => {

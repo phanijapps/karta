@@ -27,7 +27,7 @@ func TestHistoryWindowUsesMarkerAndExcludesSummaries(t *testing.T) {
 	)
 	markerSeq := rows[1].Seq
 	summaryID := rows[2].ID
-	root, _ := s.EnsureSession("default")
+	root, _ := s.EnsureSession("default", "research")
 	if err := s.AppendEvent(Event{ID: "evt-x", SessionID: "default", Kind: "session", Payload: "{}"}); err != nil {
 		t.Fatal(err)
 	}

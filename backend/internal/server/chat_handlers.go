@@ -11,14 +11,21 @@ import (
 	"time"
 
 	"zbot/backend/internal/chat"
-	"zbot/backend/internal/domain"
 	"zbot/backend/internal/providers"
 	apigen "zbot/backend/internal/server/apigen"
 	"zbot/backend/internal/store"
 )
 
-// SyncChatMessages pages the eternal transcript. next_cursor is the last
-// DELIVERED seq (a page cursor, never the database tail).
+// sessionIDOf dereferences the optional session id (empty = default).
+func sessionIDOf(id *apigen.Id) string {
+	if id == nil || *id == "" {
+		return chat.DefaultSessionID
+	}
+	return string(*id)
+}
+
+// SyncChatMessages pages one session's transcript. next_cursor is the
+// last DELIVERED seq (a page cursor, never the database tail).
 func (s *Server) SyncChatMessages(w http.ResponseWriter, r *http.Request, params apigen.SyncChatMessagesParams) {
 	afterSeq := int64(0)
 	if params.AfterSeq != nil {
@@ -32,7 +39,7 @@ func (s *Server) SyncChatMessages(w http.ResponseWriter, r *http.Request, params
 		writeError(w, http.StatusBadRequest, "invalid_request", "after_seq must be >= 0; limit must be 1-500")
 		return
 	}
-	rows, next, truncated, err := s.chat.Sync(afterSeq, limit)
+	rows, next, truncated, err := s.chat.SyncIn(sessionIDOf(params.SessionId), afterSeq, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -44,21 +51,6 @@ func (s *Server) SyncChatMessages(w http.ResponseWriter, r *http.Request, params
 	writeJSON(w, http.StatusOK, apigen.ChatSync{
 		Messages: out, NextCursor: int(next), Truncated: truncated,
 	})
-}
-
-// writeStreamOutcome emits a completed exchange as the stream's
-// terminal frame (research-mode sends complete as units).
-func (s *Server) writeStreamOutcome(w http.ResponseWriter, outcome chat.SendOutcome) {
-	body := apigen.ChatExchange{
-		Messages:  chatViews(outcome.Rows),
-		EndCursor: int(outcome.EndCursor),
-	}
-	if outcome.Err != nil {
-		body.Error = chatErrorView(outcome.Err)
-		writeJSON(w, http.StatusBadGateway, body)
-		return
-	}
-	writeJSON(w, http.StatusOK, body)
 }
 
 // SendChatMessage runs one serialized exchange and returns every row it
@@ -78,11 +70,11 @@ func (s *Server) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mode := ""
-	if req.Mode != nil {
-		mode = string(*req.Mode)
+	outcome := s.chat.SendIn(r.Context(), sessionIDOf(req.SessionId), req.Text, providerName, modelID)
+	if errors.Is(outcome.Err, chat.ErrUnknownSession) {
+		writeError(w, http.StatusNotFound, "not_found", outcome.Err.Error())
+		return
 	}
-	outcome := s.chat.SendMode(r.Context(), req.Text, providerName, modelID, mode)
 	// Persist the model as the default (last-used wins).
 	if s.db != nil {
 		_ = s.db.SetDefaultModel(req.Model)
@@ -123,6 +115,20 @@ func (s *Server) StreamChatMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Unknown sessions fail with the synchronous endpoint's typed 404
+	// before any stream opens (contract: invalid references fail first).
+	sessionID := sessionIDOf(req.SessionId)
+	if sessionID != chat.DefaultSessionID {
+		sess, err := s.db.Session(sessionID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		if sess == nil {
+			writeError(w, http.StatusNotFound, "not_found", "no such session: "+sessionID)
+			return
+		}
+	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "internal", "streaming not supported")
@@ -142,18 +148,10 @@ func (s *Server) StreamChatMessage(w http.ResponseWriter, r *http.Request) {
 	// under its own context, durable events serve every other client, and
 	// writes to the dead connection fail their deadline and drop.
 	runCtx := context.WithoutCancel(r.Context())
-	streamMode := ""
-	if req.Mode != nil {
-		streamMode = string(*req.Mode)
-	}
-	// Research mode on the streaming path completes as a unit (the
-	// engine pipeline is not a token stream).
-	if domain.NormalizeChatMode(streamMode) == domain.ChatModeResearch {
-		outcome := s.chat.SendMode(runCtx, req.Text, providerName, modelID, streamMode)
-		s.writeStreamOutcome(w, outcome)
-		return
-	}
-	outcome := s.chat.SendStream(runCtx, req.Text, providerName, modelID, func(d chat.Delta) {
+	// The SERVICE routes by the session's type: chat sessions stream
+	// deltas; research sessions complete as units (the engine pipeline
+	// is not a token stream — the delta callback never fires).
+	outcome := s.chat.SendStreamIn(runCtx, sessionID, req.Text, providerName, modelID, func(d chat.Delta) {
 		kind := apigen.Content
 		if d.Kind == string(apigen.Reasoning) {
 			kind = apigen.Reasoning
@@ -414,10 +412,23 @@ func (s *Server) GetDefaultModel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"model": model})
 }
 
-// ClearChat wipes the eternal conversation's transcript (user-initiated,
-// destructive).
-func (s *Server) ClearChat(w http.ResponseWriter, r *http.Request) {
-	if err := s.db.ClearSession(chat.SessionID); err != nil {
+// ClearChat wipes one session's transcript (user-initiated,
+// destructive). The session row itself survives — the quick chat is
+// never deleted.
+func (s *Server) ClearChat(w http.ResponseWriter, r *http.Request, params apigen.ClearChatParams) {
+	sessionID := sessionIDOf(params.SessionId)
+	if sessionID != chat.DefaultSessionID {
+		sess, err := s.db.Session(sessionID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		if sess == nil {
+			writeError(w, http.StatusNotFound, "not_found", "no such session")
+			return
+		}
+	}
+	if err := s.db.ClearSession(sessionID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}

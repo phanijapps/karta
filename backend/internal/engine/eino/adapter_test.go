@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ import (
 	"zbot/backend/internal/registry"
 	"zbot/backend/internal/store"
 	"zbot/backend/internal/tools"
+	"zbot/backend/internal/wards"
 )
 
 // fakeProviderStore satisfies the adapter's ProviderStore seam with a
@@ -64,9 +66,10 @@ type fakeGenerator struct {
 	gate    chan struct{} // blocked mode: released by send
 	enter   chan struct{} // blocked mode: closed on first Generate call (test barrier)
 	entered bool
+	onMsgs  func([]*schema.Message) // optional prompt capture (tests)
 }
 
-func (g *fakeGenerator) Generate(ctx context.Context, _ []*schema.Message, _ ...model.Option) (*schema.Message, error) {
+func (g *fakeGenerator) Generate(ctx context.Context, msgs []*schema.Message, _ ...model.Option) (*schema.Message, error) {
 	switch g.mode {
 	case genFail:
 		return nil, fmt.Errorf("fake: model error")
@@ -84,6 +87,9 @@ func (g *fakeGenerator) Generate(ctx context.Context, _ []*schema.Message, _ ...
 			return nil, ctx.Err()
 		}
 	default:
+		if g.onMsgs != nil {
+			g.onMsgs(msgs)
+		}
 		// Tiny sleep widens the race window for nextID under -race.
 		time.Sleep(2 * time.Millisecond)
 		return &schema.Message{Role: schema.Assistant, Content: "final answer"}, nil
@@ -103,10 +109,36 @@ type modelFactory struct {
 	mu        sync.Mutex
 	blocks    []*fakeGenerator
 	lastEnter chan struct{} // entry signal of the most recent blocked generator
+	// promptMu/prompts capture every quick generator's message list
+	// (system-prompt composition tests).
+	promptMu sync.Mutex
+	prompts  [][]*schema.Message
+}
+
+// recordPrompt captures one Generate call's messages (thread-safe).
+func (f *modelFactory) recordPrompt(msgs []*schema.Message) {
+	cp := make([]*schema.Message, len(msgs))
+	copy(cp, msgs)
+	f.promptMu.Lock()
+	defer f.promptMu.Unlock()
+	f.prompts = append(f.prompts, cp)
+}
+
+// systemPrompts returns the captured calls' leading system messages.
+func (f *modelFactory) systemPrompts() []string {
+	f.promptMu.Lock()
+	defer f.promptMu.Unlock()
+	var out []string
+	for _, msgs := range f.prompts {
+		if len(msgs) > 0 && msgs[0].Role == schema.System {
+			out = append(out, msgs[0].Content)
+		}
+	}
+	return out
 }
 
 func (f *modelFactory) new(_ context.Context, _ providers.Provider, _, modelID string) (chatGenerator, error) {
-	g := &fakeGenerator{}
+	g := &fakeGenerator{onMsgs: f.recordPrompt}
 	switch {
 	case strings.Contains(modelID, "fail"):
 		g.mode = genFail
@@ -933,5 +965,86 @@ func TestParentContextExcludesChildMessages(t *testing.T) {
 		if m.Role == "user" && strings.Contains(m.Content, "secret work") {
 			t.Fatal("child task leaked into the parent's provider context")
 		}
+	}
+}
+
+// newWardVault bootstraps a temp vault with one enterable ward (mirrors
+// the wardtools test fixture).
+func newWardVault(t *testing.T) *wards.Vault {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "wards")
+	if err := wards.Bootstrap(context.Background(), root); err != nil {
+		t.Fatalf("vault bootstrap: %v", err)
+	}
+	ward := filepath.Join(root, "stock-analysis")
+	if err := os.MkdirAll(ward, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"ward-conf.yaml": "archetype: research\nlayout:\n  kind: directory\n  children:\n    - { id: canonical, match: \"{ward}.md\", kind: file, format: markdown }\n",
+		"stock-analysis.md": "# Stock Analysis\nthe canonical page\n",
+		"AGENTS.md":         "# Working here\n\nsources/ is immutable intake.\n",
+	}
+	for rel, content := range files {
+		if err := os.WriteFile(filepath.Join(ward, rel), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vault, err := wards.Open(context.Background(), root)
+	if err != nil {
+		t.Fatalf("vault open: %v", err)
+	}
+	return vault
+}
+
+// TestHostedRootRunComposesActiveWard (add-chat-modes): a root run in a
+// session whose host carries a ward executes as the WARD's agent — the
+// ## Active Ward section (constitution + layout packet) joins the system
+// prompt. EnsureWard (restart recovery from the session row's binding)
+// pre-enters and fires the binder.
+func TestHostedRootRunComposesActiveWard(t *testing.T) {
+	vault := newWardVault(t)
+	mf := &modelFactory{}
+	a := newTestAdapter(t, mf)
+	a.SetWardVault(func() *wards.Vault { return vault })
+	var mu sync.Mutex
+	var binds []string
+	a.SetWardBinder(func(sessionID, ward string) {
+		mu.Lock()
+		defer mu.Unlock()
+		binds = append(binds, sessionID+"/"+ward)
+	})
+
+	// Restart recovery: the binding pre-enters the ward on a fresh host.
+	if err := a.EnsureWard(context.Background(), "s-ward", "stock-analysis"); err != nil {
+		t.Fatalf("EnsureWard: %v", err)
+	}
+	// Idempotent: a host that already carries the ward keeps it.
+	if err := a.EnsureWard(context.Background(), "s-ward", "stock-analysis"); err != nil {
+		t.Fatalf("EnsureWard (idempotent): %v", err)
+	}
+
+	events, err := a.RunGoal(context.Background(), goal(modelQuick, "s-ward"))
+	if err != nil {
+		t.Fatalf("RunGoal: %v", err)
+	}
+	if !drainUntilClosed(events, 5*time.Second) {
+		t.Fatal("run did not finish")
+	}
+
+	var system string
+	for _, s := range mf.systemPrompts() {
+		system += s + "\n---\n"
+	}
+	for _, want := range []string{"## Active Ward", "stock-analysis", "sources/ is immutable intake."} {
+		if !strings.Contains(system, want) {
+			t.Fatalf("system prompt missing %q:\n%s", want, system)
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(binds) != 1 || binds[0] != "s-ward/stock-analysis" {
+		t.Fatalf("binder fired: %v (EnsureWard idempotence must not double-fire)", binds)
 	}
 }

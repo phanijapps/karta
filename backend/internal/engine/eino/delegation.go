@@ -119,6 +119,7 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 		systemPrompt: spec.SystemPrompt, toolAllow: spec.Tools,
 		agentName: spec.Name, depth: d.parent.depth + 1,
 		grant: spec.MaxDepth, isChild: true,
+		wardHost: d.parent.wardHost, // read-only inheritance: children act inside the ward (file tools), structural stays root-only
 	}
 	if spec.Model != "" {
 		p, m, found := strings.Cut(spec.Model, "/")

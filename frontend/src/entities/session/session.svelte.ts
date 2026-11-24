@@ -1,33 +1,102 @@
-// The eternal chat session: transcript rows from the daemon, cursor
-// sync state, and the selected model. Fixture conversations are retired
-// — there is exactly one conversation and it lives forever.
-import { getDefaultModel,  syncChatMessages, type ChatMessage } from '../../shared/api/client';
+// The session model (add-chat-modes): the session roster (Chat /
+// Ward Bots / Research shells), the ACTIVE session, and per-session
+// transcript state. The session's type IS the mode — there is no
+// toggle anywhere; switching sessions switches the conversation.
+import {
+  createSession,
+  getDefaultModel,
+  listSessions,
+  syncChatMessages,
+  type ChatMessage,
+  type SessionView,
+} from '../../shared/api/client';
+
+export type SessionGroups = {
+  chat: SessionView | null;
+  wardBots: SessionView[];
+  research: SessionView[];
+};
 
 export function createSessions() {
-  let messages = $state<ChatMessage[]>([]);
-  let cursor = $state(0);
+  let sessions = $state<SessionView[]>([]);
+  let activeId = $state('default');
+  let transcripts = $state<Record<string, ChatMessage[]>>({});
+  let cursors = $state<Record<string, number>>({});
   let model = $state(''); // catalog-backed picker sets this
   let loading = $state(true);
+  let rosterError = $state('');
   let sendError = $state('');
 
+  const groups = $derived.by<SessionGroups>(() => {
+    const g: SessionGroups = { chat: null, wardBots: [], research: [] };
+    for (const s of sessions) {
+      if (s.id === 'default') g.chat = s; // the ONE quick chat
+      else if (s.type === 'research') {
+        if (s.ward) g.wardBots.push(s);
+        else g.research.push(s);
+      }
+      // Legacy chat-typed engine sessions (pre-migration goal runs)
+      // stay out of the navigator until run-state surfacing lands.
+    }
+    return g;
+  });
+  const active = $derived.by<SessionView | null>(
+    () => sessions.find((s) => s.id === activeId) ?? null,
+  );
+  const isResearch = $derived.by(() => active?.type === 'research');
+  const activeWard = $derived.by(() => active?.ward ?? '');
+
+  async function loadRoster() {
+    const res = await listSessions(100);
+    if (res.ok) {
+      sessions = res.sessions;
+      rosterError = '';
+    } else {
+      rosterError = 'daemon';
+      sessions = [];
+    }
+    // The quick chat is ALWAYS there — locally injected when the daemon
+    // omits it or the roster call fails (it is created on first send).
+    if (!sessions.some((s) => s.id === 'default')) {
+      sessions = [
+        {
+          id: 'default',
+          type: 'chat',
+          status: 'created',
+          updated_at: new Date().toISOString(),
+        },
+        ...sessions,
+      ];
+    }
+  }
+
+  async function loadTranscript(sessionId: string) {
+    // Catch-up loop: page until not truncated.
+    let cursor = cursors[sessionId] ?? 0;
+    const rows: ChatMessage[] = [];
+    for (;;) {
+      const page = await syncChatMessages(cursor, 200, sessionId);
+      rows.push(...page.messages);
+      cursor = page.nextCursor;
+      if (!page.truncated) break;
+    }
+    cursors = { ...cursors, [sessionId]: cursor };
+    transcripts = { ...transcripts, [sessionId]: rows };
+  }
+
+  /** Initial load: roster + the active session's transcript. */
   async function load() {
     loading = true;
     sendError = '';
     try {
-      // Pre-select the default (last-used) model.
       try {
         const model0 = await getDefaultModel();
         if (model0 && model === '') model = model0;
-      } catch { /* non-critical */ }
-      messages = [];
-      cursor = 0;
-      // Catch-up loop: page until not truncated.
-      for (;;) {
-        const page = await syncChatMessages(cursor, 200);
-        messages = [...messages, ...page.messages];
-        cursor = page.nextCursor;
-        if (!page.truncated) break;
+      } catch {
+        /* non-critical */
       }
+      await loadRoster();
+      await loadTranscript(activeId);
     } catch {
       sendError = 'daemon';
     } finally {
@@ -35,31 +104,79 @@ export function createSessions() {
     }
   }
 
-  // Reconcile from the last contiguously delivered cursor — after every
-  // send outcome, failures included, so persisted rows always appear.
+  /** Switch the active session (loads its transcript on first visit). */
+  async function select(sessionId: string) {
+    if (sessionId === activeId) return;
+    activeId = sessionId;
+    sendError = '';
+    if (!(sessionId in transcripts)) {
+      try {
+        await loadTranscript(sessionId);
+      } catch {
+        sendError = 'daemon';
+      }
+    }
+  }
+
+  /** [+ New Research]: create a shell session and activate it. */
+  async function newResearch(title?: string) {
+    const res = await createSession(title);
+    if (res.ok) {
+      await loadRoster();
+      await select(res.session.id);
+      return true;
+    }
+    sendError = res.error;
+    return false;
+  }
+
+  /** Reconcile after every send outcome, failures included: the
+   * transcript re-syncs and the roster re-lists (a ward binding may
+   * have changed — the sidebar re-groups). */
   async function reconcile() {
     try {
+      const sessionId = activeId;
+      const seen = new Set(transcripts[sessionId] ?? []);
+      let cursor = cursors[sessionId] ?? 0;
       for (;;) {
-        const page = await syncChatMessages(cursor, 200);
-        // Merge by stable id (skip rows we already hold).
-        const seen = new Set(messages.map((m) => m.id));
-        messages = [...messages, ...page.messages.filter((m) => !seen.has(m.id))];
-        cursor = Math.max(cursor, page.nextCursor);
+        const page = await syncChatMessages(cursor, 200, sessionId);
+        for (const m of page.messages) if (!seen.has(m)) seen.add(m);
+        cursor = page.nextCursor;
         if (!page.truncated) break;
       }
+      cursors = { ...cursors, [sessionId]: cursor };
+      transcripts = { ...transcripts, [sessionId]: [...seen] };
+      await loadRoster();
     } catch {
-      // next load() surfaces daemon state
+      /* next load() surfaces daemon state */
     }
+  }
+
+  /** Clear the ACTIVE session's transcript locally after a daemon clear. */
+  function clearedLocally(sessionId: string) {
+    transcripts = { ...transcripts, [sessionId]: [] };
+    cursors = { ...cursors, [sessionId]: 0 };
   }
 
   return {
     load,
+    loadRoster,
+    select,
+    newResearch,
     reconcile,
-    get messages() { return messages; },
-    get cursor() { return cursor; },
+    clearedLocally,
+    get groups() { return groups; },
+    get sessions() { return sessions; },
+    get activeId() { return activeId; },
+    get active() { return active; },
+    get isResearch() { return isResearch; },
+    get activeWard() { return activeWard; },
+    get messages() { return transcripts[activeId] ?? []; },
+    get cursor() { return cursors[activeId] ?? 0; },
     get model() { return model; },
     set model(value: string) { model = value; },
     get loading() { return loading; },
+    get rosterError() { return rosterError; },
     get sendError() { return sendError; },
     set sendError(value: string) { sendError = value; },
   };

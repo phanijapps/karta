@@ -270,23 +270,65 @@ export async function refreshProviderModels(
 /** One transcript row from the daemon. */
 export type ChatMessage = components["schemas"]["ChatMessage"];
 
-/** Page the transcript: next_cursor is the last DELIVERED seq. */
+/** Page one session's transcript: next_cursor is the last DELIVERED
+ * seq. Empty sessionId = the quick chat (default). */
 export async function syncChatMessages(
   afterSeq = 0,
   limit = 100,
+  sessionId = "default",
 ): Promise<{
   messages: ChatMessage[];
   nextCursor: number;
   truncated: boolean;
 }> {
   const body = (await getJSON(
-    `/api/chat/messages?after_seq=${afterSeq}&limit=${limit}`,
+    `/api/chat/messages?session_id=${encodeURIComponent(sessionId)}&after_seq=${afterSeq}&limit=${limit}`,
   )) as components["schemas"]["ChatSync"];
   return {
     messages: body.messages ?? [],
     nextCursor: body.next_cursor ?? 0,
     truncated: body.truncated,
   };
+}
+
+/** One session row — the generated contract shape (type + ward
+ * binding drive the sidebar's Chat / Ward Bots / Research groups). */
+export type SessionView = components["schemas"]["SessionSummary"];
+
+/** List sessions (GET /api/sessions), most recently active first. */
+export async function listSessions(
+  limit = 50,
+): Promise<{ ok: true; sessions: SessionView[] } | { ok: false; error: string }> {
+  try {
+    const body = (await getJSON(
+      `/api/sessions?limit=${limit}`,
+    )) as components["schemas"]["SessionList"];
+    return { ok: true, sessions: body.sessions ?? [] };
+  } catch (err) {
+    return { ok: false, error: `daemon unreachable (${String(err)})` };
+  }
+}
+
+/** Create a research session (POST /api/sessions) — a shell ready for
+ * its first exchange. Optional title. */
+export async function createSession(
+  title?: string,
+): Promise<{ ok: true; session: components["schemas"]["Session"] } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${BASE}/api/sessions`, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify(title ? { title } : {}),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { message?: string } | null;
+      return { ok: false, error: body?.message ?? `daemon answered ${res.status}` };
+    }
+    const session = (await res.json()) as components["schemas"]["Session"];
+    return { ok: true, session };
+  } catch (err) {
+    return { ok: false, error: `daemon unreachable (${String(err)})` };
+  }
 }
 
 /** Typed send outcome: every row the exchange appended (failures carry
@@ -302,7 +344,7 @@ export type ChatExchange = {
 export async function sendChatMessage(
   text: string,
   model: string,
-  mode?: string,
+  sessionId = "default",
 ): Promise<ChatExchange> {
   let res: Response;
   try {
@@ -312,7 +354,7 @@ export async function sendChatMessage(
         Accept: "application/json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text, model, ...(mode ? { mode } : {}) }),
+      body: JSON.stringify({ text, model, session_id: sessionId }),
     });
   } catch (err) {
     return {
@@ -834,6 +876,7 @@ export async function streamChatMessage(
   text: string,
   model: string,
   onDelta: (d: ChatStreamDelta) => void,
+  sessionId = "default",
 ): Promise<ChatExchange> {
   const res = await fetch(`${BASE}/api/chat/send`, {
     method: "POST",
@@ -841,7 +884,7 @@ export async function streamChatMessage(
       Accept: "text/event-stream",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ text, model }),
+    body: JSON.stringify({ text, model, session_id: sessionId }),
   });
   if (!res.ok || !res.body) {
     // Pre-stream typed 4xx/5xx JSON — mirror sendChatMessage's contract.
@@ -945,10 +988,14 @@ export async function streamChatMessage(
   );
 }
 
-/** Clear the conversation (DELETE /api/chat/messages). */
-export async function clearChat(): Promise<boolean> {
+/** Clear one session's transcript (DELETE /api/chat/messages). Empty
+ * sessionId = the quick chat. */
+export async function clearChat(sessionId = "default"): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE}/api/chat/messages`, { method: "DELETE" });
+    const res = await fetch(
+      `${BASE}/api/chat/messages?session_id=${encodeURIComponent(sessionId)}`,
+      { method: "DELETE" },
+    );
     return res.ok;
   } catch {
     return false;

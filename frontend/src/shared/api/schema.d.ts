@@ -627,23 +627,30 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Sync the chat transcript (cursor-paginated)
+         * Sync a session's transcript (cursor-paginated)
          * @description Returns transcript rows ordered by `seq`. `next_cursor` is the last
          *     DELIVERED sequence (a page cursor, never the database tail); page
-         *     until `truncated` is false. One eternal conversation (`default`).
+         *     until `truncated` is false. The session model: `session_id` selects
+         *     the conversation (default `default`, the quick chat).
          */
         get: operations["syncChatMessages"];
         put?: never;
         /**
          * Send a message and get the assistant's reply
-         * @description Appends the user message, runs one bounded completion (with the
-         *     built-in tools) against the selected model, and returns every row
-         *     the exchange appended in order plus the end cursor. Typed failures
-         *     return the persisted user row and its cursor. Synchronous;
-         *     streaming is a future change.
+         * @description Appends the user message, runs one exchange against the selected
+         *     model, and returns every row it appended in order plus the end
+         *     cursor. The session's TYPE routes the exchange (chat = lean,
+         *     research = the full engine pipeline, completing as a unit).
+         *     Typed failures return the persisted user row and its cursor.
          */
         post: operations["sendChatMessage"];
-        delete?: never;
+        /**
+         * Clear a session's transcript (user-initiated, destructive)
+         * @description Removes every message and timeline event for the named session
+         *     (default `default`, the quick chat). The session row itself
+         *     survives — the quick chat is never deleted.
+         */
+        delete: operations["clearChat"];
         options?: never;
         head?: never;
         patch?: never;
@@ -707,7 +714,15 @@ export interface paths {
         /** List sessions (bounded, explicit truncation) */
         get: operations["listSessions"];
         put?: never;
-        post?: never;
+        /**
+         * Create a research session
+         * @description Creates a NEW research session (a shell — type `research`, no
+         *     ward binding) and returns it. The session model: research
+         *     sessions start empty; intent analysis moves them into wards via
+         *     the model's own ward_use/ward_create calls. The one chat session
+         *     (`default`) always exists and is never created here.
+         */
+        post: operations["createSession"];
         delete?: never;
         options?: never;
         head?: never;
@@ -950,17 +965,15 @@ export interface components {
             /** @description Qualified selection from the picker (`provider/model-id`). */
             model: string;
             /**
-             * @description The execution mode for this exchange. `chat` (aliases:
-             *     `fast`) skips the intent pipeline and uses the lean
-             *     persona prompt. `research` (aliases: `deep`) runs the
-             *     full pipeline through the engine — intent analysis,
-             *     skills provision, ward tools, delegation, progress
-             *     budgets. Defaults to the session's last mode (initial:
-             *     chat).
-             * @default chat
-             * @enum {string}
+             * @description The session this exchange belongs to (an Id). The session's
+             *     TYPE routes it: `chat` sessions run the lean pipeline,
+             *     `research` sessions run the full engine pipeline (intent
+             *     analysis, skills provision, ward tools, delegation, progress
+             *     budgets). Default `default` (the quick chat). Unknown ids
+             *     fail 404.
+             * @default default
              */
-            mode: "chat" | "research";
+            session_id: string;
         };
         ChatExchange: {
             /** @description Every row this exchange appended, in order. */
@@ -988,16 +1001,41 @@ export interface components {
         SessionStatus: "created" | "running" | "waiting" | "completed" | "cancelled" | "failed";
         Session: {
             id: components["schemas"]["Id"];
+            /**
+             * @description The session's TYPE — its pipeline depth, set at creation
+             *     and immutable (the session model: no mode toggle).
+             * @enum {string}
+             */
+            type: "chat" | "research";
             status: components["schemas"]["SessionStatus"];
+            /** @description The session's display name (research sessions). */
+            title?: string;
+            /** @description The sticky ward binding (research sessions; absent when the session is a shell or a chat session). */
+            ward?: string;
             agent?: string;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             updated_at: string;
         };
+        CreateSessionRequest: {
+            /**
+             * @description Optional display name; when absent the session is titled
+             *     later from its first exchange's intent.
+             */
+            title?: string;
+        };
         SessionSummary: {
             id: components["schemas"]["Id"];
+            /**
+             * @description The session's TYPE (chat = lean, research = full pipeline); immutable after creation.
+             * @enum {string}
+             */
+            type: "chat" | "research";
             status: components["schemas"]["SessionStatus"];
+            title?: string;
+            /** @description The sticky ward binding, when the session is ward-bound. */
+            ward?: string;
             agent?: string;
             /** Format: date-time */
             updated_at: string;
@@ -1068,6 +1106,10 @@ export interface components {
             /** @enum {string} */
             ward_action?: "use_existing" | "create_new";
             ward_name?: string;
+            /** @description The validated skill names provisioned for the run (the */
+            recommended_skills?: string[];
+            /** @description The validated agent names recommended for delegation. */
+            recommended_agents?: string[];
             /** @description Recommended names the runtime dropped because they are not in the index (drop-and-warn). */
             dropped?: string[];
         };
@@ -2520,6 +2562,8 @@ export interface operations {
     syncChatMessages: {
         parameters: {
             query?: {
+                /** @description The session whose transcript to sync (default `default`, the quick chat). */
+                session_id?: components["schemas"]["Id"];
                 /** @description Return only rows with seq greater than this cursor. */
                 after_seq?: number;
                 /** @description Maximum rows per page (1-500). */
@@ -2566,6 +2610,28 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             502: components["responses"]["ProviderFailure"];
+        };
+    };
+    clearChat: {
+        parameters: {
+            query?: {
+                /** @description The session to clear (default `default`). */
+                session_id?: components["schemas"]["Id"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cleared. No body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     streamChatMessage: {
@@ -2633,13 +2699,43 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description A page of sessions. `truncated` is true when more results exist. */
+            /**
+             * @description A page of sessions, most recently active first, each with
+             *     its `type` and `ward` binding (the sidebar groups: Chat /
+             *     Ward Bots / Research). `truncated` is true when more
+             *     results exist.
+             */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["SessionList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    createSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CreateSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description The created research session. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
                 };
             };
             400: components["responses"]["BadRequest"];

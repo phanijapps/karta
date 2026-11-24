@@ -67,6 +67,9 @@ type Adapter struct {
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc // sessionID → cancel
+	// wardBinder observes ward enters per session (session-row binding;
+	// nil = no binding updates).
+	wardBinder func(sessionID, ward string)
 	// wardVault builds the ward tool plane for a session (nil = wards
 	// off, e.g. no vault configured). Sticky per session.
 	wardVault func() *wards.Vault
@@ -161,7 +164,7 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 	if sessionID == "" {
 		sessionID = fmt.Sprintf("goal-%d-%d", time.Now().UnixNano(), nextID())
 	}
-	rootExec, err := a.st.EnsureSession(sessionID)
+	rootExec, err := a.st.EnsureSession(sessionID, string(domain.SessionTypeResearch))
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +177,12 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 
 	if a.wardVault != nil && !in.isChild {
 		in.wardHost = a.wardHost(sessionID)
+		// A hosted root run executes as the ward's agent: the ward's
+		// own constitution + layout packet joins the prompt (sticky
+		// binding pre-load included — EnsureWard ran before RunGoal).
+		if section := activeWardSection(in); section != "" {
+			in.systemPrompt = strings.TrimSpace(in.systemPrompt + "\n\n" + section)
+		}
 	}
 	in.sessionID, in.execID, in.goal, in.token, in.prov = sessionID, rootExec, req.Goal, token, prov
 	events := make(chan domain.TimelineEvent, 64)

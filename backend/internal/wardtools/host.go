@@ -39,7 +39,15 @@ type Host struct {
 	constitution string
 	// digest covers conf + constitution (concurrent-edit detection).
 	digest string
+	// onEnter fires (best-effort, outside the lock) after a successful
+	// enter: the engine adapter binds it to the session-row ward
+	// binding (the sidebar re-groups; the next run pre-loads).
+	onEnter func(ward string)
 }
+
+// SetOnEnter wires the post-enter observer (see Host.onEnter). Called
+// once at wiring time, before any tool can fire.
+func (h *Host) SetOnEnter(fn func(ward string)) { h.onEnter = fn }
 
 // NewHost builds an unhosted session host over a vault.
 func NewHost(vault *wards.Vault) *Host { return &Host{vault: vault} }
@@ -86,13 +94,24 @@ func (h *Host) enter(ctx context.Context, name string) (*WardView, error) {
 		}
 	}
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	h.wardName = name
 	h.wardDir = dir
 	h.conf = conf
 	h.constitution = constitution
 	h.digest = digestOf(conf, constitution)
+	onEnter := h.onEnter
+	h.mu.Unlock()
+	if onEnter != nil {
+		onEnter(name) // session-ward binding update (best-effort)
+	}
 	return &WardView{Name: name, Dir: dir, Conf: conf, Constitution: constitution, Digest: h.digest}, nil
+}
+
+// Reenter is the wiring-side enter (adapter EnsureWard — daemon
+// restart recovery from the session row's binding). Same semantics as
+// a ward_use enter: switching replaces.
+func (h *Host) Reenter(ctx context.Context, name string) (*WardView, error) {
+	return h.enter(ctx, name)
 }
 
 // RefreshDigest re-derives the digest from disk and reports whether it
