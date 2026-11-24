@@ -80,6 +80,9 @@
               <span class="name">{group.ward}</span>
               <span class="sub">{group.sessions.length ? `${group.sessions.length} session${group.sessions.length > 1 ? 's' : ''} · ${timeHint(group.sessions[0].session.updated_at)}` : 'warden · tap to open'}</span>
             </span>
+            {#if group.sessions.some((s) => s.session.run === 'running')}
+              <span class="live-dot" title="run in progress" aria-label="run in progress"></span>
+            {/if}
             <span class="chev" aria-hidden="true">{sessions.expandedWard === group.ward ? '▾' : '▸'}</span>
           </button>
           {#if sessions.expandedWard === group.ward}
@@ -95,7 +98,7 @@
                   >
                     <span class="meta">
                       <span class="name">{isWarden ? 'Warden' : (session.title || session.id.slice(0, 14))}</span>
-                      <span class="sub">{timeHint(session.updated_at)}</span>
+                      <span class="sub">{session.run === 'running' ? '● working' : timeHint(session.updated_at)}</span>
                     </span>
                   </button>
                 </li>
@@ -158,6 +161,8 @@
   .sub { font-size: 0.68rem; color: var(--ds-color-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .empty { padding: var(--ds-space-1) var(--ds-space-2); font-size: 0.72rem; color: var(--ds-color-muted); margin: 0; list-style: none; }
   .ward-row .chev { flex-shrink: 0; color: var(--ds-color-muted); font-size: .7rem; }
+  .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ds-color-success, #22c55e); animation: pulse 1.5s infinite; flex-shrink: 0; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
   .ward-sessions { display: grid; gap: 2px; margin: 0 0 .15rem 1.05rem; padding: 0 0 0 .35rem; list-style: none; border-left: 1px solid var(--ds-color-border); }
   .session.child { min-height: 32px; padding: .25rem .5rem; }
   .session.child .name { font-size: .78rem; }

@@ -144,9 +144,16 @@
       let result: Awaited<ReturnType<typeof sendChatMessage>>;
       if (isResearch) {
         // Research sessions complete as units — the LIVE work streams as
-        // Timeline events (steps, tools, delegations) while the run works.
+        // Timeline events (steps, tools, delegations) while the run
+        // works; the roster re-lists periodically so sidebar badges
+        // (● working) follow the run.
         timeline.connect(sessionId);
-        result = await sendChatMessage(text, sessions.model, sessionId);
+        const rosterTick = setInterval(() => void sessions.loadRoster(), 4000);
+        try {
+          result = await sendChatMessage(text, sessions.model, sessionId);
+        } finally {
+          clearInterval(rosterTick);
+        }
         timeline.close();
       } else {
         try {

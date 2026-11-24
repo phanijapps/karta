@@ -263,7 +263,9 @@ export function createSessions() {
   /** Apply a LIVE intent-analysis event (the SSE surface): the card
    * renders the moment analysis lands, not at run completion. */
   function applyLiveAnalysis(payload: Record<string, unknown> | undefined) {
-    if (payload) analysis = payload as SessionAnalysis;
+    if (!payload) return;
+    analysisGeneration++; // a pending state fetch is now stale
+    analysis = payload as SessionAnalysis;
   }
 
   /** Clear the ACTIVE session's transcript locally after a daemon clear. */
@@ -295,6 +297,9 @@ export function createSessions() {
     get analysis() { return analysis; },
     applyLiveAnalysis,
     get expandedWard() { return expandedWard; },
+    isRunning(id: string) {
+      return sessions.some((s) => s.id === id && s.run === 'running');
+    },
     set expandedWard(value: string | null) { expandedWard = value; },
     get sendError() { return sendError; },
     set sendError(value: string) { sendError = value; },

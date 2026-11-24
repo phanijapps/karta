@@ -381,3 +381,61 @@ func TestLadybugV1toV2Migration(t *testing.T) {
 		t.Fatalf("content corrupted: %q", rec.Content)
 	}
 }
+
+// TestLadybugContributionReassertIdempotent (the live-boot fix): the
+// contribution's id is its content-identity hash; a constant host
+// context (the resource indexer) revising the same subject+content
+// again — or a replayed Remember — re-asserts IDENTICAL evidence and
+// must be a no-op, never a primary-key violation.
+func TestLadybugContributionReassertIdempotent(t *testing.T) {
+	ladybugE2E(t)
+	sys, err := Open(filepath.Join(t.TempDir(), "chitta"), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sys.Close() })
+	host := domain.ChittaHostContext{Source: domain.SourceDistiller, AgentID: "resource-index"}
+
+	// Seed a record via Remember.
+	page, err := sys.Remember(context.Background(), []domain.Observation{
+		{Kind: domain.MemoryKindFact, Subject: "resource:skill:demo", Content: "demo — v1", Tags: []string{"idx"}},
+	}, host)
+	if err != nil || len(page) != 1 {
+		t.Fatalf("remember: %v %+v", err, page)
+	}
+
+	// Revise to v2 — writes the v2 contribution.
+	if _, err := sys.Revise(context.Background(), domain.ReviseRequest{Supersedes: page[0].Record.ID, Content: "demo — v2", Tags: []string{"idx"}}, host); err != nil {
+		t.Fatalf("revise: %v", err)
+	}
+
+	// Tombstone, then REVIVE to the SAME v2 content: the v2
+	// contribution identity already exists — re-asserting must not
+	// collide (the live failure shape).
+	hist, err := sys.History(context.Background(), domain.HistoryRequest{Subject: "resource:skill:demo"})
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	var active string
+	for _, r := range hist.Items {
+		if r.Status == domain.MemoryStatusActive {
+			active = r.ID
+		}
+	}
+	if _, err := sys.Revise(context.Background(), domain.ReviseRequest{Supersedes: active, Content: "retired: resource:skill:demo", Tags: []string{"idx", "retired"}}, host); err != nil {
+		t.Fatalf("tombstone: %v", err)
+	}
+	hist, err = sys.History(context.Background(), domain.HistoryRequest{Subject: "resource:skill:demo"})
+	if err != nil {
+		t.Fatalf("history2: %v", err)
+	}
+	var tomb string
+	for _, r := range hist.Items {
+		if r.Status == domain.MemoryStatusActive {
+			tomb = r.ID
+		}
+	}
+	if _, err := sys.Revise(context.Background(), domain.ReviseRequest{Supersedes: tomb, Content: "demo — v2", Tags: []string{"idx"}}, host); err != nil {
+		t.Fatalf("revive re-asserting existing contribution must be idempotent: %v", err)
+	}
+}

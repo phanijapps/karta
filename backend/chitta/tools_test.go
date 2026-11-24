@@ -1025,3 +1025,42 @@ func TestResourceKindsInvisibleToAgents(t *testing.T) {
 		}
 	}
 }
+
+// TestRememberShapeTolerance (the live-run defect): models send
+// `observations` as a plain string or a JSON-encoded string — both
+// repair to the typed batch instead of failing invalid_input.
+func TestRememberShapeTolerance(t *testing.T) {
+	sys := newTestSystem(t)
+	host := hostInSession("shape-test")
+	exec := func(args string) string {
+		out, err := sys.Dispatch(context.Background(), ToolRemember, json.RawMessage(args), host)
+		if err != nil {
+			return "error: " + err.Error()
+		}
+		return string(out)
+	}
+
+	// Direct array (the schema shape) still works.
+	out := exec(`{"observations":[{"kind":"fact","content":"direct array works"}]}`)
+	if strings.Contains(out, "error") {
+		t.Fatalf("direct array: %s", out)
+	}
+
+	// JSON-encoded string containing the array (the exact live failure).
+	out = exec(`{"observations":"[{\"kind\":\"fact\",\"content\":\"encoded string works\"}]"}`)
+	if strings.Contains(out, "invalid_input") || strings.Contains(out, "unmarshal") {
+		t.Fatalf("encoded-string batch must repair: %s", out)
+	}
+
+	// Plain pipe-separated string (the first live failure shape).
+	out = exec(`{"observations":"user is in Bangalore | user prefers concise answers"}`)
+	if strings.Contains(out, "invalid_input") {
+		t.Fatalf("pipe-separated batch must repair: %s", out)
+	}
+
+	// Garbage still fails typed.
+	out = exec(`{"observations":"   "}`)
+	if !strings.Contains(out, "empty batch") {
+		t.Fatalf("empty must fail typed: %s", out)
+	}
+}

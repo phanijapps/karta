@@ -136,7 +136,7 @@ func (s *Server) EnsureWarden(w http.ResponseWriter, r *http.Request, name strin
 	if created {
 		status = http.StatusCreated
 	}
-	writeJSON(w, status, sessionView(sess, false, time.Time{}))
+	writeJSON(w, status, s.sessionView(sess, false, time.Time{}))
 }
 
 // wardFindingView maps one lint finding; nodes without a declared id are

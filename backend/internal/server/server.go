@@ -51,6 +51,9 @@ type Server struct {
 	// apiToken guards the OpenAI-compatible /v1 channel (empty = the
 	// loopback posture applies unchanged).
 	apiToken string
+	// activeRuns is the live-run set for roster views (working
+	// badges); refreshed before each list.
+	activeRuns map[string]bool
 }
 
 // SetV1Token arms the /v1 bearer check (server.api_token; empty keeps

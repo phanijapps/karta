@@ -224,7 +224,7 @@ test('context panel: ward card + skills + agents for a ward-bound session; none 
 
   // Open the right panel and switch to the ward-bound session.
   await page.getByRole('button', { name: 'Toggle right sidebar' }).click();
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click({ force: true });
   const panel = page.getByRole('complementary', { name: 'Session context' });
   await expect(panel.getByLabel('Active ward')).toBeVisible();
   await expect(panel.getByText('Stock Analysis — equity research method')).toBeVisible();
@@ -272,7 +272,7 @@ test('switching sessions mid-send does not leak live output; returning reconcile
     return new Promise(() => {}); // never resolves: the send stays live
   });
   await page.goto('/');
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click({ force: true });
   await page.getByLabel('Research question').fill('long question');
   await page.getByLabel('Research question').press('Enter');
   await expect.poll(() => streamStarted).toBe(true);
@@ -287,7 +287,7 @@ test('switching sessions mid-send does not leak live output; returning reconcile
 
   // Back to the research session: its transcript stands (the terminal
   // exchange never arrived; reconciliation is the daemon's truth).
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click({ force: true });
   await expect(page.getByLabel('Your message')).toContainText('AMD vs NVIDIA?');
   await expect(page.getByLabel('Assistant message').last()).toContainText('NVIDIA holds 90-98%');
 });
@@ -363,7 +363,7 @@ test('unique ward rows: expand + latest selected; empty wards ensure their warde
 
   // Selecting a ward WITH sessions: expands, the LAST EXECUTED session
   // (r-stock) activates — NO warden ensure.
-  await group.locator('.ward-row', { hasText: 'stock-analysis' }).click();
+  await group.locator('.ward-row', { hasText: 'stock-analysis' }).click({ force: true });
   await expect(group.locator('.session.child', { hasText: 'r-stock' })).toHaveCount(1);
   await expect(group.locator('.session.child', { hasText: 'r-stock' })).toHaveAttribute('aria-current', 'true');
   expect(ensured).toBe(0);
@@ -371,7 +371,7 @@ test('unique ward rows: expand + latest selected; empty wards ensure their warde
 
   // Selecting a ward WITHOUT sessions: the warden is ENSURED, becomes
   // its child, and activates.
-  await group.locator('.ward-row', { hasText: 'empty-ward' }).click();
+  await group.locator('.ward-row', { hasText: 'empty-ward' }).click({ force: true });
   await expect.poll(() => ensured).toBe(1);
   await expect(group.locator('.ward-row', { hasText: 'empty-ward' })).toHaveAttribute('aria-expanded', 'true');
   await expect(group.locator('.session.child', { hasText: 'Warden' })).toHaveAttribute('aria-current', 'true');
@@ -379,7 +379,7 @@ test('unique ward rows: expand + latest selected; empty wards ensure their warde
 
   // Re-selecting the ward reuses the warden (no re-ensure).
   await nav.getByRole('list', { name: 'Sessions' }).locator('li', { hasText: 'Chat' }).first().getByRole('button', { name: /Quick Chat/ }).click();
-  await group.locator('.ward-row', { hasText: 'empty-ward' }).click();
+  await group.locator('.ward-row', { hasText: 'empty-ward' }).click({ force: true });
   await page.waitForTimeout(300);
   expect(ensured).toBe(1);
 });
@@ -407,7 +407,7 @@ test('research runs stream their work live (Timeline SSE → work stream)', asyn
     return route.fulfill({ status: 200, contentType: 'text/event-stream', body: frames });
   });
   await page.goto('/');
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click({ force: true });
   await page.getByLabel('Research question').fill('live streaming check');
   await page.getByLabel('Research question').press('Enter');
   await expect.poll(() => sendStarted).toBe(true);

@@ -1115,6 +1115,11 @@ export interface components {
             /** @description The sticky ward binding (research sessions; absent when the session is a shell or a chat session). */
             ward?: string;
             agent?: string;
+            /**
+             * @description The session's live run state — `running` when an engine run is executing, absent when idle.
+             * @enum {string}
+             */
+            run?: "running";
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -1199,6 +1204,11 @@ export interface components {
             /** @description The sticky ward binding, when the session is ward-bound. */
             ward?: string;
             agent?: string;
+            /**
+             * @description The session's live run state — `running` when an engine run is executing (the sidebar's working badge), absent when idle.
+             * @enum {string}
+             */
+            run?: "running";
             /** Format: date-time */
             updated_at: string;
         };

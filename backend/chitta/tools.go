@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"zbot/backend/internal/domain"
 )
@@ -180,15 +181,22 @@ func (s *System) Dispatch(ctx context.Context, tool string, args json.RawMessage
 	switch tool {
 	case ToolRemember:
 		var in struct {
-			Observations []domain.Observation `json:"observations"`
+			Observations json.RawMessage `json:"observations"`
 		}
 		if err := domain.DecodeChittaWrite(args, &in); err != nil {
 			return fail(err)
 		}
-		if err := rejectResourceKinds(in.Observations); err != nil {
+		obs, err := coerceObservations(in.Observations)
+		if err != nil {
 			return fail(err)
 		}
-		results, err := s.Remember(ctx, in.Observations, host)
+		in2 := struct {
+			Observations []domain.Observation `json:"observations"`
+		}{Observations: obs}
+		if err := rejectResourceKinds(in2.Observations); err != nil {
+			return fail(err)
+		}
+		results, err := s.Remember(ctx, in2.Observations, host)
 		if err != nil {
 			return fail(err)
 		}
@@ -374,3 +382,47 @@ func dropResourceRecords(items []domain.MemoryRecord) []domain.MemoryRecord {
 	}
 	return out
 }
+
+// coerceObservations repairs the model-side shape failures the live
+// runs kept hitting: providers sending `observations` as a plain
+// string ("a | b") or as a JSON-encoded string containing the array
+// (`"[{...}]"`). Both decode into the typed slice; empty yields a
+// typed invalid_input. The schema stays the authority — this is the
+// tolerance layer, mirroring how extractJSON handles fenced output.
+func coerceObservations(raw json.RawMessage) ([]domain.Observation, error) {
+	var typed []domain.Observation
+	if err := json.Unmarshal(raw, &typed); err == nil {
+		return typed, nil
+	}
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		trimmed := strings.TrimSpace(asString)
+		if trimmed == "" {
+			return nil, domain.NewChittaError(domain.ErrInvalidInput, "observations: empty batch")
+		}
+		// JSON-encoded array inside the string.
+		if strings.HasPrefix(trimmed, "[") {
+			if err := json.Unmarshal([]byte(trimmed), &typed); err == nil {
+				return typed, nil
+			}
+		}
+		// Pipe/newline-separated statements: one observation per entry.
+		parts := strings.FieldsFunc(trimmed, func(r rune) bool { return r == '|' || r == '\n' })
+		out := make([]domain.Observation, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				out = append(out, domain.Observation{Kind: domain.MemoryKindObservation, Content: p})
+			}
+		}
+		if len(out) > 0 {
+			return out, nil
+		}
+		return nil, errUnrecognizedObservations
+	}
+	return nil, errUnrecognizedObservations
+}
+
+// errUnrecognizedObservations is the typed guidance when the batch
+// shape cannot be repaired.
+var errUnrecognizedObservations = domain.NewChittaError(domain.ErrInvalidInput, "observations: unrecognized shape — pass an ARRAY of {kind, content} objects")

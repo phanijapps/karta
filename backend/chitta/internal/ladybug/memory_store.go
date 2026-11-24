@@ -248,13 +248,17 @@ func (d *Driver) putContributionLocked(ctx context.Context, c *domain.MemoryCont
 	if c.MessageSeq != nil {
 		msgSeq = *c.MessageSeq
 	}
+	// MERGE, not CREATE: the contribution's id IS its content identity
+	// (ContributionIdentity hash), so re-asserting the same evidence —
+	// the resource indexer's constant host context revising the same
+	// subject+content across syncs — is IDEMPOTENT evidence, never a
+	// primary-key violation (the live-boot failure this fixed).
 	return d.execLocked(ctx, `
-		CREATE (c:Contribution {
-			id: $id, record_id: $record_id, source: $source,
-			session_id: $session_id, execution_id: $execution_id,
-			message_seq: $message_seq, content_hash: $content_hash,
-			created_at: $created_at
-		})`, map[string]any{
+		MERGE (c:Contribution {id: $id})
+		ON CREATE SET c.record_id = $record_id, c.source = $source,
+			c.session_id = $session_id, c.execution_id = $execution_id,
+			c.message_seq = $message_seq, c.content_hash = $content_hash,
+			c.created_at = $created_at`, map[string]any{
 		"id": c.ContentHash, "record_id": c.RecordID, "source": string(c.Source),
 		"session_id": c.SessionID, "execution_id": c.ExecutionID,
 		"message_seq": msgSeq, "content_hash": c.ContentHash,

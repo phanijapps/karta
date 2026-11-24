@@ -120,6 +120,17 @@ func parseTime(v string) time.Time {
 	return t
 }
 
+// refreshActiveRuns re-reads the live-run set (call before listing).
+func (s *Server) refreshActiveRuns() {
+	if s.db == nil {
+		return
+	}
+	runs, err := s.db.ActiveRuns()
+	if err == nil {
+		s.activeRuns = runs
+	}
+}
+
 // ListSessions returns bounded, explicitly truncated results — the
 // session model's roster (type + ward binding drive the sidebar's
 // Chat / Ward Bots / Research groups), most recently active first.
@@ -145,6 +156,7 @@ func (s *Server) ListSessions(w http.ResponseWriter, r *http.Request, params api
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "session store not wired")
 		return
 	}
+	s.refreshActiveRuns()
 	// Fetch one extra row to detect truncation without a count query.
 	infos, err := s.db.ListSessions(offset + limit + 1)
 	if err != nil {
@@ -167,6 +179,10 @@ func (s *Server) ListSessions(w http.ResponseWriter, r *http.Request, params api
 			Status: sessionStatus(info.HasMessages),
 			Title:  nilStrPtr(info.Title), Ward: nilStrPtr(info.Ward),
 			UpdatedAt: parseTime(info.UpdatedAt),
+		}
+		if s.activeRuns != nil && s.activeRuns[info.ID] {
+			r := apigen.SessionSummaryRun("running")
+			summary.Run = &r
 		}
 		out = append(out, summary)
 	}
@@ -215,22 +231,27 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "session vanished after create")
 		return
 	}
-	writeJSON(w, http.StatusCreated, sessionView(sess, false, time.Time{}))
+	writeJSON(w, http.StatusCreated, s.sessionView(sess, false, time.Time{}))
 }
 
 // sessionView maps a store row to the contract Session shape.
 // updatedAt carries the session's recency hint (latest message time,
 // falling back to creation) when the caller has one.
-func sessionView(sess *zbotstore.Session, hasMessages bool, updatedAt time.Time) apigen.Session {
+func (s *Server) sessionView(sess *zbotstore.Session, hasMessages bool, updatedAt time.Time) apigen.Session {
 	if updatedAt.IsZero() {
 		updatedAt = sess.CreatedAt
 	}
-	return apigen.Session{
+	view := apigen.Session{
 		Id: apigen.Id(sess.ID), Type: apigen.SessionType(sess.Type),
 		Status: sessionStatus(hasMessages),
 		Title:  nilStrPtr(sess.Title), Ward: nilStrPtr(sess.Ward),
 		CreatedAt: sess.CreatedAt, UpdatedAt: updatedAt,
 	}
+	if s.activeRuns != nil && s.activeRuns[sess.ID] {
+		r := apigen.SessionRun("running")
+		view.Run = &r
+	}
+	return view
 }
 
 // GetSession returns identity and status.
@@ -258,7 +279,7 @@ func (s *Server) GetSession(w http.ResponseWriter, r *http.Request, sessionId ap
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, sessionView(sess, latest > 0, parseTime(updatedRaw)))
+	writeJSON(w, http.StatusOK, s.sessionView(sess, latest > 0, parseTime(updatedRaw)))
 }
 
 // CancelSession stops a session's active run.
@@ -403,7 +424,7 @@ func (s *Server) GetSessionState(w http.ResponseWriter, r *http.Request, session
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	state := apigen.SessionState{Session: sessionView(sess, latest > 0, time.Time{})}
+	state := apigen.SessionState{Session: s.sessionView(sess, latest > 0, time.Time{})}
 	if ev, err := s.db.LatestEventOfKind(sid, "intent_analysis"); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return

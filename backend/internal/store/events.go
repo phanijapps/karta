@@ -105,6 +105,28 @@ func (s *Store) LatestEventOfKind(sessionID, kind string) (*Event, error) {
 	return &e, nil
 }
 
+// ActiveRuns returns the session ids with a live engine run (the
+// sidebar's working badges). Root executions are per-session by
+// convention (exec-root-<id>): a non-terminal status means the run
+// is live.
+func (s *Store) ActiveRuns() (map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT session_id FROM executions
+		WHERE id = 'exec-root-' || session_id AND finished_at IS NULL`)
+	if err != nil {
+		return nil, fmt.Errorf("store: active runs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]bool{}
+	for rows.Next() {
+		var sid string
+		if err := rows.Scan(&sid); err != nil {
+			return nil, err
+		}
+		out[sid] = true
+	}
+	return out, rows.Err()
+}
+
 // ExecutionResult reads one execution's terminal status and error (the
 // research send path consumes the root execution's outcome after a run
 // drains — failures surface as typed exchange errors, not silent

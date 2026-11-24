@@ -746,6 +746,21 @@ func (e ScheduleCreateMissedPolicy) Valid() bool {
 	}
 }
 
+// Defines values for SessionRun.
+const (
+	SessionRunRunning SessionRun = "running"
+)
+
+// Valid indicates whether the value is a known member of the SessionRun enum.
+func (e SessionRun) Valid() bool {
+	switch e {
+	case SessionRunRunning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SessionType.
 const (
 	SessionTypeChat     SessionType = "chat"
@@ -788,6 +803,21 @@ func (e SessionStatus) Valid() bool {
 	case SessionStatusRunning:
 		return true
 	case SessionStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SessionSummaryRun.
+const (
+	SessionSummaryRunRunning SessionSummaryRun = "running"
+)
+
+// Valid indicates whether the value is a known member of the SessionSummaryRun enum.
+func (e SessionSummaryRun) Valid() bool {
+	switch e {
+	case SessionSummaryRunRunning:
 		return true
 	default:
 		return false
@@ -1701,10 +1731,13 @@ type ScheduleList struct {
 
 // Session defines model for Session.
 type Session struct {
-	Agent     *string       `json:"agent,omitempty"`
-	CreatedAt time.Time     `json:"created_at"`
-	Id        Id            `json:"id"`
-	Status    SessionStatus `json:"status"`
+	Agent     *string   `json:"agent,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	Id        Id        `json:"id"`
+
+	// Run The session's live run state — `running` when an engine run is executing, absent when idle.
+	Run    *SessionRun   `json:"run,omitempty"`
+	Status SessionStatus `json:"status"`
 
 	// Title The session's display name (research sessions).
 	Title *string `json:"title,omitempty"`
@@ -1717,6 +1750,9 @@ type Session struct {
 	// Ward The sticky ward binding (research sessions; absent when the session is a shell or a chat session).
 	Ward *string `json:"ward,omitempty"`
 }
+
+// SessionRun The session's live run state — `running` when an engine run is executing, absent when idle.
+type SessionRun string
 
 // SessionType The session's TYPE — its pipeline depth, set at creation
 // and immutable (the session model: no mode toggle).
@@ -1743,10 +1779,13 @@ type SessionStatus string
 
 // SessionSummary defines model for SessionSummary.
 type SessionSummary struct {
-	Agent  *string       `json:"agent,omitempty"`
-	Id     Id            `json:"id"`
-	Status SessionStatus `json:"status"`
-	Title  *string       `json:"title,omitempty"`
+	Agent *string `json:"agent,omitempty"`
+	Id    Id      `json:"id"`
+
+	// Run The session's live run state — `running` when an engine run is executing (the sidebar's working badge), absent when idle.
+	Run    *SessionSummaryRun `json:"run,omitempty"`
+	Status SessionStatus      `json:"status"`
+	Title  *string            `json:"title,omitempty"`
 
 	// Type The session's TYPE (chat = lean, research = full pipeline); immutable after creation.
 	Type      SessionSummaryType `json:"type"`
@@ -1755,6 +1794,9 @@ type SessionSummary struct {
 	// Ward The sticky ward binding, when the session is ward-bound.
 	Ward *string `json:"ward,omitempty"`
 }
+
+// SessionSummaryRun The session's live run state — `running` when an engine run is executing (the sidebar's working badge), absent when idle.
+type SessionSummaryRun string
 
 // SessionSummaryType The session's TYPE (chat = lean, research = full pipeline); immutable after creation.
 type SessionSummaryType string

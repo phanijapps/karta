@@ -1930,6 +1930,11 @@ components:
         agent:
           type: string
           maxLength: 128
+        run:
+          type: string
+          description: The session's live run state — `running` when
+            an engine run is executing, absent when idle.
+          enum: [running]
         created_at:
           type: string
           format: date-time
@@ -2099,6 +2104,12 @@ components:
         agent:
           type: string
           maxLength: 128
+        run:
+          type: string
+          description: The session's live run state — `running` when
+            an engine run is executing (the sidebar's working badge),
+            absent when idle.
+          enum: [running]
         updated_at:
           type: string
           format: date-time
