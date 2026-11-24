@@ -1,8 +1,9 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { ArrowUp, Brain, Sparkles, Wrench, Microscope, FolderOpen, ChevronDown, RefreshCw, Users, Info, X } from '@lucide/svelte';
+  import { ArrowUp, Brain, Sparkles, Microscope, FolderOpen, RefreshCw, Info, X } from '@lucide/svelte';
   import { sendChatMessage, streamChatMessage, continueSession } from '../../shared/api/client';
   import { createTimeline } from '../../shared/sse/timeline.svelte';
+  import WorkSteps from './WorkSteps.svelte';
   import type { Sessions } from '../../entities/session/session.svelte';
   import type { ChatMessage } from '../../shared/api/client';
   let { sessions }: { sessions: Sessions } = $props();
@@ -56,6 +57,46 @@
   });
   const canSend = $derived(draft.trim() !== '' && !sending);
   const isResearch = $derived(sessions.isResearch);
+  // Turns: the transcript split at USER rows — each turn carries the
+  // rows that follow (tool intents + results → steps; final assistant
+  // content → answers). Children's injected user rows (delegation
+  // context) are absorbed into the preceding turn so the step tree
+  // nests them instead of breaking the view.
+  type Turn = { key: string; user: ChatMessage | null; rows: ChatMessage[]; steps: ChatMessage[]; answers: ChatMessage[]; live: boolean };
+  const turns = $derived.by<Turn[]>(() => {
+    const out: Turn[] = [];
+    let cur: Turn | null = null;
+    for (const m of sessions.messages) {
+      if (m.role === 'user') {
+        // A user row right after a delegate_agent intent is the child's
+        // injected context — absorb it, don't start a turn.
+        const prevIntent = cur?.rows[cur.rows.length - 1];
+        if (cur && prevIntent?.tool_calls && prevIntent.tool_calls.includes('"delegate_agent"')) {
+          cur.rows.push(m);
+          continue;
+        }
+        cur = { key: m.id, user: m, rows: [], steps: [], answers: [], live: false };
+        out.push(cur);
+        continue;
+      }
+      if (!cur) continue;
+      if (m.role === 'assistant' && !m.tool_calls && (m.content || '').trim() !== '') cur.answers.push(m);
+      else {
+        cur.rows.push(m);
+        if (m.role === 'assistant' && m.tool_calls) cur.steps.push(m);
+      }
+    }
+    if (out.length) out[out.length - 1].live = sending && sessions.activeId === sendSessionId;
+    return out;
+  });
+  // The latest intent row id overall = the live turn's marker.
+  const lastIntentId = $derived.by<string | undefined>(() => {
+    for (let i = sessions.messages.length - 1; i >= 0; i--) {
+      const m = sessions.messages[i];
+      if (m.role === 'assistant' && m.tool_calls) return m.id;
+    }
+    return undefined;
+  });
   // The Task Analysis popover (the (i) chip): open state + the
   // trigger ref for focus return on close.
   let analysisOpen = $state(false);
@@ -73,23 +114,6 @@
 
   /** Delegations from assistant tool-call intents: agent + task pairs
    * (the delegation roster; results close them). */
-  function delegationsOf(m: ChatMessage): { agent: string; task: string }[] {
-    if (!m.tool_calls) return [];
-    try {
-      const calls = JSON.parse(m.tool_calls) as Array<{ function?: { name?: string; arguments?: string } }>;
-      const out: { agent: string; task: string }[] = [];
-      for (const c of calls) {
-        if (c.function?.name !== 'delegate_agent') continue;
-        try {
-          const args = JSON.parse(c.function.arguments ?? '{}') as { agent?: string; task?: string };
-          if (args.agent) out.push({ agent: args.agent, task: args.task ?? '' });
-        } catch { /* malformed arguments: skip */ }
-      }
-      return out;
-    } catch {
-      return [];
-    }
-  }
 
   /** Render one live Timeline event as a work-stream row (null =
    * filtered noise). */
@@ -124,15 +148,6 @@
     }
   }
 
-  /** The tool names an assistant tool-call intent row requests. */
-  function toolCallNames(m: ChatMessage): string[] {
-    try {
-      const calls = JSON.parse(m.tool_calls ?? '') as Array<{ function?: { name?: string } }>;
-      return calls.map((c) => c.function?.name ?? 'tool');
-    } catch {
-      return ['tool'];
-    }
-  }
 
   async function send() {
     const text = draft.trim();
@@ -318,50 +333,15 @@
         {/if}
       </div>
     {:else}
-      {#each sessions.messages as m (m.id)}
-        {#if m.role === 'tool'}
-          <article class="tool-row" aria-label={`Tool ${m.tool_name ?? 'call'}`}>
-            <Wrench size={14} />
-            <span class="tool-name">{m.tool_name ?? 'tool'}</span>
-            <details class="tool-detail">
-              <summary><ChevronDown size={12} aria-hidden="true" /></summary>
-              <code class="tool-output">{m.content}</code>
-            </details>
-          </article>
-        {:else if m.role === 'assistant' && delegationsOf(m).length > 0}
-          <!-- Delegation tree: the delegate calls this exchange spawned -->
-          <article class="del-tree" aria-label="Delegation">
-            <p class="del-title"><Users size={12} aria-hidden="true" /> Delegation</p>
-            {#each delegationsOf(m) as d}
-              <p class="del-node">
-                <span class="dot done" aria-hidden="true"></span>
-                <strong>{d.agent}</strong>
-                {#if d.task}<span class="muted">— {d.task}</span>{/if}
-              </p>
-            {/each}
-          </article>
-        {:else if m.role === 'assistant' && m.tool_calls}
-          <!-- Assistant tool-call INTENT row: compact and named. Any
-               narration the model attached is PLAN TALK, not an answer —
-               it folds under "show" (thinking belongs to the brain). -->
-          <article class="tool-row" aria-label="Tool call intent">
-            <Wrench size={14} />
-            <span class="tool-name">{toolCallNames(m).join(', ')}</span>
-            {#if m.reasoning}
-              <details class="thinking inline">
-                <summary><Brain size={12} aria-hidden="true" /> Thinking</summary>
-                <p class="muted">{m.reasoning}</p>
-              </details>
-            {/if}
-            {#if m.content}
-              <details class="tool-detail plan">
-                <summary>show</summary>
-                <p class="muted">{m.content}</p>
-              </details>
-            {/if}
-          </article>
-        {:else}
-          <article class="bubble {m.role}" aria-label={m.role === 'user' ? 'Your message' : 'Assistant message'}>
+      {#each turns as turn (turn.key)}
+        {#if turn.user}
+          <article class="bubble user" aria-label="Your message">{turn.user.content}</article>
+        {/if}
+        {#if turn.steps.length}
+          <WorkSteps messages={turn.rows} liveTurnId={turn.live ? lastIntentId : undefined} />
+        {/if}
+        {#each turn.answers as m (m.id)}
+          <article class="bubble assistant" aria-label="Assistant message">
             {#if m.reasoning}
               <details class="thinking">
                 <summary><Brain size={13} aria-hidden="true" /> Thinking</summary>
@@ -370,7 +350,7 @@
             {/if}
             {m.content}
           </article>
-        {/if}
+        {/each}
       {/each}
     {/if}
       {#if sending && sessions.activeId === sendSessionId && isResearch && timeline.events.length > 0}
@@ -490,15 +470,7 @@
   .dots i:nth-child(2) { animation-delay: .15s; }
   .dots i:nth-child(3) { animation-delay: .3s; }
   @keyframes pulse { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
-  .tool-row { display: flex; align-items: flex-start; gap: .45rem; padding: .3rem .6rem; font-size: .78rem; color: var(--ds-color-muted, #888); border-radius: 6px; }
-  .tool-row:hover { background: var(--ds-color-hover, #2a2a2a); }
-  .tool-name { color: var(--ds-color-text, #eee); font-weight: 500; white-space: nowrap; }
-  .tool-detail summary { cursor: pointer; display: inline-flex; color: var(--ds-color-muted, #888); }
-  .tool-row .thinking.inline, .tool-row .tool-detail.plan { margin-left: .2rem; }
-  .tool-row .thinking.inline summary, .tool-row .tool-detail.plan summary { font-size: .72rem; }
-  .tool-row .thinking.inline p, .tool-row .tool-detail.plan p { max-width: 40rem; margin: .2rem 0 0; padding: .3rem .5rem; border-left: 2px solid var(--ds-color-border, #333); border-radius: 4px; background: var(--ds-color-field, #1a1a1a); font-size: .72rem; }
   .thinking summary { cursor: pointer; display: inline-flex; gap: .35rem; align-items: center; list-style: none; }
-  .tool-output { display: block; max-width: 40rem; max-height: 10rem; overflow: auto; padding: .3rem .5rem; margin-top: .2rem; border-radius: 4px; background: var(--ds-color-field, #1a1a1a); font-size: .72rem; white-space: pre-wrap; }
   /* Task Analysis: compact chip + (i) popover (fed by session state) */
   .analysis-chip-row { display: flex; justify-self: start; max-width: min(48rem, 90%); }
   .analysis-chip { position: relative; display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .4rem .3rem .65rem; border-radius: 999px; border: 1px solid var(--accent, var(--ds-color-primary, #6366f1)); background: var(--ds-color-surface, #1e1e1e); color: var(--accent, var(--ds-color-primary, #6366f1)); font-size: .76rem; }
@@ -541,11 +513,6 @@
      the state (muted text on the tinted chip failed AA in light theme). */
   .skill-chip.dropped { color: var(--ds-color-text, #eee); text-decoration: line-through; }
   /* Delegation tree */
-  .del-tree { border: 1px solid var(--ds-color-border, #333); border-radius: 12px; padding: .5rem .8rem; background: var(--ds-color-surface, #1e1e1e); max-width: min(48rem, 90%); font-size: .78rem; }
-  .del-title { display: flex; align-items: center; gap: .35rem; margin: 0 0 .3rem; font-size: .66rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-color-muted, #888); }
-  .del-node { display: flex; align-items: center; gap: .45rem; margin: 0; padding: .15rem 0; }
-  .del-node .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ds-color-success, #22c55e); flex-shrink: 0; }
-  .del-node strong { font-weight: 500; }
   .research-progress { display: flex; align-items: center; gap: .5rem; color: var(--ds-color-muted, #888); font-size: .85rem; }
   /* The live work stream */
   .work-stream { display: grid; gap: .25rem; max-width: min(48rem, 90%); padding: .6rem .8rem; border: 1px solid var(--ds-color-border, #333); border-radius: 12px; background: var(--ds-color-surface, #1e1e1e); font-size: .78rem; overflow: hidden; }

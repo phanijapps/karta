@@ -137,6 +137,25 @@ BOTH FIXED:
   pre-existing light-theme contrast failures on the way: ward badge on
   the chip, dropped chips, the ward strip).
 
+**Operator ideation follow-up — tool-call stacking (friendly verbs):**
+The flat tool-row transcript (30+ identical rows on the NVDA run) is
+replaced by a STEP TREE (`features/chat-stream/steps.ts` +
+`WorkSteps.svelte`, pure frontend): each assistant tool-call TURN is
+one step labeled **friendly verb + object + outcome** ("Entered ward
+stock-analysis · ok", "Ran python3 data/amd_deepdive.py · exit 0 ·
+3.9s", "Searched the web … · 2 calls · 1 error"); consecutive
+same-tool turns merge (count + merged outcomes); a delegation's child
+turns nest under it (the injected child user row is absorbed, not a
+bubble); only final answers are chat bubbles. Expansion shows the
+plan ("Plan" label), the brain (collapsed), each call's raw name +
+args + result excerpt. Mixed turns name by majority tool. Live steps
+auto-open once and tidy when the turn ends. Live result on the
+operator's NVDA session: 7 steps. Tests: 11 session specs (grouping,
+nesting, folding, outcomes); axe 0/0 (light-theme error-hint contrast
+fixed on the way). Decisions recorded: collapsed-by-default with
+auto-open-while-live; friendly verb at the top level, raw name in the
+expansion.
+
 **task verify: exit 0** — gates + codegen zero drift + lint 0 +
 full suites + budget gates OK (suite 27.3s / 28s — the hardening
 tests' cost trimmed honestly: the echo server builds once per test
