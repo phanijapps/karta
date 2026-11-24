@@ -249,6 +249,12 @@ export function createSessions() {
     }
   }
 
+  /** Apply a LIVE intent-analysis event (the SSE surface): the card
+   * renders the moment analysis lands, not at run completion. */
+  function applyLiveAnalysis(payload: Record<string, unknown> | undefined) {
+    if (payload) analysis = payload as SessionAnalysis;
+  }
+
   /** Clear the ACTIVE session's transcript locally after a daemon clear. */
   function clearedLocally(sessionId: string) {
     transcripts = { ...transcripts, [sessionId]: [] };
@@ -276,6 +282,7 @@ export function createSessions() {
     get loading() { return loading; },
     get rosterError() { return rosterError; },
     get analysis() { return analysis; },
+    applyLiveAnalysis,
     get sendError() { return sendError; },
     set sendError(value: string) { sendError = value; },
   };

@@ -2,6 +2,7 @@
   import { tick } from 'svelte';
   import { ArrowUp, Brain, Sparkles, Wrench, Microscope, FolderOpen, ChevronDown, RefreshCw, Users } from '@lucide/svelte';
   import { sendChatMessage, streamChatMessage, continueSession } from '../../shared/api/client';
+  import { createTimeline } from '../../shared/sse/timeline.svelte';
   import type { Sessions } from '../../entities/session/session.svelte';
   import type { ChatMessage } from '../../shared/api/client';
   let { sessions }: { sessions: Sessions } = $props();
@@ -20,6 +21,9 @@
   // bubble render ONLY while that session is active (switching away
   // mid-send must not leak the live exchange into another transcript).
   let sendSessionId = $state('');
+  // The live work stream (research runs): the session's Timeline SSE —
+  // steps, tool calls, delegations, the analysis the moment it lands.
+  const timeline = createTimeline();
   // One-shot load (cursor changes inside load() must not retrigger).
   let loaded = $state(false);
   $effect(() => {
@@ -34,6 +38,20 @@
   $effect(() => {
     sessions.messages;
     void scrollToLatest();
+  });
+  // Live analysis: the SSE intent_analysis event renders the card the
+  // moment the analysis lands (mid-run), not at completion.
+  $effect(() => {
+    for (const ev of timeline.events) {
+      if (ev.kind === 'intent_analysis' && ev.intentAnalysis) {
+        sessions.applyLiveAnalysis(ev.intentAnalysis as Record<string, unknown>);
+      }
+    }
+  });
+  // Session switch / unmount: drop the stream.
+  $effect(() => {
+    sessions.activeId;
+    return () => timeline.close();
   });
   const canSend = $derived(draft.trim() !== '' && !sending);
   const analysisCard = $derived.by<Record<string, any> | null>(() => {
@@ -65,6 +83,39 @@
     }
   }
 
+  /** Render one live Timeline event as a work-stream row (null =
+   * filtered noise). */
+  function workRow(ev: { kind: string; text: string; intentAnalysis?: unknown }): {
+    icon: string; kind: string; text: string; tone: string; more?: string;
+  } | null {
+    const clamp = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s);
+    switch (ev.kind) {
+      case 'intent_analysis': {
+        const ia = (ev.intentAnalysis ?? {}) as Record<string, any>;
+        return {
+          icon: '🔬', tone: 'analysis', kind: 'analysis',
+          text: ia.primary_intent ? `${ia.primary_intent} · ${ia.complexity ?? '?'} · budget ${ia.step_budget ?? '?'}` : 'analysis complete',
+        };
+      }
+      case 'agent_step':
+        if (!ev.text) return null;
+        if (ev.text.startsWith('engine:')) return { icon: '⚙', tone: 'system', kind: 'engine', text: clamp(ev.text, 160) };
+        if (ev.text.startsWith('Pre-execution')) return null;
+        return { icon: '🧠', tone: 'step', kind: 'step', text: clamp(ev.text, 240) };
+      case 'tool_call':
+        return { icon: '🔧', tone: 'tool', kind: 'tool', text: ev.text || 'tool', more: undefined };
+      case 'delegation':
+        return { icon: '👥', tone: 'delegation', kind: 'delegated', text: clamp(ev.text, 160) };
+      case 'session':
+        if (ev.text === 'run completed' || ev.text.startsWith('goal:')) return null;
+        return { icon: '•', tone: 'system', kind: 'run', text: clamp(ev.text, 120) };
+      case 'chitta_tool_invoked':
+        return { icon: '🧬', tone: 'tool', kind: 'memory', text: clamp(ev.text, 120) };
+      default:
+        return null;
+    }
+  }
+
   /** The tool names an assistant tool-call intent row requests. */
   function toolCallNames(m: ChatMessage): string[] {
     try {
@@ -92,9 +143,11 @@
     try {
       let result: Awaited<ReturnType<typeof sendChatMessage>>;
       if (isResearch) {
-        // Research sessions complete as units (the engine pipeline is
-        // not a token stream).
+        // Research sessions complete as units — the LIVE work streams as
+        // Timeline events (steps, tools, delegations) while the run works.
+        timeline.connect(sessionId);
         result = await sendChatMessage(text, sessions.model, sessionId);
+        timeline.close();
       } else {
         try {
           result = await streamChatMessage(text, sessions.model, (d) => {
@@ -247,6 +300,29 @@
         {/if}
       {/each}
     {/if}
+      {#if sending && sessions.activeId === sendSessionId && isResearch && timeline.events.length > 0}
+        <!-- The LIVE work stream: Timeline events as the research run
+             works — analysis, steps, tool calls, delegations. -->
+        <section class="work-stream" aria-label="Research run in progress" aria-live="polite">
+          {#each timeline.events as ev (ev.id)}
+            {@const row = workRow(ev)}
+            {#if row}
+              <div class="work-row {row.tone}">
+                <span class="work-icon" aria-hidden="true">{row.icon}</span>
+                <span class="work-kind">{row.kind}</span>
+                <span class="work-text">{row.text}</span>
+                {#if row.more}
+                  <details class="work-more">
+                    <summary>more</summary>
+                    <pre>{row.more}</pre>
+                  </details>
+                {/if}
+              </div>
+            {/if}
+          {/each}
+          <div class="work-row live" aria-hidden="true"><span class="dots"><i></i><i></i><i></i></span> working…</div>
+        </section>
+      {/if}
       {#if streaming && sessions.activeId === sendSessionId && (reasoning !== '' || content !== '')}
         <article class="bubble assistant streaming" aria-label="Assistant is responding" aria-busy="true">
           {#if reasoning !== ''}
@@ -369,6 +445,19 @@
   .del-node .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ds-color-success, #22c55e); flex-shrink: 0; }
   .del-node strong { font-weight: 500; }
   .research-progress { display: flex; align-items: center; gap: .5rem; color: var(--ds-color-muted, #888); font-size: .85rem; }
+  /* The live work stream */
+  .work-stream { display: grid; gap: .25rem; max-width: min(48rem, 90%); padding: .6rem .8rem; border: 1px solid var(--ds-color-border, #333); border-radius: 12px; background: var(--ds-color-surface, #1e1e1e); font-size: .78rem; overflow: hidden; }
+  .work-row { display: flex; align-items: baseline; gap: .5rem; margin: 0; min-width: 0; color: var(--ds-color-text, #eee); }
+  .work-row .work-icon { flex-shrink: 0; }
+  .work-row .work-kind { flex-shrink: 0; font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-color-muted, #888); min-width: 4.2rem; }
+  .work-row .work-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .work-row.tool .work-text, .work-row.step .work-text { color: var(--ds-color-muted, #aaa); }
+  .work-row.analysis { color: var(--accent, #6366f1); font-weight: 500; }
+  .work-row.delegation .work-text { color: var(--ds-color-success, #22c55e); }
+  .work-row.system .work-text { color: var(--ds-color-muted, #888); font-style: italic; }
+  .work-row.live { color: var(--ds-color-muted, #888); }
+  .work-more summary { cursor: pointer; color: var(--ds-color-muted, #888); font-size: .68rem; }
+  .work-more pre { max-width: 36rem; max-height: 8rem; overflow: auto; margin: .2rem 0 0; padding: .3rem .5rem; border-radius: 4px; background: var(--ds-color-field, #1a1a1a); font-size: .68rem; white-space: pre-wrap; }
   .composer-region { padding: .75rem clamp(.75rem, 3vw, 2rem) .5rem; display: grid; gap: .4rem; border-top: 1px solid var(--ds-color-border, #333); background: var(--ds-color-sidebar, #161616); min-width: 0; max-width: 100%; overflow: hidden; }
   .ward-bar { display: flex; align-items: center; gap: .45rem; padding: .35rem .7rem; border-radius: 8px; border: 1px solid color-mix(in oklch, var(--ds-color-success, #22c55e) 40%, transparent); background: color-mix(in oklch, var(--ds-color-success, #22c55e) 10%, transparent); font-size: .8rem; color: var(--ds-color-success, #22c55e); }
   .continue-bar { display: flex; align-items: center; justify-content: space-between; padding: .4rem .7rem; border-radius: 8px; border: 1px solid var(--ds-color-danger, #e5484d); font-size: .8rem; }

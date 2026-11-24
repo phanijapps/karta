@@ -16,8 +16,17 @@ async function mockBase(page: Page) {
   );
 }
 
-/** Session roster: the default quick chat + one ward bot + one shell. */
+/** Session roster: the default quick chat + one ward bot + one shell.
+ * Also pins the WARD roster (hermetic: never the live daemon's). */
 async function mockSessions(page: Page, extra: unknown[] = []) {
+  await page.route('**/api/wards', (route) =>
+    route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ vault_root: '/v', wards: [
+        { name: 'stock-analysis', archetype: 'research', lint_status: 'clean', finding_count: 0, canonical_title: 'Stock Analysis' },
+      ] }),
+    }),
+  );
   await page.route((url) => url.pathname === '/api/sessions', (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({
@@ -121,7 +130,7 @@ test('sidebar groups sessions and switching swaps the transcript', async ({ page
   const wardGroup = nav.getByRole('list', { name: 'Sessions' }).locator('li', { hasText: 'Ward Bots' }).first();
   const researchGroup = nav.getByRole('list', { name: 'Sessions' }).locator('li', { hasText: 'Research' }).first();
   await expect(chatGroup.getByRole('button', { name: /Quick Chat/ })).toBeVisible();
-  await expect(wardGroup.getByRole('button', { name: /stock-analysis/ })).toBeVisible();
+  await expect(wardGroup.getByRole('button', { name: /stock-analysis/ })).toHaveCount(2); // warden placeholder + the bound session
   await expect(researchGroup.getByRole('button', { name: /Cloud Pricing/ })).toBeVisible();
   await expect(chatGroup.getByRole('button', { name: /stock-analysis/ })).toHaveCount(0);
 
@@ -132,8 +141,8 @@ test('sidebar groups sessions and switching swaps the transcript', async ({ page
 
   // Switch to the ward-bound research session: transcript + ward bar +
   // the active marker MOVES with the selection.
-  await wardGroup.getByRole('button', { name: /stock-analysis/ }).click();
-  await expect(wardGroup.getByRole('button', { name: /stock-analysis/ })).toHaveAttribute('aria-current', 'true');
+  await wardGroup.getByRole('button', { name: /stock-analysis now/ }).click();
+  await expect(wardGroup.getByRole('button', { name: /stock-analysis now/ })).toHaveAttribute('aria-current', 'true');
   await expect(chatGroup.getByRole('button', { name: /Quick Chat/ })).not.toHaveAttribute('aria-current', 'true');
   await expect(page.getByLabel('Your message')).toContainText('AMD vs NVIDIA?');
   await expect(page.getByLabel('Active ward')).toContainText('stock-analysis');
@@ -214,7 +223,7 @@ test('context panel: ward card + skills + agents for a ward-bound session; none 
 
   // Open the right panel and switch to the ward-bound session.
   await page.getByRole('button', { name: 'Toggle right sidebar' }).click();
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: /stock-analysis/ }).click();
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: /stock-analysis now/ }).click();
   const panel = page.getByRole('complementary', { name: 'Session context' });
   await expect(panel.getByLabel('Active ward')).toBeVisible();
   await expect(panel.getByText('Stock Analysis — equity research method')).toBeVisible();
@@ -262,7 +271,7 @@ test('switching sessions mid-send does not leak live output; returning reconcile
     return new Promise(() => {}); // never resolves: the send stays live
   });
   await page.goto('/');
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: /stock-analysis/ }).click();
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: /stock-analysis now/ }).click();
   await page.getByLabel('Research question').fill('long question');
   await page.getByLabel('Research question').press('Enter');
   await expect.poll(() => streamStarted).toBe(true);
@@ -277,7 +286,7 @@ test('switching sessions mid-send does not leak live output; returning reconcile
 
   // Back to the research session: its transcript stands (the terminal
   // exchange never arrived; reconciliation is the daemon's truth).
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: /stock-analysis/ }).click();
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: /stock-analysis now/ }).click();
   await expect(page.getByLabel('Your message')).toContainText('AMD vs NVIDIA?');
   await expect(page.getByLabel('Assistant message').last()).toContainText('NVIDIA holds 90-98%');
 });
@@ -351,7 +360,7 @@ test('ward rows select wardens: ensure on first select, reuse after, one row per
   await expect(group.getByRole('button', { name: /r-stock|stock-analysis/ })).toHaveCount(2);
 
   // Selecting the WARD row ensures the warden (not r-stock).
-  await group.getByRole('button', { name: /warden · tap to open/ }).click();
+  await group.getByRole('button', { name: /stock-analysis warden · tap to open/ }).click();
   await expect.poll(() => ensured).toBe(1);
   await expect(page.getByLabel('Research question')).toBeVisible();
   // Post-ensure: the warden session row REPLACES the placeholder (no
@@ -365,4 +374,43 @@ test('ward rows select wardens: ensure on first select, reuse after, one row per
   await group.getByRole('button', { name: /stock-analysis/ }).first().click();
   await page.waitForTimeout(400);
   expect(ensured).toBe(1); // reuse, not re-ensure
+});
+
+test('research runs stream their work live (Timeline SSE → work stream)', async ({ page }) => {
+  await mockBase(page);
+  await mockSessions(page);
+  await mockTranscripts(page);
+  await mockStates(page);
+  // A send that never completes (the run "works" meanwhile)…
+  let sendStarted = false;
+  await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
+    if (route.request().method() === 'GET') return route.fallback();
+    sendStarted = true;
+    return new Promise(() => {});
+  });
+  // …and its event stream replaying the run's live Timeline events.
+  await page.route((url) => url.pathname === '/api/sessions/r-stock/events', (route) => {
+    const frames = [
+      'event: intent_analysis\ndata: ' + JSON.stringify({ id: 'e1', kind: 'intent_analysis', text: 't', intent_analysis: { status: 'analyzed', primary_intent: 'nvda-check', complexity: 'M', step_budget: 8, approach: 'graph', recommended_skills: ['pdf'] } }),
+      'event: agent_step\ndata: ' + JSON.stringify({ id: 'e2', kind: 'agent_step', text: 'Entering the ward and staging the search.' }),
+      'event: tool_call\ndata: ' + JSON.stringify({ id: 'e3', kind: 'tool_call', text: 'mcp_brave-mcp_brave_web_search' }),
+      'event: delegation\ndata: ' + JSON.stringify({ id: 'e4', kind: 'delegation', text: 'research-agent — market share' }),
+    ].join('\n\n') + '\n\n';
+    return route.fulfill({ status: 200, contentType: 'text/event-stream', body: frames });
+  });
+  await page.goto('/');
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: /stock-analysis now/ }).click();
+  await page.getByLabel('Research question').fill('live streaming check');
+  await page.getByLabel('Research question').press('Enter');
+  await expect.poll(() => sendStarted).toBe(true);
+
+  // The work stream renders the live events as they arrive.
+  const stream = page.getByLabel('Research run in progress');
+  await expect(stream).toBeVisible();
+  await expect(stream.getByText('nvda-check · M · budget 8')).toBeVisible();
+  await expect(stream.getByText('Entering the ward and staging the search.')).toBeVisible();
+  await expect(stream.getByText('mcp_brave-mcp_brave_web_search')).toBeVisible();
+  await expect(stream.getByText('research-agent — market share')).toBeVisible();
+  // The analysis card ALSO lands live (mid-run, from the SSE event).
+  await expect(page.getByLabel('Task Analysis')).toContainText('nvda-check');
 });

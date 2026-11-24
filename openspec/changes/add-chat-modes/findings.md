@@ -116,8 +116,12 @@ confirmed. 2 P1 + 7 P2 findings — all addressed:
   live counter needs a contract surface for remaining budget.
   Follow-up: expose the progress tracker's budget via the session
   events or a session-state endpoint.
-- **P2-2 — Live run status.** Same surface would feed a "working…"
-  badge for ward bots/roster agents in the context panel.
+- **P2-2 — Live run status.** ✅ PARTLY CLOSED (post-review): research
+  sends now stream their work live (the Timeline SSE store + the chat
+  work stream — see intent-context-packet P2-4): the run's steps,
+  tools, and delegations render in realtime while it works. Remaining
+  nicety: a "working" badge on the SIDEBAR row / context-panel roster
+  (needs the same stream surfaced outside the active chat).
 - **P2-3 — Leave-ward button.** The mock's composer ward strip has a
   Leave button; no endpoint/tool exists (ward_use switches; no
   ward_leave). Recorded for a follow-up; the strip is informational.

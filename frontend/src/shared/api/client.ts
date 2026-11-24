@@ -269,6 +269,9 @@ export async function refreshProviderModels(
 
 /** One transcript row from the daemon. */
 export type ChatMessage = components["schemas"]["ChatMessage"];
+/** The intent-analysis event payload (timeline SSE + session state). */
+export type IntentAnalysisPayload =
+  components["schemas"]["IntentAnalysisPayload"];
 
 /** Page one session's transcript: next_cursor is the last DELIVERED
  * seq. Empty sessionId = the quick chat (default). */

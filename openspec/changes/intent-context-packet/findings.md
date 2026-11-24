@@ -85,10 +85,17 @@ Verdict: bindings/FSD/runes/draft-fix/state-sourcing confirmed.
 - **P2-2 — First-message-hash collision.** Two OpenWebUI conversations
   with identical first messages share a session (same human, same
   opening — accepted; design.md risk).
-- **P2-4 — Live in-flight analysis refresh.** Subscribe to
-  /api/sessions/{id}/events (SSE) and update the card/roster as the
-  run works — the Timeline-Tree store surface; analysis currently
-  lands at send completion.
+- **P2-4 — Live in-flight analysis refresh.** ✅ CLOSED (post-review,
+  with the realtime work stream): `shared/sse/timeline.svelte.ts` —
+  the centralized runes-based Timeline store (EventSource over the
+  session events endpoint, replay-dedupe, bounded view). Research
+  sends connect on send-start; the work stream renders every live
+  event (analysis row, agent steps, tool calls, delegations, engine
+  markers) while the run works; the intent_analysis event renders the
+  Task Analysis card MID-RUN (applyLiveAnalysis); the stream closes at
+  completion (the transcript is the durable truth). Playwright-pinned
+  (mocked SSE frames) and live-verified (brave search run streamed
+  intent_analysis → agent_step → tool_call ×2 during execution).
 - **P2-3 — OpenWebUI conversation renames don't propagate** (the
   session keeps the hash id + "Research" title). A later
   session-rename surface covers it.
