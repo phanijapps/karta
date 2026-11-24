@@ -133,3 +133,23 @@ for (const theme of ['dark', 'light'] as const) {
     }
   });
 }
+
+test('PWA surface: manifest link, icons, and worker registration script', async ({ page }) => {
+  await mockChat(page);
+  await page.goto('/');
+  // The manifest is linked and servable.
+  const link = page.locator('link[rel="manifest"]');
+  await expect(link).toHaveAttribute('href', '/manifest.webmanifest');
+  const manifest = await page.evaluate(async () => {
+    const res = await fetch('/manifest.webmanifest');
+    return res.ok ? await res.json() : null;
+  });
+  if (!manifest || manifest.name !== 'Karta' || manifest.display !== 'standalone') {
+    throw new Error(`manifest wrong: ${JSON.stringify(manifest)}`);
+  }
+  // Icons resolve.
+  for (const icon of ['/icon-192.png', '/icon-512.png']) {
+    const ok = await page.evaluate(async (src) => (await fetch(src)).ok, icon);
+    if (!ok) throw new Error(`icon missing: ${icon}`);
+  }
+});

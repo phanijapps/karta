@@ -14,8 +14,8 @@ async function mockChat(page: import('@playwright/test').Page, messages: unknown
 test('Karta identity is consistent without changing compatibility paths', async ({ page }) => {
   await mockChat(page);
   await page.goto('/');
-  await expect(page).toHaveTitle('Karta — Local workspace');
-  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', 'Karta — your local agent workspace. Shell preview.');
+  await expect(page).toHaveTitle('Karta');
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', 'Karta — local-first research. Wards, sessions, and your agents.');
   const wordmark = page.locator('.wordmark');
   await expect(wordmark).toHaveText('Karta');
   await expect(page.getByRole('textbox', { name: 'Message Karta' })).toBeVisible();

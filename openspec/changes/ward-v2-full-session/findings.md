@@ -155,6 +155,15 @@ ward_use(stock-analysis) → ward_shell echo round-tripped in the
 default session (5.4s); TestChatToolPlaneIsWardAndMCPOnly pins the
 plane count.
 
+**Operator decision (post-review): Karta IS the PWA.** OpenWebUI is
+not used — the /v1 channel stays built but idle (no cost). The SPA is
+now installable: manifest.webmanifest (standalone, icons 192/512 +
+maskable), apple-touch meta, and a production-only shell service
+worker (network-first, /api/** never cached — the daemon is the
+truth; offline opens the cached shell). Dev keeps HMR clean (SW
+registers only in PROD builds). Playwright pins the manifest/icons
+surface; branding expectations updated to the new title/description.
+
 **LIVE full-session smoke (5.2's verify)**: warden run in
 stock-analysis — mcp_ddg-search_search executed (DDG bot-blocks
 results; plane proven), ward_shell ran `echo shell-works && date`
