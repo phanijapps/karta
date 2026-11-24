@@ -101,6 +101,32 @@ func (s *Service) SessionBusy(sessionID string) bool {
 	return s.busy[sessionID]
 }
 
+// SyncIn pages one session's transcript for clients (empty session id
+// = the default quick chat). Unknown ids fail typed (ErrUnknownSession
+// → 404) — sync is session-scoped like every other chat operation.
+func (s *Service) SyncIn(sessionID string, afterSeq int64, limit int) ([]store.Message, int64, bool, error) {
+	sess, err := s.resolveSession(sessionID)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	sessionID = sess.ID
+	rows, err := s.store.Replay(sessionID, afterSeq, limit)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	next := afterSeq
+	for _, r := range rows {
+		if r.Seq > next {
+			next = r.Seq
+		}
+	}
+	latest, err := s.store.LatestSeq(sessionID)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	return rows, next, latest > next, nil
+}
+
 // researchLocked runs the research path under the session's busy
 // guard: ONE live engine run per research session (overlapping sends
 // would interleave transcripts and orphan cancellation ownership — the
