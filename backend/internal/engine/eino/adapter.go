@@ -350,7 +350,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 			} else {
 				offered = engine.FilterTools(a.toolProv, in.toolAllow)
 				// The agent allowlist governs the COMPLETE inventory:
-				// ward tools (incl. ward_shell) and the MCP plane pass
+				// ward tools (incl. shell) and the MCP plane pass
 				// through it too — a restrictive agent gets only what
 				// it declared.
 				ward := filterWardTools(wardToolSet(in), in.toolAllow)

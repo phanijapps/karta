@@ -39,8 +39,11 @@ var ErrUnknownSession = errors.New("chat: unknown session")
 // instead). The server maps this to 409 session_busy.
 var ErrSessionBusy = errors.New("chat: session busy — a research run is live")
 
-// MaxToolRounds bounds tool execution per send.
-const MaxToolRounds = 2
+// MaxToolRounds bounds tool execution per send. Raised 2→6 with the
+// ward+MCP tool plane (operator direction): enter-ward → shell → read
+// chains need room; still a LEAN bound (the engine pipeline is the
+// deep one).
+const MaxToolRounds = 6
 
 // HistoryBound bounds the provider context window (rows).
 const HistoryBound = 200

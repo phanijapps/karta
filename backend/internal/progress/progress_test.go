@@ -30,7 +30,7 @@ func TestProductiveRunExtends(t *testing.T) {
 func TestStuckLoopStops(t *testing.T) {
 	tr := New()
 	for i := 0; i < 15; i++ {
-		tr.Record("ward_read", `{"path":"missing.md"}`, "ward_read: open missing.md: no such file")
+		tr.Record("read", `{"path":"missing.md"}`, "read: open missing.md: no such file")
 	}
 	if !tr.Stuck() {
 		t.Fatalf("repeated identical failure must be stuck, score=%d", tr.Score())
@@ -41,7 +41,7 @@ func TestStuckLoopStops(t *testing.T) {
 	}
 	// Keep failing after the warning → ShouldStop.
 	for i := 0; i < 5; i++ {
-		tr.Record("ward_read", `{"path":"missing.md"}`, "same error")
+		tr.Record("read", `{"path":"missing.md"}`, "same error")
 	}
 	if !tr.ShouldStop() {
 		t.Fatalf("stuck + warned + sinking must stop, score=%d", tr.Score())
@@ -55,10 +55,10 @@ func TestStuckLoopStops(t *testing.T) {
 func TestFailingCallNudge(t *testing.T) {
 	tr := New()
 	for i := 0; i < 3; i++ {
-		tr.Record("ward_write", `{"path":"x","content":"y"}`, "path escapes the ward")
+		tr.Record("write", `{"path":"x","content":"y"}`, "path escapes the ward")
 	}
 	nudge := tr.Nudge(5, 0, 50)
-	if !strings.Contains(nudge, "ward_write") || !strings.Contains(nudge, "3 times") || !strings.Contains(nudge, "escapes the ward") {
+	if !strings.Contains(nudge, "write") || !strings.Contains(nudge, "3 times") || !strings.Contains(nudge, "escapes the ward") {
 		t.Fatalf("failing-call nudge: %q", nudge)
 	}
 	// Fires once.

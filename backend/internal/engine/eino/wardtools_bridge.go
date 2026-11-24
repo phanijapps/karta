@@ -68,7 +68,7 @@ func (a *Adapter) wardHost(sessionID string) *wardtools.Host {
 }
 
 // filterWardTools applies an agent's tool allowlist to a mounted
-// plane (ward tools incl. ward_shell, MCP tools); nil allow = all.
+// plane (ward tools incl. shell, MCP tools); nil allow = all.
 func filterWardTools(set []tools.Tool, allow []string) []tools.Tool {
 	if allow == nil {
 		return set

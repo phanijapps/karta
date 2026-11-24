@@ -1,6 +1,6 @@
 package wardtools
 
-// ward_shell: bounded bash execution pinned to the ACTIVE ward
+// shell: bounded bash execution pinned to the ACTIVE ward
 // (ward-v2's execution plane — agentzero's proven shape). The command
 // runs with the ward root as its working directory for the whole
 // invocation; env is scrubbed to a safe allowlist plus ward vars; the
@@ -29,17 +29,17 @@ const (
 // else is scrubbed — no credentials leak into ward processes).
 var shellEnvAllow = []string{"PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR"}
 
-// ShellTool is ward_shell(command, timeout_seconds?) — offered to
+// ShellTool is shell(command, timeout_seconds?) — offered to
 // hosted runs (root AND children: children execute inside the ward).
 type ShellTool struct{ Host *Host }
 
 // Name implements Tool.
-func (t ShellTool) Name() string { return "ward_shell" }
+func (t ShellTool) Name() string { return "shell" }
 
 // Def implements Tool.
 func (t ShellTool) Def() Def {
 	return Def{
-		Name: "ward_shell",
+		Name: "shell",
 		Description: "Run a bash command INSIDE the active ward (its directory is the working directory for the whole command). " +
 			"Use it to execute the ward's apps/ scripts, install deps, transform data, and generate reports/. " +
 			"Env is scrubbed; combined output caps at 256KB; default timeout 120s (max 300). " +
@@ -80,15 +80,15 @@ func (t ShellTool) Exec(ctx context.Context, args string) Result {
 		TimeoutSeconds *int   `json:"timeout_seconds"`
 	}
 	if err := decodeArgs(args, &parsed); err != nil {
-		return Result{Err: fmt.Errorf("ward_shell: %w", err)}
+		return Result{Err: fmt.Errorf("shell: %w", err)}
 	}
 	command := strings.TrimSpace(parsed.Command)
 	if command == "" {
-		return Result{Err: fmt.Errorf("ward_shell: command must not be empty")}
+		return Result{Err: fmt.Errorf("shell: command must not be empty")}
 	}
 	view := t.Host.Active()
 	if view == nil {
-		return Result{Err: fmt.Errorf("ward_shell: no active ward — call ward_use(name=...) first")}
+		return Result{Err: fmt.Errorf("shell: no active ward — call ward_use(name=...) first")}
 	}
 	timeout := shellDefaultTimeout
 	if parsed.TimeoutSeconds != nil {

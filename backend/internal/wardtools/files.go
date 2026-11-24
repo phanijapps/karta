@@ -12,12 +12,12 @@ import (
 	"zbot/backend/internal/wards"
 )
 
-// FileTools are the ward-scoped file plane: ward_read, ward_write,
+// FileTools are the ward-scoped file plane: read, write,
 // ward_list — offered to root runs AND delegated children (children act
 // through the same bounded plane; STRUCTURAL ward actions are the
 // root-only guard). Every path resolves inside the ACTIVE ward:
 // traversal above it, symlinked directories, and calls without an
-// active ward are typed errors. ward_write reports lint findings for
+// active ward are typed errors. write reports lint findings for
 // the touched path as a WARNING line (the write stands; the conf
 // speaks through lint).
 type FileTools struct {
@@ -27,7 +27,7 @@ type FileTools struct {
 // Def describes the read tool.
 func (f FileTools) readDef() Def {
 	return Def{
-		Name:        "ward_read",
+		Name:        "read",
 		Description: "Read a file inside the ACTIVE ward (path relative to the ward root). Bounded: paths outside the ward are refused.",
 		ParamsJSON:  `{"type":"object","properties":{"path":{"type":"string","description":"ward-relative path"}},"required":["path"]}`,
 	}
@@ -36,7 +36,7 @@ func (f FileTools) readDef() Def {
 // Def describes the write tool.
 func (f FileTools) writeDef() Def {
 	return Def{
-		Name:        "ward_write",
+		Name:        "write",
 		Description: "Write a file inside the ACTIVE ward (path relative to the ward root; parent directories are created as the layout allows). The result notes layout-lint findings as warnings — the write stands.",
 		ParamsJSON:  `{"type":"object","properties":{"path":{"type":"string","description":"ward-relative path"},"content":{"type":"string","description":"full file content"}},"required":["path","content"]}`,
 	}
@@ -51,10 +51,10 @@ func (f FileTools) listDef() Def {
 	}
 }
 
-// ReadTool is the exposed ward_read.
+// ReadTool is the exposed read (ward-scoped).
 type ReadTool struct{ F FileTools }
 
-// Def describes ward_read.
+// Def describes read.
 func (t ReadTool) Def() Def { return t.F.readDef() }
 
 // Exec reads one bounded file.
@@ -69,16 +69,16 @@ func (t ReadTool) Exec(ctx context.Context, argsJSON string) Result {
 	}
 	raw, err := os.ReadFile(full)
 	if err != nil {
-		return Result{Err: fmt.Errorf("ward_read: %w", err)}
+		return Result{Err: fmt.Errorf("read: %w", err)}
 	}
 	t.F.Host.RefreshDigest() // reading observes the current ward state
 	return Result{Output: string(raw)}
 }
 
-// WriteTool is the exposed ward_write.
+// WriteTool is the exposed write (ward-scoped).
 type WriteTool struct{ F FileTools }
 
-// Def describes ward_write.
+// Def describes write.
 func (t WriteTool) Def() Def { return t.F.writeDef() }
 
 // Exec writes one bounded file with lint-voiced warnings.
@@ -91,17 +91,17 @@ func (t WriteTool) Exec(ctx context.Context, argsJSON string) Result {
 		return Result{Err: err}
 	}
 	if args.Path == "" {
-		return Result{Err: errors.New("ward_write: path is required")}
+		return Result{Err: errors.New("write: path is required")}
 	}
 	full, err := t.F.resolve(args.Path)
 	if err != nil {
 		return Result{Err: err}
 	}
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		return Result{Err: fmt.Errorf("ward_write: %w", err)}
+		return Result{Err: fmt.Errorf("write: %w", err)}
 	}
 	if err := os.WriteFile(full, []byte(args.Content), 0o644); err != nil {
-		return Result{Err: fmt.Errorf("ward_write: %w", err)}
+		return Result{Err: fmt.Errorf("write: %w", err)}
 	}
 	out := "wrote " + args.Path
 	if t.F.Host.RefreshDigest() {

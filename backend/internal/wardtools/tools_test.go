@@ -267,7 +267,7 @@ func TestOnEnterFires(t *testing.T) {
 	}
 }
 
-// TestShellTool (task 2.1): ward_shell runs bash pinned to the ward,
+// TestShellTool (task 2.1): shell runs bash pinned to the ward,
 // scrubs env, caps output, times out, and refuses without a ward.
 // Non-zero exits are RESULTS (model-visible), not tool errors.
 func TestShellTool(t *testing.T) {

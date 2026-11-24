@@ -131,10 +131,15 @@ func TestSendOneToolRound(t *testing.T) {
 
 func TestSendToolRoundCap(t *testing.T) {
 	// Model requests tools forever; the final round offers none and the
-	// scripted last response is a plain answer.
+	// scripted last response is a plain answer (script MaxToolRounds
+	// tool rounds, then the answer).
 	fc := &fakeCompleter{responses: []providers.ChatResponse{
 		toolCallResp("c1", "echo", `{"text":"a"}`),
 		toolCallResp("c2", "echo", `{"text":"b"}`),
+		toolCallResp("c3", "echo", `{"text":"c"}`),
+		toolCallResp("c4", "echo", `{"text":"d"}`),
+		toolCallResp("c5", "echo", `{"text":"e"}`),
+		toolCallResp("c6", "echo", `{"text":"f"}`),
 		plainResp("stopped asking"),
 	}}
 	svc, _ := newService(t, fc)
@@ -545,7 +550,7 @@ func TestChatToolPlaneIsWardAndMCPOnly(t *testing.T) {
 	}
 	resolve := func(ctx context.Context, p providers.Provider) (string, error) { return "", nil }
 	svc := New(st, lookup, resolve, fc, emptyBase{}, eventbus.New(), nil)
-	mounted := []string{"ward_use", "ward_read", "ward_write", "ward_shell", "mcp_ddg_search"}
+	mounted := []string{"ward_use", "read", "write", "shell", "mcp_ddg_search"}
 	svc.SetExtraTools(func() []tools.Tool {
 		var out []tools.Tool
 		for _, n := range mounted {
