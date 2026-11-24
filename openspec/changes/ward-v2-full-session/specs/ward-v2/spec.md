@@ -39,11 +39,14 @@ Each ward SHALL have a warden session: a persistent research session
 sidebar's ward row selects the warden; sends route through the full
 research pipeline in that session. Wardens appear once per ward.
 
-#### Scenario: Selecting a ward's bot opens its warden
+#### Scenario: Selecting a ward opens its latest session
 
-- **WHEN** the user selects a ward in the sidebar's Ward Bots group
-- **THEN** the warden session activates (created if absent) with its
-  transcript and the ward's context pre-loaded
+- **WHEN** the user selects a ward's unique row in the sidebar's Ward
+  Bots group
+- **THEN** the ward expands to show its sessions and its LAST
+  EXECUTED session activates with its transcript and the ward's
+  context pre-loaded; a ward with no sessions ensures its warden and
+  activates that
 
 #### Scenario: The warden survives restarts
 

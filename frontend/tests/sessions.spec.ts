@@ -123,14 +123,14 @@ test('sidebar groups sessions and switching swaps the transcript', async ({ page
   await mockStates(page);
   await page.goto('/');
 
-  // Groups: Chat / Ward Bots / Research — membership proven per group
-  // list, not just globally.
+  // Groups: Chat / Ward Bots (ONE unique row per ward) / Research.
   const nav = page.getByRole('navigation', { name: 'Workspace navigation' });
   const chatGroup = nav.getByRole('list', { name: 'Sessions' }).locator('li', { hasText: 'Chat' }).first();
   const wardGroup = nav.getByRole('list', { name: 'Sessions' }).locator('li', { hasText: 'Ward Bots' }).first();
   const researchGroup = nav.getByRole('list', { name: 'Sessions' }).locator('li', { hasText: 'Research' }).first();
   await expect(chatGroup.getByRole('button', { name: /Quick Chat/ })).toBeVisible();
-  await expect(wardGroup.getByRole('button', { name: /stock-analysis/ })).toHaveCount(2); // warden placeholder + the bound session
+  await expect(wardGroup.getByRole('button', { name: /stock-analysis/ })).toHaveCount(1); // UNIQUE
+  await expect(wardGroup.getByRole('button', { name: /1 session ·/ })).toBeVisible();
   await expect(researchGroup.getByRole('button', { name: /Cloud Pricing/ })).toBeVisible();
   await expect(chatGroup.getByRole('button', { name: /stock-analysis/ })).toHaveCount(0);
 
@@ -139,10 +139,11 @@ test('sidebar groups sessions and switching swaps the transcript', async ({ page
   await expect(page.getByLabel('Your message')).toContainText('quick hello');
   await expect(page.getByLabel('Active ward')).toHaveCount(0);
 
-  // Switch to the ward-bound research session: transcript + ward bar +
-  // the active marker MOVES with the selection.
-  await wardGroup.getByRole('button', { name: /stock-analysis now/ }).click();
-  await expect(wardGroup.getByRole('button', { name: /stock-analysis now/ })).toHaveAttribute('aria-current', 'true');
+  // Select the WARD: it expands and its LAST EXECUTED session activates.
+  await wardGroup.locator('.ward-row').click();
+  const child = wardGroup.locator('.session.child');
+  await expect(child).toHaveCount(1); // the ward's session renders nested
+  await expect(child).toHaveAttribute('aria-current', 'true');
   await expect(chatGroup.getByRole('button', { name: /Quick Chat/ })).not.toHaveAttribute('aria-current', 'true');
   await expect(page.getByLabel('Your message')).toContainText('AMD vs NVIDIA?');
   await expect(page.getByLabel('Active ward')).toContainText('stock-analysis');
@@ -155,7 +156,7 @@ test('sidebar groups sessions and switching swaps the transcript', async ({ page
   await expect(page.getByLabel('Delegation')).toContainText('research-agent');
 
   // Back to quick chat: lean again, no ward bar, no analysis card.
-  await nav.getByRole('button', { name: /Quick Chat/ }).click();
+  await chatGroup.getByRole('button', { name: /Quick Chat/ }).click();
   await expect(page.getByLabel('Your message')).toContainText('quick hello');
   await expect(page.getByLabel('Active ward')).toHaveCount(0);
   await expect(page.getByLabel('Task Analysis')).toHaveCount(0);
@@ -223,7 +224,7 @@ test('context panel: ward card + skills + agents for a ward-bound session; none 
 
   // Open the right panel and switch to the ward-bound session.
   await page.getByRole('button', { name: 'Toggle right sidebar' }).click();
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: /stock-analysis now/ }).click();
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
   const panel = page.getByRole('complementary', { name: 'Session context' });
   await expect(panel.getByLabel('Active ward')).toBeVisible();
   await expect(panel.getByText('Stock Analysis — equity research method')).toBeVisible();
@@ -271,7 +272,7 @@ test('switching sessions mid-send does not leak live output; returning reconcile
     return new Promise(() => {}); // never resolves: the send stays live
   });
   await page.goto('/');
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: /stock-analysis now/ }).click();
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
   await page.getByLabel('Research question').fill('long question');
   await page.getByLabel('Research question').press('Enter');
   await expect.poll(() => streamStarted).toBe(true);
@@ -286,7 +287,7 @@ test('switching sessions mid-send does not leak live output; returning reconcile
 
   // Back to the research session: its transcript stands (the terminal
   // exchange never arrived; reconciliation is the daemon's truth).
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: /stock-analysis now/ }).click();
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
   await expect(page.getByLabel('Your message')).toContainText('AMD vs NVIDIA?');
   await expect(page.getByLabel('Assistant message').last()).toContainText('NVIDIA holds 90-98%');
 });
@@ -313,12 +314,20 @@ test('the draft clears the instant a send starts (not on completion)', async ({ 
   await expect(input).toHaveValue('');
 });
 
-test('ward rows select wardens: ensure on first select, reuse after, one row per ward', async ({ page }) => {
+test('unique ward rows: expand + latest selected; empty wards ensure their warden', async ({ page }) => {
   await mockBase(page);
-  // A ward WITHOUT a warden in the roster + an ordinary bound session
-  // (NOT the warden) that must not be picked as the ward's bot.
-  // Stateful roster: the warden joins the list once ensured.
+  // Two wards: stock-analysis (one bound session r-stock) and
+  // empty-ward (no sessions — selecting it must ENSURE the warden).
   let ensured = 0;
+  await page.route('**/api/wards', (route) =>
+    route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ vault_root: '/v', wards: [
+        { name: 'stock-analysis', archetype: 'research', lint_status: 'clean', finding_count: 0 },
+        { name: 'empty-ward', archetype: 'generic', lint_status: 'clean', finding_count: 0 },
+      ] }),
+    }),
+  );
   await page.route((url) => url.pathname === '/api/sessions', (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     const sessions: unknown[] = [
@@ -326,27 +335,19 @@ test('ward rows select wardens: ensure on first select, reuse after, one row per
       { id: 'r-stock', type: 'research', status: 'completed', ward: 'stock-analysis', updated_at: NOW },
     ];
     if (ensured > 0) {
-      sessions.push({ id: 'ward-stock-analysis', type: 'research', status: 'created', ward: 'stock-analysis', updated_at: NOW });
+      sessions.push({ id: 'ward-empty-ward', type: 'research', status: 'created', ward: 'empty-ward', updated_at: NOW });
     }
     return route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ sessions, truncated: false }),
     });
   });
-  await page.route('**/api/wards', (route) =>
-    route.fulfill({
-      status: 200, contentType: 'application/json',
-      body: JSON.stringify({ vault_root: '/v', wards: [
-        { name: 'stock-analysis', archetype: 'research', lint_status: 'clean', finding_count: 0 },
-      ] }),
-    }),
-  );
-  await page.route((url) => url.pathname === '/api/wards/stock-analysis/warden', (route) => {
+  await page.route((url) => url.pathname === '/api/wards/empty-ward/warden', (route) => {
     if (route.request().method() !== 'POST') return route.fallback();
     ensured++;
     return route.fulfill({
       status: 201, contentType: 'application/json',
-      body: JSON.stringify({ id: 'ward-stock-analysis', type: 'research', status: 'created', ward: 'stock-analysis', created_at: NOW, updated_at: NOW }),
+      body: JSON.stringify({ id: 'ward-empty-ward', type: 'research', status: 'created', ward: 'empty-ward', created_at: NOW, updated_at: NOW }),
     });
   });
   await mockTranscripts(page);
@@ -355,25 +356,32 @@ test('ward rows select wardens: ensure on first select, reuse after, one row per
 
   const nav = page.getByRole('navigation', { name: 'Workspace navigation' });
   const group = nav.getByRole('list', { name: 'Sessions' }).locator('li', { hasText: 'Ward Bots' }).first();
-  // The ordinary bound session renders; the ward itself renders a row
-  // too (its warden doesn't exist yet).
-  await expect(group.getByRole('button', { name: /r-stock|stock-analysis/ })).toHaveCount(2);
 
-  // Selecting the WARD row ensures the warden (not r-stock).
-  await group.getByRole('button', { name: /stock-analysis warden · tap to open/ }).click();
+  // ONE unique row per ward (both wards), sessions hidden until expanded.
+  await expect(group.locator('.ward-row')).toHaveCount(2);
+  await expect(group.locator('.session.child')).toHaveCount(0);
+
+  // Selecting a ward WITH sessions: expands, the LAST EXECUTED session
+  // (r-stock) activates — NO warden ensure.
+  await group.locator('.ward-row', { hasText: 'stock-analysis' }).click();
+  await expect(group.locator('.session.child', { hasText: 'r-stock' })).toHaveCount(1);
+  await expect(group.locator('.session.child', { hasText: 'r-stock' })).toHaveAttribute('aria-current', 'true');
+  expect(ensured).toBe(0);
+  await expect(page.getByLabel('Your message')).toContainText('AMD vs NVIDIA?');
+
+  // Selecting a ward WITHOUT sessions: the warden is ENSURED, becomes
+  // its child, and activates.
+  await group.locator('.ward-row', { hasText: 'empty-ward' }).click();
   await expect.poll(() => ensured).toBe(1);
+  await expect(group.locator('.ward-row', { hasText: 'empty-ward' })).toHaveAttribute('aria-expanded', 'true');
+  await expect(group.locator('.session.child', { hasText: 'Warden' })).toHaveAttribute('aria-current', 'true');
   await expect(page.getByLabel('Research question')).toBeVisible();
-  // Post-ensure: the warden session row REPLACES the placeholder (no
-  // duplicate row); the ordinary bound session still renders.
-  await page.waitForTimeout(400);
-  await expect(group.getByRole('button', { name: /warden · tap to open/ })).toHaveCount(0);
-  await expect(group.getByRole('button', { name: /stock-analysis/ })).toHaveCount(2);
-  // A warden session carrying its id (kind session, id ward-*) selects
-  // WITHOUT re-ensuring: switch away and select the warden row.
-  await nav.getByRole('button', { name: /Quick Chat/ }).click();
-  await group.getByRole('button', { name: /stock-analysis/ }).first().click();
-  await page.waitForTimeout(400);
-  expect(ensured).toBe(1); // reuse, not re-ensure
+
+  // Re-selecting the ward reuses the warden (no re-ensure).
+  await nav.getByRole('list', { name: 'Sessions' }).locator('li', { hasText: 'Chat' }).first().getByRole('button', { name: /Quick Chat/ }).click();
+  await group.locator('.ward-row', { hasText: 'empty-ward' }).click();
+  await page.waitForTimeout(300);
+  expect(ensured).toBe(1);
 });
 
 test('research runs stream their work live (Timeline SSE → work stream)', async ({ page }) => {
@@ -399,7 +407,7 @@ test('research runs stream their work live (Timeline SSE → work stream)', asyn
     return route.fulfill({ status: 200, contentType: 'text/event-stream', body: frames });
   });
   await page.goto('/');
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: /stock-analysis now/ }).click();
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
   await page.getByLabel('Research question').fill('live streaming check');
   await page.getByLabel('Research question').press('Enter');
   await expect.poll(() => sendStarted).toBe(true);

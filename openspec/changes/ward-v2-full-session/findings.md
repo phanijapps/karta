@@ -135,6 +135,15 @@ receipt.**
 **task verify: exit 0** (gates + codegen zero drift + lint 0 + full
 suites + budget OK + 89 Playwright).
 
+**Post-review UX refinement (operator direction):** the sidebar's
+Ward Bots group renders ONE UNIQUE row per ward (session count +
+recency hint, sorted most-recently-used first). Selecting a ward
+EXPANDS its sessions (nested rows: the warden labeled, others by
+title; recency-ordered) and activates the ward's LAST EXECUTED
+session; a ward with no sessions ensures its warden. A bound active
+session auto-expands its ward. (Also caught + fixed a Svelte 5
+violation: state written inside $derived — moved to $effect.)
+
 **LIVE full-session smoke (5.2's verify)**: warden run in
 stock-analysis — mcp_ddg-search_search executed (DDG bot-blocks
 results; plane proven), ward_shell ran `echo shell-works && date`

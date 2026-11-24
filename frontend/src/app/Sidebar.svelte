@@ -62,22 +62,45 @@
       {/if}
     </ul></li>
 
-    <!-- Ward Bots: every ward renders a row — its live warden session,
-         or the ward itself (select → ensure the warden) -->
+    <!-- Ward Bots: ONE unique row per ward — select to expand its
+         sessions and activate the last executed -->
     <li aria-labelledby="ward-group"><p class="group-label" id="ward-group">Ward Bots</p>
     <ul class="group">
-      {#each groups.wardBots as row (row.kind + ":" + (row.kind === "session" ? row.session.id : row.ward))}
+      {#each groups.wardBots as group (group.ward)}
         <li>
-          {#if row.kind === 'session'}
-            <button class="session" class:active={sessions.activeId === row.session.id} aria-current={sessions.activeId === row.session.id ? 'true' : undefined} onclick={() => onselect(row.session.id)} title={row.ward}>
-              <span class="icon ward"><Folder size={16} aria-hidden="true" /></span>
-              <span class="meta"><span class="name">{row.ward}</span><span class="sub">{timeHint(row.session.updated_at)}</span></span>
-            </button>
-          {:else}
-            <button class="session" title={`${row.ward} — start its warden`} onclick={() => onselectWard(row.ward)}>
-              <span class="icon ward"><Folder size={16} aria-hidden="true" /></span>
-              <span class="meta"><span class="name">{row.ward}</span><span class="sub">warden · tap to open</span></span>
-            </button>
+          <button
+            class="session ward-row"
+            class:active={sessions.activeWard === group.ward}
+            aria-expanded={sessions.expandedWard === group.ward}
+            onclick={() => onselectWard(group.ward)}
+            title={group.ward + (group.sessions.length ? ` — ${group.sessions.length} session(s)` : ' — start its warden')}
+          >
+            <span class="icon ward"><Folder size={16} aria-hidden="true" /></span>
+            <span class="meta">
+              <span class="name">{group.ward}</span>
+              <span class="sub">{group.sessions.length ? `${group.sessions.length} session${group.sessions.length > 1 ? 's' : ''} · ${timeHint(group.sessions[0].session.updated_at)}` : 'warden · tap to open'}</span>
+            </span>
+            <span class="chev" aria-hidden="true">{sessions.expandedWard === group.ward ? '▾' : '▸'}</span>
+          </button>
+          {#if sessions.expandedWard === group.ward}
+            <ul class="ward-sessions">
+              {#each group.sessions as { session, isWarden } (session.id)}
+                <li>
+                  <button
+                    class="session child"
+                    class:active={sessions.activeId === session.id}
+                    aria-current={sessions.activeId === session.id ? 'true' : undefined}
+                    onclick={() => onselect(session.id)}
+                    title={isWarden ? `${group.ward} warden` : (session.title ?? session.id)}
+                  >
+                    <span class="meta">
+                      <span class="name">{isWarden ? 'Warden' : (session.title || session.id.slice(0, 14))}</span>
+                      <span class="sub">{timeHint(session.updated_at)}</span>
+                    </span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
           {/if}
         </li>
       {:else}
@@ -134,6 +157,12 @@
   .name { font-size: 0.82rem; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .sub { font-size: 0.68rem; color: var(--ds-color-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .empty { padding: var(--ds-space-1) var(--ds-space-2); font-size: 0.72rem; color: var(--ds-color-muted); margin: 0; list-style: none; }
+  .ward-row .chev { flex-shrink: 0; color: var(--ds-color-muted); font-size: .7rem; }
+  .ward-sessions { display: grid; gap: 2px; margin: 0 0 .15rem 1.05rem; padding: 0 0 0 .35rem; list-style: none; border-left: 1px solid var(--ds-color-border); }
+  .session.child { min-height: 32px; padding: .25rem .5rem; }
+  .session.child .name { font-size: .78rem; }
+  .session.child .sub { font-size: .62rem; }
+  .rail .ward-sessions, .rail .chev { display: none; }
   .new-research { display: inline-flex; align-items: center; justify-content: center; gap: var(--ds-space-2); margin: var(--ds-space-2); padding: var(--ds-space-2); min-height: 36px; border-radius: 8px; border: 1px solid color-mix(in oklch, var(--ds-color-primary, #6366f1) 50%, transparent); background: color-mix(in oklch, var(--ds-color-primary, #6366f1) 12%, transparent); color: var(--ds-color-primary, #6366f1); font-size: 0.8rem; font-weight: 500; cursor: pointer; }
   .new-research:hover { background: var(--ds-color-primary, #6366f1); color: var(--ds-color-on-primary, #fff); }
   .new-research:disabled { opacity: 0.5; cursor: wait; }

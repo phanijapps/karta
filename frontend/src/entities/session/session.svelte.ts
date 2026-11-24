@@ -15,13 +15,20 @@ import {
   type SessionView,
 } from '../../shared/api/client';
 
-export type WardBotRow =
-  | { kind: 'session'; session: SessionView; ward: string }
-  | { kind: 'ward'; ward: string; title: string };
+/** One UNIQUE ward row: the ward plus its sessions (recency-ordered —
+ * index 0 is the last executed). The warden (ward-<name>) is tagged. */
+export type WardGroup = {
+  ward: string;
+  title: string;
+  sessions: { session: SessionView; isWarden: boolean }[];
+  /** The session to activate when the ward is selected (the last
+   * executed; the warden when it is the only one). */
+  latestId: string;
+};
 
 export type SessionGroups = {
   chat: SessionView | null;
-  wardBots: WardBotRow[];
+  wardBots: WardGroup[];
   research: SessionView[];
 };
 
@@ -36,6 +43,8 @@ export function createSessions() {
   // The ward roster (v2): wards WITHOUT a live session still render as
   // rows — selecting one ensures the ward's warden session.
   let wards = $state<{ name: string; title?: string }[]>([]);
+  // The EXPANDED ward (its sessions render under it). Null = collapsed.
+  let expandedWard = $state<string | null>(null);
   // The ACTIVE session's latest intent analysis (the state surface —
   // the analysis card and the context panel render from this, never
   // from transcript parsing).
@@ -47,8 +56,9 @@ export function createSessions() {
   let sendError = $state('');
 
   const groups = $derived.by<SessionGroups>(() => {
-    // Ward name → ALL its bound sessions (a ward can hold its warden
-    // AND ordinary research conversations — none may be dropped).
+    // Ward name → its bound sessions, RECENCY-ORDERED (the roster is
+    // recency-sorted globally, so insertion preserves that order —
+    // index 0 is the ward's last-executed session).
     const byWard = new Map<string, SessionView[]>();
     const g: SessionGroups = { chat: null, wardBots: [], research: [] };
     for (const s of sessions) {
@@ -60,37 +70,35 @@ export function createSessions() {
       // Legacy chat-typed engine sessions (pre-migration goal runs)
       // stay out of the navigator until run-state surfacing lands.
     }
-    // Every ward renders its WARDEN row first — the session whose ID
-    // IS ward-<name> — else the ward itself (select → ensure). The
-    // ward's OTHER bound sessions render after it (real conversations,
-    // not its bot); bound sessions of wards absent from the roster
-    // (deleted vault entries) still render.
-    const wardenOf = (ward: string): SessionView | undefined =>
-      (byWard.get(ward) ?? []).find((s) => s.id === `ward-${ward}`);
-    const knownWards = new Set(wards.map((w) => w.name));
-    for (const w of wards) {
-      const bound = byWard.get(w.name) ?? [];
-      const warden = wardenOf(w.name);
-      if (warden) {
-        g.wardBots.push({ kind: 'session', session: warden, ward: w.name });
-        for (const s of bound) {
-          if (s.id !== warden.id) g.wardBots.push({ kind: 'session', session: s, ward: w.name });
-        }
-      } else {
-        g.wardBots.push({ kind: 'ward', ward: w.name, title: w.title ?? w.name });
-        for (const s of bound) g.wardBots.push({ kind: 'session', session: s, ward: w.name });
-      }
+    // ONE row per ward (unique): the ward + its sessions nested; the
+    // latest session is the selection target. Wards absent from the
+    // roster but holding sessions still group (deleted vault entries).
+    const rosterNames = new Set(wards.map((w) => w.name));
+    const names = new Set<string>([...rosterNames, ...byWard.keys()]);
+    for (const name of names) {
+      const bound = byWard.get(name) ?? [];
+      const meta = wards.find((w) => w.name === name);
+      g.wardBots.push({
+        ward: name,
+        title: meta?.title ?? name,
+        sessions: bound.map((s) => ({ session: s, isWarden: s.id === `ward-${name}` })),
+        latestId: bound[0]?.id ?? '',
+      });
     }
-    for (const [ward, bound] of byWard) {
-      if (!knownWards.has(ward)) {
-        for (const s of bound) g.wardBots.push({ kind: 'session', session: s, ward });
-      }
-    }
+    // Most recently used ward first (its newest session's timestamp).
+    const at = (w: WardGroup) => w.sessions[0]?.session.updated_at ?? '';
+    g.wardBots.sort((a, b) => (at(b) ?? '').localeCompare(at(a) ?? ''));
     return g;
   });
   const active = $derived.by<SessionView | null>(
     () => sessions.find((s) => s.id === activeId) ?? null,
   );
+  // A bound active session auto-expands its ward (selecting any
+  // session of a ward reveals its siblings) — an EFFECT, never a
+  // state write inside the derived.
+  $effect(() => {
+    if (active?.ward) expandedWard = active.ward;
+  });
   const isResearch = $derived.by(() => active?.type === 'research');
   const activeWard = $derived.by(() => active?.ward ?? '');
 
@@ -198,17 +206,20 @@ export function createSessions() {
     void loadAnalysis(sessionId);
   }
 
-  /** Select a ward's bot: its WARDEN session (id ward-<name>), or
-   * ensure it. Ordinary bound sessions are selected by their own row. */
+  /** Select a WARD (its unique row): expand it and activate its LAST
+   * EXECUTED session — the warden is ensured only when the ward has
+   * no sessions at all. Selecting a session row picks that one. */
   async function selectWard(ward: string) {
-    const row = groups.wardBots.find((r) => r.ward === ward);
-    if (row && row.kind === 'session' && row.session.id === `ward-${ward}`) {
-      await select(row.session.id);
-      return; // the warden exists in the roster: reuse, no re-ensure
+    expandedWard = ward;
+    const group = groups.wardBots.find((g) => g.ward === ward);
+    if (group && group.latestId) {
+      await select(group.latestId);
+      return;
     }
     const res = await ensureWarden(ward);
     if (res.ok) {
       await loadRoster();
+      expandedWard = ward;
       await select(res.sessionId);
     } else {
       sendError = res.error;
@@ -283,6 +294,8 @@ export function createSessions() {
     get rosterError() { return rosterError; },
     get analysis() { return analysis; },
     applyLiveAnalysis,
+    get expandedWard() { return expandedWard; },
+    set expandedWard(value: string | null) { expandedWard = value; },
     get sendError() { return sendError; },
     set sendError(value: string) { sendError = value; },
   };
