@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { ArrowUp, Brain, Sparkles, Wrench, Microscope, FolderOpen, ChevronDown, RefreshCw, Users } from '@lucide/svelte';
+  import { ArrowUp, Brain, Sparkles, Wrench, Microscope, FolderOpen, ChevronDown, RefreshCw, Users, Info, X } from '@lucide/svelte';
   import { sendChatMessage, streamChatMessage, continueSession } from '../../shared/api/client';
   import { createTimeline } from '../../shared/sse/timeline.svelte';
   import type { Sessions } from '../../entities/session/session.svelte';
@@ -55,13 +55,20 @@
     return () => timeline.close();
   });
   const canSend = $derived(draft.trim() !== '' && !sending);
-  const analysisCard = $derived.by<Record<string, any> | null>(() => {
-    const a = sessions.analysis as Record<string, any> | null;
-    if (!a || !sessions.isResearch) return null;
-    if (a.status === 'bypassed') return null; // trivial goal: no card
-    return a;
-  });
   const isResearch = $derived(sessions.isResearch);
+  // The Task Analysis popover (the (i) chip): open state + the
+  // trigger ref for focus return on close.
+  let analysisOpen = $state(false);
+  let analysisTrigger = $state<HTMLButtonElement | null>(null);
+  const analysisAvailable = $derived(isResearch && sessions.analysis !== null && (sessions.analysis as Record<string, any>).status !== 'bypassed');
+  $effect(() => {
+    if (analysisOpen) void tick().then(() => document.getElementById('analysis-popover')?.focus());
+  });
+  async function closeAnalysis() {
+    analysisOpen = false;
+    await tick();
+    analysisTrigger?.focus();
+  }
   const ward = $derived(sessions.activeWard);
 
   /** Delegations from assistant tool-call intents: agent + task pairs
@@ -134,7 +141,7 @@
     streaming = true;
     reasoning = '';
     content = '';
-    thinkingOpen = true;
+    thinkingOpen = false; // the brain: collapsed by default, click to open
     announced = '';
     budgetRemaining = null;
     sessions.sendError = '';
@@ -162,7 +169,6 @@
             if (d.kind === 'reasoning') {
               reasoning += d.text;
             } else {
-              if (content === '' && reasoning !== '') thinkingOpen = false;
               content += d.text;
             }
           }, sessionId);
@@ -223,46 +229,80 @@
   {/if}
   <span class="sr-only" aria-live="polite">{announced}</span>
   <div class="transcript" bind:this={transcriptEl} aria-label="Conversation transcript">
-    {#if analysisCard}
-      <!-- Task Analysis card: the research exchange header, rendered
-             from SESSION STATE (never transcript parsing) — shown even
-             while the first exchange is still pending. -->
-      <article class="analysis-card" aria-label="Task Analysis">
+    {#if isResearch}
+      <!-- Task Analysis: a compact chip + (i) — the analysis popover
+           (intent, complexity, budget, approach, ward, skills, dropped,
+           degradation reason) fed by SESSION STATE + the live SSE
+           event. Shown for every research session, pending or not. -->
+      <div class="analysis-chip-row">
+        <span class="analysis-chip" class:pending={!analysisAvailable}>
+          <Microscope size={13} aria-hidden="true" />
+          {#if analysisAvailable}
+            <span class="chip-intent">{(sessions.analysis as Record<string, any>).primary_intent || 'Analysis'}</span>
+            {#if (sessions.analysis as Record<string, any>).complexity}
+              <span class="badge complexity" data-complexity={(sessions.analysis as Record<string, any>).complexity}>{(sessions.analysis as Record<string, any>).complexity}</span>
+            {/if}
+            {#if (sessions.analysis as Record<string, any>).ward_name}
+              <span class="badge ward"><FolderOpen size={11} aria-hidden="true" /> {(sessions.analysis as Record<string, any>).ward_name}</span>
+            {/if}
+          {:else}
+            <span class="chip-intent muted">{sending ? 'Analyzing…' : 'No analysis yet'}</span>
+          {/if}
+          <button
+            type="button"
+            class="info-btn"
+            bind:this={analysisTrigger}
+            aria-label="Task analysis details"
+            aria-expanded={analysisOpen}
+            aria-controls="analysis-popover"
+            disabled={!analysisAvailable}
+            onclick={() => (analysisOpen = !analysisOpen)}
+          ><Info size={14} aria-hidden="true" /></button>
+        </span>
+      </div>
+    {/if}
+    {#if analysisOpen && analysisAvailable}
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div class="analysis-popover-wrap" role="presentation">
+        <div id="analysis-popover" class="analysis-popover" role="dialog" aria-label="Task Analysis" tabindex="-1" onkeydown={(e) => { if (e.key === 'Escape') void closeAnalysis(); }}>
           <header class="analysis-head">
             <Microscope size={16} aria-hidden="true" />
-            <strong>Research</strong>
-            {#if analysisCard.approach}
-              <span class="badge approach">{analysisCard.approach}</span>
+            <strong>Task Analysis</strong>
+            {#if (sessions.analysis as Record<string, any>).approach}
+              <span class="badge approach">{(sessions.analysis as Record<string, any>).approach}</span>
             {/if}
-            {#if analysisCard.complexity}
-              <span class="badge complexity" data-complexity={analysisCard.complexity}>{analysisCard.complexity}</span>
+            {#if (sessions.analysis as Record<string, any>).complexity}
+              <span class="badge complexity" data-complexity={(sessions.analysis as Record<string, any>).complexity}>{(sessions.analysis as Record<string, any>).complexity}</span>
             {/if}
-            {#if analysisCard.ward_name}
-              <span class="badge ward"><FolderOpen size={11} aria-hidden="true" /> {analysisCard.ward_name}</span>
+            {#if (sessions.analysis as Record<string, any>).ward_action}
+              <span class="badge ward"><FolderOpen size={11} aria-hidden="true" /> {(sessions.analysis as Record<string, any>).ward_name} · {(sessions.analysis as Record<string, any>).ward_action}</span>
             {/if}
+            <button type="button" class="icon-button pop-close" aria-label="Close task analysis" onclick={() => void closeAnalysis()}><X size={16} /></button>
           </header>
-          {#if analysisCard.primary_intent}
-            <dl class="analysis-meta">
-              <div><dt>Intent</dt><dd>{analysisCard.primary_intent}</dd></div>
-              {#if analysisCard.step_budget}
-                <div><dt>Budget</dt><dd>{analysisCard.step_budget} steps</dd></div>
-              {/if}
-            </dl>
-          {/if}
-          {#if analysisCard.recommended_skills?.length || analysisCard.dropped?.length}
+          <dl class="analysis-meta">
+            {#if (sessions.analysis as Record<string, any>).primary_intent}
+              <div><dt>Intent</dt><dd>{(sessions.analysis as Record<string, any>).primary_intent}</dd></div>
+            {/if}
+            {#if (sessions.analysis as Record<string, any>).step_budget}
+              <div><dt>Budget</dt><dd>{(sessions.analysis as Record<string, any>).step_budget} steps</dd></div>
+            {/if}
+            <div><dt>Status</dt><dd>{(sessions.analysis as Record<string, any>).status}</dd></div>
+          </dl>
+          {#if (sessions.analysis as Record<string, any>).recommended_skills?.length || (sessions.analysis as Record<string, any>).dropped?.length}
             <div class="skills-row" aria-label="Provisioned skills">
-              {#each analysisCard.recommended_skills ?? [] as s}
+              {#each (sessions.analysis as Record<string, any>).recommended_skills ?? [] as s}
                 <span class="skill-chip">{s}</span>
               {/each}
-              {#each analysisCard.dropped ?? [] as s}
+              {#each (sessions.analysis as Record<string, any>).dropped ?? [] as s}
                 <span class="skill-chip dropped" title="Recommended but not in the index — dropped">{s} ✕ dropped</span>
               {/each}
             </div>
           {/if}
-          {#if analysisCard.status === 'failed' && analysisCard.reason}
-            <p class="muted analysis-note">Analysis degraded: {analysisCard.reason}</p>
+          {#if (sessions.analysis as Record<string, any>).status === 'failed' && (sessions.analysis as Record<string, any>).reason}
+            <p class="muted analysis-note">Analysis degraded: {(sessions.analysis as Record<string, any>).reason}</p>
           {/if}
-        </article>
+        </div>
+      </div>
     {/if}
     {#if sessions.loading}
       <div class="chat-empty"><Sparkles size={28} strokeWidth={1.2} /><p class="muted">Loading the conversation…</p></div>
@@ -300,11 +340,25 @@
               </p>
             {/each}
           </article>
-        {:else if m.role === 'assistant' && m.tool_calls && !m.content}
-          <!-- Assistant tool-call INTENT row (no prose): compact, named -->
+        {:else if m.role === 'assistant' && m.tool_calls}
+          <!-- Assistant tool-call INTENT row: compact and named. Any
+               narration the model attached is PLAN TALK, not an answer —
+               it folds under "show" (thinking belongs to the brain). -->
           <article class="tool-row" aria-label="Tool call intent">
             <Wrench size={14} />
             <span class="tool-name">{toolCallNames(m).join(', ')}</span>
+            {#if m.reasoning}
+              <details class="thinking inline">
+                <summary><Brain size={12} aria-hidden="true" /> Thinking</summary>
+                <p class="muted">{m.reasoning}</p>
+              </details>
+            {/if}
+            {#if m.content}
+              <details class="tool-detail plan">
+                <summary>show</summary>
+                <p class="muted">{m.content}</p>
+              </details>
+            {/if}
           </article>
         {:else}
           <article class="bubble {m.role}" aria-label={m.role === 'user' ? 'Your message' : 'Assistant message'}>
@@ -440,11 +494,32 @@
   .tool-row:hover { background: var(--ds-color-hover, #2a2a2a); }
   .tool-name { color: var(--ds-color-text, #eee); font-weight: 500; white-space: nowrap; }
   .tool-detail summary { cursor: pointer; display: inline-flex; color: var(--ds-color-muted, #888); }
+  .tool-row .thinking.inline, .tool-row .tool-detail.plan { margin-left: .2rem; }
+  .tool-row .thinking.inline summary, .tool-row .tool-detail.plan summary { font-size: .72rem; }
+  .tool-row .thinking.inline p, .tool-row .tool-detail.plan p { max-width: 40rem; margin: .2rem 0 0; padding: .3rem .5rem; border-left: 2px solid var(--ds-color-border, #333); border-radius: 4px; background: var(--ds-color-field, #1a1a1a); font-size: .72rem; }
+  .thinking summary { cursor: pointer; display: inline-flex; gap: .35rem; align-items: center; list-style: none; }
   .tool-output { display: block; max-width: 40rem; max-height: 10rem; overflow: auto; padding: .3rem .5rem; margin-top: .2rem; border-radius: 4px; background: var(--ds-color-field, #1a1a1a); font-size: .72rem; white-space: pre-wrap; }
-  /* The Task Analysis card (research exchange header) */
-  .analysis-card { border: 1px solid var(--accent, var(--ds-color-primary, #6366f1)); border-radius: 12px; padding: .7rem 1rem; display: grid; gap: .4rem; background: var(--ds-color-surface, #1e1e1e); max-width: min(48rem, 90%); }
-  .analysis-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
-  .analysis-head strong { font-size: .9rem; }
+  /* Task Analysis: compact chip + (i) popover (fed by session state) */
+  .analysis-chip-row { display: flex; justify-self: start; max-width: min(48rem, 90%); }
+  .analysis-chip { position: relative; display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .4rem .3rem .65rem; border-radius: 999px; border: 1px solid var(--accent, var(--ds-color-primary, #6366f1)); background: var(--ds-color-surface, #1e1e1e); color: var(--accent, var(--ds-color-primary, #6366f1)); font-size: .76rem; }
+  .analysis-chip.pending { border-color: var(--ds-color-border, #333); color: var(--ds-color-muted, #888); }
+  .analysis-chip .chip-intent { max-width: 22rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
+  .analysis-chip .chip-intent.muted { font-weight: 400; }
+  /* Badges on the chip inherit its accent — the green ward badge on the
+     indigo chip failed AA contrast in the light theme. */
+  .analysis-chip .badge, .analysis-chip .badge.ward,
+  .analysis-popover .badge.ward { color: inherit; border-color: currentColor; }
+  .analysis-chip .info-btn { display: grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; border: 1px solid currentColor; background: transparent; color: inherit; cursor: pointer; }
+  .analysis-chip .info-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .analysis-chip .info-btn:hover:not(:disabled), .analysis-chip .info-btn[aria-expanded="true"] { background: var(--accent, var(--ds-color-primary, #6366f1)); color: var(--ds-color-on-primary, #fff); }
+  .analysis-popover-wrap { position: relative; display: flex; justify-self: start; width: min(48rem, 90%); }
+  .analysis-popover { width: 100%; border: 1px solid var(--accent, var(--ds-color-primary, #6366f1)); border-radius: 12px; padding: .7rem 1rem; display: grid; gap: .5rem; background: var(--ds-color-surface, #1e1e1e); box-shadow: 0 12px 32px rgb(0 0 0 / .35); outline: none; }
+  .analysis-popover .pop-close { margin-left: auto; }
+  .analysis-popover .analysis-meta { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: 0; font-size: .8rem; }
+  .analysis-popover .analysis-meta div { display: contents; }
+  .analysis-popover .analysis-meta dt { color: var(--ds-color-muted, #888); font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; }
+  .analysis-popover .analysis-meta dd { margin: 0; }
+  .analysis-popover .analysis-note { margin: 0; font-size: .76rem; }
   .badge { display: inline-flex; align-items: center; gap: .25rem; font-size: .7rem; padding: .15rem .55rem; border-radius: 999px; border: 1px solid var(--ds-color-border, #333); }
   .badge.approach { color: var(--accent, #6366f1); }
   .badge.complexity { font-weight: 600; }
@@ -462,7 +537,9 @@
   /* Dropped chips: explicit label + strikethrough carry the state —
    * NO opacity reduction (whole-element alpha breaks text contrast in
    * the light theme). */
-  .skill-chip.dropped { color: var(--ds-color-muted, #666); text-decoration: line-through; }
+  /* Dropped chips: full-contrast text + strikethrough + the ✕ label carry
+     the state (muted text on the tinted chip failed AA in light theme). */
+  .skill-chip.dropped { color: var(--ds-color-text, #eee); text-decoration: line-through; }
   /* Delegation tree */
   .del-tree { border: 1px solid var(--ds-color-border, #333); border-radius: 12px; padding: .5rem .8rem; background: var(--ds-color-surface, #1e1e1e); max-width: min(48rem, 90%); font-size: .78rem; }
   .del-title { display: flex; align-items: center; gap: .35rem; margin: 0 0 .3rem; font-size: .66rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-color-muted, #888); }
@@ -486,7 +563,10 @@
   .composer-region { padding: .75rem clamp(.75rem, 3vw, 2rem) .5rem; display: grid; gap: .4rem; border-top: 1px solid var(--ds-color-border, #333); background: var(--ds-color-sidebar, #161616); min-width: 0; max-width: 100%; overflow: hidden; }
   .ward-bar .leave-ward { margin-left: auto; background: none; border: none; color: var(--ds-color-muted, #888); font-size: .72rem; cursor: pointer; text-decoration: underline; }
   .ward-bar .ward-note { font-size: .68rem; }
-  .ward-bar { display: flex; align-items: center; gap: .45rem; padding: .35rem .7rem; border-radius: 8px; border: 1px solid color-mix(in oklch, var(--ds-color-success, #22c55e) 40%, transparent); background: color-mix(in oklch, var(--ds-color-success, #22c55e) 10%, transparent); font-size: .8rem; color: var(--ds-color-success, #22c55e); }
+  /* The ward strip: full-contrast text; the border + icon carry the ward
+     green (green text on the tinted strip failed AA in light theme). */
+  .ward-bar { display: flex; align-items: center; gap: .45rem; padding: .35rem .7rem; border-radius: 8px; border: 1px solid color-mix(in oklch, var(--ds-color-success, #22c55e) 40%, transparent); background: color-mix(in oklch, var(--ds-color-success, #22c55e) 10%, transparent); font-size: .8rem; color: var(--ds-color-text, #eee); }
+  .ward-bar :global(svg) { color: var(--ds-color-success, #22c55e); }
   .continue-bar { display: flex; align-items: center; justify-content: space-between; padding: .4rem .7rem; border-radius: 8px; border: 1px solid var(--ds-color-danger, #e5484d); font-size: .8rem; }
   .continue-btn { display: inline-flex; align-items: center; gap: .3rem; padding: .25rem .7rem; border-radius: 6px; border: 1px solid var(--ds-color-border, #333); background: var(--ds-color-surface, #1e1e1e); color: inherit; font-size: .78rem; cursor: pointer; }
   .continue-btn:hover { background: var(--ds-color-hover, #2a2a2a); }

@@ -147,19 +147,31 @@ test('sidebar groups sessions and switching swaps the transcript', async ({ page
   await expect(chatGroup.getByRole('button', { name: /Quick Chat/ })).not.toHaveAttribute('aria-current', 'true');
   await expect(page.getByLabel('Your message')).toContainText('AMD vs NVIDIA?');
   await expect(page.getByLabel('Active ward')).toContainText('stock-analysis');
-  // The research exchange renders its Task Analysis card (from session
-  // state: intent, budget, skills, dropped) + the delegation tree.
-  await expect(page.getByLabel('Task Analysis')).toContainText('comparative-research');
-  await expect(page.getByLabel('Task Analysis')).toContainText('8 steps');
-  await expect(page.getByLabel('Task Analysis')).toContainText('pdf');
-  await expect(page.getByLabel('Task Analysis').getByText('duckduckgo ✕ dropped')).toBeVisible();
+  // Task Analysis: a compact CHIP (intent + complexity + ward from
+  // session state) with an (i) that opens the detail popover — intent,
+  // budget, provisioned skills, dropped names. Escape closes and
+  // returns focus to the (i).
+  const chip = page.locator('.analysis-chip');
+  await expect(chip).toContainText('comparative-research');
+  await expect(chip).toContainText('stock-analysis');
+  await expect(page.getByRole('dialog', { name: 'Task Analysis' })).toHaveCount(0);
+  const info = page.getByRole('button', { name: 'Task analysis details' });
+  await info.click();
+  const pop = page.getByRole('dialog', { name: 'Task Analysis' });
+  await expect(pop).toContainText('8 steps');
+  await expect(pop).toContainText('pdf');
+  await expect(pop.getByText('duckduckgo ✕ dropped')).toBeVisible();
+  await expect(pop).toContainText('analyzed');
+  await page.keyboard.press('Escape');
+  await expect(pop).toHaveCount(0);
+  await expect(info).toBeFocused();
   await expect(page.getByLabel('Delegation')).toContainText('research-agent');
 
   // Back to quick chat: lean again, no ward bar, no analysis card.
   await chatGroup.getByRole('button', { name: /Quick Chat/ }).click();
   await expect(page.getByLabel('Your message')).toContainText('quick hello');
   await expect(page.getByLabel('Active ward')).toHaveCount(0);
-  await expect(page.getByLabel('Task Analysis')).toHaveCount(0);
+  await expect(page.locator('.analysis-chip')).toHaveCount(0); // chat: no analysis chip
 });
 
 test('new research creates a shell and activates it', async ({ page }) => {
@@ -419,8 +431,8 @@ test('research runs stream their work live (Timeline SSE → work stream)', asyn
   await expect(stream.getByText('Entering the ward and staging the search.')).toBeVisible();
   await expect(stream.getByText('mcp_brave-mcp_brave_web_search')).toBeVisible();
   await expect(stream.getByText('research-agent — market share')).toBeVisible();
-  // The analysis card ALSO lands live (mid-run, from the SSE event).
-  await expect(page.getByLabel('Task Analysis')).toContainText('nvda-check');
+  // The analysis ALSO lands live (mid-run, from the SSE event) in the chip.
+  await expect(page.locator('.analysis-chip')).toContainText('nvda-check');
 });
 
 test('leaving a ward: the strip offers Leave (non-warden), clears the binding, focus returns to the composer', async ({ page }) => {
@@ -460,4 +472,37 @@ test('leaving a ward: the strip offers Leave (non-warden), clears the binding, f
   await expect(page.getByRole('textbox', { name: 'Research question' })).toBeFocused();
   // The announcement lives in the polite live region (sr-only).
   await expect(page.locator('[aria-live="polite"]')).toContainText('Left stock-analysis');
+});
+
+test('thinking stays in the brain: plan narration on tool-call rows folds, never a chat bubble', async ({ page }) => {
+  await mockBase(page);
+  await mockSessions(page);
+  // A transcript where an assistant tool-call intent row carries plan
+  // narration + reasoning (glm's shape) — the model "thinking aloud".
+  await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+      messages: [
+        { id: 'u1', seq: 1, role: 'user', content: 'run the thing', created_at: NOW },
+        { id: 'a1', seq: 2, role: 'assistant', content: 'Announcing, then executing one call: shell echo. Immediately after…', reasoning: 'Hmm — every call I put in these reply blocks seems to substitute…', tool_calls: JSON.stringify([{ id: 'c1', function: { name: 'shell', arguments: '{"command":"echo hi"}' } }]), created_at: NOW },
+        { id: 't1', seq: 3, role: 'tool', tool_name: 'shell', tool_call_id: 'c1', content: 'hi', created_at: NOW },
+        { id: 'a2', seq: 4, role: 'assistant', content: 'Done — it printed hi.', created_at: NOW },
+      ], next_cursor: 0, truncated: false }) });
+  });
+  await mockStates(page);
+  await page.goto('/');
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
+  // Only the ANSWER is a chat bubble.
+  const bubbles = page.getByLabel('Assistant message');
+  await expect(bubbles).toHaveCount(1);
+  await expect(bubbles).toContainText('Done — it printed hi.');
+  // The tool-call row is compact + named; the plan narration and the
+  // reasoning are folded (closed by default), never inline chat text.
+  const row = page.getByLabel('Tool call intent');
+  await expect(row).toContainText('shell');
+  // Folded = NOT VISIBLE (the text lives in the DOM under closed details).
+  await expect(row.getByText('Announcing, then executing')).toBeHidden();
+  await expect(row.getByText('Hmm — every call')).toBeHidden();
+  await row.getByText('show').click();
+  await expect(row.getByText('Announcing, then executing')).toBeVisible();
 });

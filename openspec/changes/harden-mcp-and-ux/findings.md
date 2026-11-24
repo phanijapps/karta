@@ -118,6 +118,25 @@ BOTH FIXED:
   design's 48-char fallback claim corrected (no ASCII → no title);
   the superseded P2-2 struck.
 
+**Operator validation follow-up (post-review):**
+- *Thinking leaked into chat text* — root cause was NOT the stream
+  (211 reasoning deltas were correctly kind-tagged) but glm's habit of
+  narrating its plan as `content` on tool-call intent rows ("Announcing,
+  then executing one call…"), which the transcript rendered as chat
+  bubbles. FIXED: tool-call intent rows are compact step rows — the
+  narration folds under "show", the reasoning under a collapsed
+  "Thinking" (the brain), only final answers are bubbles. The LIVE
+  bubble's reasoning now starts collapsed too. Playwright-pinned.
+- *Intent analysis not showing* — the inline card only rendered when
+  state already carried an analysis. REPLACED with a compact chip
+  (intent · complexity · ward) present for EVERY research session
+  (pending → "Analyzing…"), with an **(i)** that opens the Task
+  Analysis popover (intent, budget, approach, ward action, skills,
+  dropped, degradation reason) — dialog semantics, Escape closes,
+  focus returns to the (i). Light/dark axe: 0 violations (fixed three
+  pre-existing light-theme contrast failures on the way: ward badge on
+  the chip, dropped chips, the ward strip).
+
 **task verify: exit 0** — gates + codegen zero drift + lint 0 +
 full suites + budget gates OK (suite 27.3s / 28s — the hardening
 tests' cost trimmed honestly: the echo server builds once per test
