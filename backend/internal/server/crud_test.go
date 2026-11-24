@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"zbot/backend/internal/chat"
 	"zbot/backend/internal/providers"
@@ -608,5 +609,106 @@ func TestOpenAiChannel(t *testing.T) {
 		// an unknown-model completion (400 path through decodeJSON is
 		// contract-typed already). Skip the live busy case.
 		_ = openAiError
+	})
+}
+
+// TestOpenAiValidationAndBusy (final-review P2s): the /v1 400 branches
+// carry the OpenAI error shape, and a busy research run maps to the
+// 409 OpenAI error — handler-level, not just by inspection.
+func TestOpenAiValidationAndBusy(t *testing.T) {
+	url, db := newChatDaemon(t, nil, nil)
+	if err := db.SetDefaultModel("fakep/fakemodel"); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("400 branches use the OpenAI error shape", func(t *testing.T) {
+		cases := []struct {
+			name string
+			body any
+		}{
+			{"no user message", map[string]any{"model": "karta-chat", "messages": []map[string]any{{"role": "system", "content": "sys"}}}},
+			{"empty messages", map[string]any{"model": "karta-chat", "messages": []map[string]any{}}},
+			{"empty last user", map[string]any{"model": "karta-chat", "messages": []map[string]any{{"role": "user", "content": "  "}}}},
+		}
+		for _, tc := range cases {
+			code, body := mutate(t, "POST", url+"/v1/chat/completions", tc.body)
+			if code != http.StatusBadRequest {
+				t.Fatalf("%s: status %d", tc.name, code)
+			}
+			e, _ := body["error"].(map[string]any)
+			if e == nil || e["type"] != "invalid_request_error" {
+				t.Fatalf("%s: OpenAI error shape missing: %v", tc.name, body)
+			}
+		}
+		// Invalid JSON body.
+		req, _ := http.NewRequest(http.MethodPost, url+"/v1/chat/completions", strings.NewReader("{not json"))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil || resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("invalid body: %v %v", err, resp)
+		}
+		_ = resp.Body.Close()
+	})
+
+	t.Run("busy research session maps to 409 session_busy", func(t *testing.T) {
+		// A blocking RESEARCH path (the engine route): the first research
+		// send holds the session's busy guard; the second maps to the
+		// OpenAI 409 error shape.
+		release := make(chan struct{})
+		started := make(chan struct{})
+		db2, err := store.Open(filepath.Join(t.TempDir(), "v1busy.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = db2.Close() })
+		if err := db2.SetDefaultModel("fakep/fakemodel"); err != nil {
+			t.Fatal(err)
+		}
+		lookup := func(string) (providers.Provider, error) {
+			return providers.Provider{BaseURL: "http://fake.invalid/v1"}, nil
+		}
+		resolve := func(context.Context, providers.Provider) (string, error) { return "", nil }
+		svc := chat.New(db2, lookup, resolve, &fakeChatCompleter{}, tools.BuiltinProvider{}, nil, nil)
+		svc.SetResearchPath(func(ctx context.Context, sessionID, text, providerName, model string) chat.SendOutcome {
+			close(started)
+			<-release
+			return chat.SendOutcome{Rows: []store.Message{{ID: "x", SessionID: sessionID, Seq: 1, Role: "assistant", Content: "done"}}}
+		})
+		ts := startTestServer(New(nil, nil, nil, svc, nil, nil, db2, nil, nil, nil, nil, "test").Routes())
+		t.Cleanup(ts.Close)
+
+		const body = `{"model":"karta-research","messages":[{"role":"user","content":"long question"}]}`
+		first := make(chan struct{})
+		go func() {
+			defer close(first)
+			req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			if resp, err := http.DefaultClient.Do(req); err == nil {
+				_ = resp.Body.Close()
+			}
+		}()
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("first send never entered the research path")
+		}
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusConflict {
+			t.Fatalf("want 409 busy, got %d", resp.StatusCode)
+		}
+		var parsed map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&parsed)
+		e, _ := parsed["error"].(map[string]any)
+		if e == nil || e["code"] != "session_busy" {
+			t.Fatalf("OpenAI busy error shape: %v", parsed)
+		}
+		close(release)
+		<-first
 	})
 }

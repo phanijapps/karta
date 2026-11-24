@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"zbot/backend/internal/chat"
@@ -38,11 +39,20 @@ type fakeChatCompleter struct {
 	responses []providers.ChatResponse
 	errs      []error
 	calls     int
+	// hang, when non-nil, blocks every completion until closed (the
+	// busy-guard test keeps a research run live); mu guards calls.
+	hang chan struct{}
+	mu   sync.Mutex
 }
 
 func (f *fakeChatCompleter) ChatCompletion(_ context.Context, _ providers.Provider, _, _ string, _ []providers.ChatMessage, _ []providers.ChatToolDef) (providers.ChatResponse, error) {
+	f.mu.Lock()
 	i := f.calls
 	f.calls++
+	f.mu.Unlock()
+	if f.hang != nil {
+		<-f.hang
+	}
 	if i < len(f.errs) && f.errs[i] != nil {
 		return providers.ChatResponse{}, f.errs[i]
 	}

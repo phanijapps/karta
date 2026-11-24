@@ -613,22 +613,22 @@ func (e ProviderCredential) Valid() bool {
 
 // Defines values for ProviderFailureReason.
 const (
-	ProviderFailureReasonCredentialUnavailable ProviderFailureReason = "credential_unavailable"
-	ProviderFailureReasonMalformed             ProviderFailureReason = "malformed"
-	ProviderFailureReasonUnauthorized          ProviderFailureReason = "unauthorized"
-	ProviderFailureReasonUnreachable           ProviderFailureReason = "unreachable"
+	CredentialUnavailable ProviderFailureReason = "credential_unavailable"
+	Malformed             ProviderFailureReason = "malformed"
+	Unauthorized          ProviderFailureReason = "unauthorized"
+	Unreachable           ProviderFailureReason = "unreachable"
 )
 
 // Valid indicates whether the value is a known member of the ProviderFailureReason enum.
 func (e ProviderFailureReason) Valid() bool {
 	switch e {
-	case ProviderFailureReasonCredentialUnavailable:
+	case CredentialUnavailable:
 		return true
-	case ProviderFailureReasonMalformed:
+	case Malformed:
 		return true
-	case ProviderFailureReasonUnauthorized:
+	case Unauthorized:
 		return true
-	case ProviderFailureReasonUnreachable:
+	case Unreachable:
 		return true
 	default:
 		return false
@@ -2068,9 +2068,6 @@ type NotFound = Error
 
 // ProviderFailure defines model for ProviderFailure.
 type ProviderFailure = ProviderError
-
-// Unauthorized defines model for Unauthorized.
-type Unauthorized = Error
 
 // ClearChatParams defines parameters for ClearChat.
 type ClearChatParams struct {

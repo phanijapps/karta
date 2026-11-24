@@ -2847,7 +2847,15 @@ export interface operations {
                     "application/json": components["schemas"]["OpenAiModelList"];
                 };
             };
-            401: components["responses"]["Unauthorized"];
+            /** @description Missing or wrong bearer token (the OpenAI error shape). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiError"];
+                };
+            };
         };
     };
     openAiChatCompletion: {
@@ -2881,9 +2889,35 @@ export interface operations {
                     "application/json": components["schemas"]["OpenAiError"];
                 };
             };
-            401: components["responses"]["Unauthorized"];
+            /** @description Missing or wrong bearer token (the OpenAI error shape). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiError"];
+                };
+            };
             /** @description A research run is already live in the target session (session_busy) — the OpenAI error shape carries the message. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiError"];
+                };
+            };
+            /** @description The exchange failed (provider failure; the OpenAI error shape carries the message). */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiError"];
+                };
+            };
+            /** @description The chat service is not wired. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

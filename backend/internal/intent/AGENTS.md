@@ -20,16 +20,21 @@ reasoning_effort=low (the ParamCompleter seam).
 ## Responsibility
 
 - `Router` — conservative bypass for trivial conversational traffic.
-- `Analyzer` — renders the user-owned prompt
-  (`config/prompts/intent-analysis.md`, template slots
-  `{{.Skills}}/{{.Agents}}/{{.MCPs}}/{{.Wards}}`; embedded
-  `default_prompt.md` fallback, kept in sync by test), one Completer
-  call, strict parse, one retry, then a TYPED non-fatal degradation
-  (`AnalysisUnavailable`) — analysis never blocks a run.
-- `Wrapper` (engine decorator) — router → analyze → validate against
-  the live index (`Sanitize`, drop-and-warn) → compose the run prompt
-  (static sections + `## Context` + `## Task Analysis` + `## Skills`)
-  → RunGoal with the step budget; events for bypass/analysis/failure.
+- `Analyzer` — renders the user-owned prompt (slots filled from the
+  RANKED, CAPPED packet; `config/prompts/intent-analysis.md`, embedded
+  `default_prompt.md` fallback, kept in sync by test), then the
+  packet-driven decision: ≤3 CORRECTION-FEEDBACK attempts inside a
+  45s deadline (retry prompts carry the failure code + fix), the
+  request embedded as escaped advisory data, validation against the
+  packet's ID sets with a last-parsed fallback — and finally a TYPED
+  non-fatal degradation (`AnalysisUnavailable`): analysis never
+  blocks a run.
+- `Wrapper` (engine decorator) — router → buildPacket (host roster,
+  recall-ranked) → analyze → validate against the live index
+  (`Sanitize`, drop-and-warn — the belt-and-braces guard) → compose
+  the run prompt (static sections + `## Context` + `## Task Analysis`
+  + `## Skills`) → RunGoal with the step budget; events for
+  bypass/analysis/failure.
 
 ## Boundaries
 
@@ -41,6 +46,7 @@ reasoning_effort=low (the ParamCompleter seam).
 
 ## Key entrypoints
 
-`Router.Bypass`, `(*Analyzer).Analyze`, `Resources`, and the Wrapper
-constructor. See the change artifacts:
-`openspec/changes/add-intent-analysis/`.
+`Router.Bypass`, `(*Analyzer).Analyze`, the `Packet` builders
+(`packet.go`), and the Wrapper constructor. See the change artifacts:
+`openspec/changes/add-intent-analysis/` (slice 2) and
+`openspec/changes/intent-context-packet/` (the packet rework).

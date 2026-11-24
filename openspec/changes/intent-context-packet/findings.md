@@ -95,4 +95,33 @@ Verdict: bindings/FSD/runes/draft-fix/state-sourcing confirmed.
 
 ## Final review
 
-(pending — zbot-reviewer + task verify)
+**zbot-reviewer (final gate): open P0/P1 = 0.** All five fix groups
+verified as holding (/v1 identity incl. type-suffix isolation, packet
+delimiter escapes, rowid ordering, OpenAI 400/auth shapes, frontend
+generation guard + card placement + draft + contrast); boundary
+checklist clean; spec-vs-implementation coherent. Five fresh P2s —
+ALL FIXED on receipt:
+
+- **F-1 (P2) /v1 401 contract drift** — FIXED: /v1-local 401 (+ 502/
+  503 on completions) declared with the OpenAiError schema; codegen.
+- **F-2 (P2) busy→409 had no handler-level test** — FIXED:
+  TestOpenAiValidationAndBusy (blocking research path; asserts 409 +
+  code session_busy in the OpenAI body).
+- **F-3 (P2) /v1 400 branches untested** — FIXED: the same test's
+  table (no user message / empty messages / empty last user / invalid
+  JSON → invalid_request_error shape).
+- **F-4 (P2) stale AGENTS.md bullet** — FIXED: intent/AGENTS.md
+  describes the packet-driven ≤3/45s correction loop and buildPacket.
+- **F-5 (P2) no operator docs for the channel** — FIXED:
+  docs/architecture/openai-channel.md (setup, model→type mapping,
+  identity, api_token, limits).
+
+**task verify: exit 0** — contract lint + codegen zero drift, backend
+gates + lint (0 issues) + full suite + budget gates OK, frontend
+check (0 errors) + build + 88 Playwright tests. (Suite run with the
+dev stack stopped — the known inotify instance exhaustion.)
+
+**LIVE smoke**: research send 24-38s → **5.3s** (packet +
+reasoning_effort=low); state surface carries the full analysis;
+/v1/models + /v1/chat/completions round-trip (karta-chat and
+metadata.chat_id identity verified); test sessions cleaned.

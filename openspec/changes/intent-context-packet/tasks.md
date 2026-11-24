@@ -65,10 +65,12 @@
 
 ## 5. Review and hardening
 
-- [ ] 5.1 Phase gates (gpt-6.1-terra + gpt-6.1-sol); fix P0/P1, P2s
+- [x] 5.1 Phase gates (gpt-6.1-terra + gpt-6.1-sol); fix P0/P1, P2s
   fix or record. Verify: ledger zero open P0/P1.
-- [ ] 5.2 zbot-reviewer + `task verify` green + live smoke: NVDA
+- [x] 5.2 zbot-reviewer + `task verify` green + live smoke: NVDA
   re-run renders analysis card + final answer; OpenWebUI points at
   the daemon and chats. Verify: reviewer zero open P0/P1; verify
   exits zero; operator sees the OpenWebUI conversation in the
-  sidebar.
+  sidebar. — verify exit 0; live /v1 smokes done; the operator's
+  OpenWebUI connection is the remaining manual step (setup:
+  docs/architecture/openai-channel.md).

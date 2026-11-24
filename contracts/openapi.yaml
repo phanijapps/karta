@@ -1078,7 +1078,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAiModelList'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          description: Missing or wrong bearer token (the OpenAI error
+            shape).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAiError'
   /v1/chat/completions:
     post:
       operationId: openAiChatCompletion
@@ -1116,11 +1121,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAiError'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          description: Missing or wrong bearer token (the OpenAI error
+            shape).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAiError'
         '409':
           description: A research run is already live in the target
             session (session_busy) — the OpenAI error shape carries
             the message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAiError'
+        '502':
+          description: The exchange failed (provider failure; the
+            OpenAI error shape carries the message).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAiError'
+        '503':
+          description: The chat service is not wired.
           content:
             application/json:
               schema:
