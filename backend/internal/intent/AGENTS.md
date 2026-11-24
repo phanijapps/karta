@@ -51,3 +51,8 @@ reasoning_effort=low (the ParamCompleter seam).
 `openspec/changes/archive/2026-11-24-add-intent-analysis/` (slice 2)
 and `openspec/changes/archive/2026-11-24-intent-context-packet/` (the
 packet rework); the living spec is `openspec/specs/intent-analysis/`.
+
+- Auto-titling (harden-mcp-and-ux): `Config.TitleSession` names an
+  untitled session from the first analysis's primary intent
+  (`SlugTitle`: ASCII words, spaced, ≤64). The daemon's hook guards on
+  the row's title — user names always win.

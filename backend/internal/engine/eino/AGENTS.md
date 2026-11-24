@@ -16,3 +16,8 @@ checks, and durable-first event emission.
   cancel handle (F-24); the models-cache key omits BaseURL (F-26).
 - Imports engine + domain + providers + store + tools + eventbus;
   nothing else may import eino.
+
+- `Adapter.DropWard(sessionID)` resets the session's ward host on
+  leave-ward so the next run starts unhosted (wired via the server's
+  `SetWardDropper`). Tool-call bus events carry `Text` = tool name
+  (every SSE consumer renders it).

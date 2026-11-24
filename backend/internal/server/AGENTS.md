@@ -97,3 +97,13 @@ mcpclient; never imports clients, engine, or UI code.
 - Tests run the daemon over `httptest` with a temp home, in-process fake
   providers, an in-memory SecretStore, and a fake `Prober`; zero live
   network in `go test`.
+
+- Streaming + leave (harden-mcp-and-ux): `stream: true` on
+  /v1/chat/completions → bare-data `chat.completion.chunk` frames;
+  the stream's conclusion (answer, finish_reason, `[DONE]`) rides
+  `streamWriter.finishAll` — an ORDERED, non-droppable terminal path
+  (volatile `send` may drop under a slow client; the conclusion never
+  is). Busy research answers 409 JSON BEFORE any header. Leave-ward:
+  `POST /api/sessions/{id}/leave-ward` (204/404/409 default) clears
+  the binding and calls the wired `wardDropper` (the engine's host
+  reset).

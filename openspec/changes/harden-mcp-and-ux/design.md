@@ -78,8 +78,9 @@ surface.
    as-is first; only a miss triggers the directory sweep.
 3. **Leave drops the host ward too** — otherwise the next run would
    pre-load the ward the user just left (EnsureWard re-entry).
-4. **Slug titles are English-ASCII**; non-ASCII intents fall back to
-   the first 48 chars sanitized — good enough for a navigation label.
+4. **Slug titles are English-ASCII** (spaced words, lower-cased, ≤ 64
+   chars); an intent with no ASCII letters yields no title (the
+   session stays "Research") rather than a garbage label.
 
 ## Risks / Trade-offs
 

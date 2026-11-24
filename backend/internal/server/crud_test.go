@@ -728,9 +728,31 @@ func TestLeaveWardHandler(t *testing.T) {
 	if err := db.SetSessionWard(sid, "stock-analysis"); err != nil {
 		t.Fatal(err)
 	}
+	// A real server with the dropper wired (the host-drop half of the
+	// spec scenario: the next run starts unhosted).
+	db2, err := store.Open(filepath.Join(t.TempDir(), "drop.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db2.Close() })
+	if _, err := db2.EnsureSession(sid, "research"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db2.SetSessionWard(sid, "stock-analysis"); err != nil {
+		t.Fatal(err)
+	}
+	srv := New(nil, nil, nil, &stubChatService{}, nil, nil, db2, nil, nil, nil, nil, "test")
 	var dropped string
-	// (the daemon wires the dropper; the handler test verifies the row)
-	_ = dropped
+	srv.SetWardDropper(func(id string) { dropped = id })
+	ts := startTestServer(srv.Routes())
+	t.Cleanup(ts.Close)
+	code, _ = mutate(t, "POST", ts.URL+"/api/sessions/"+sid+"/leave-ward", map[string]any{})
+	if code != http.StatusNoContent {
+		t.Fatalf("leave: %d", code)
+	}
+	if dropped != sid {
+		t.Fatalf("the engine host must be dropped for %s, got %q", sid, dropped)
+	}
 	code, _ = mutate(t, "POST", url+"/api/sessions/"+sid+"/leave-ward", map[string]any{})
 	if code != http.StatusNoContent {
 		t.Fatalf("leave: %d", code)

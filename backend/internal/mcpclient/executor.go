@@ -313,14 +313,18 @@ func (t *mcpTool) Exec(ctx context.Context, argsJSON string) tools.Result {
 	e := t.exec
 	e.mu.Lock()
 	srv := e.servers[t.server]
+	var notBefore time.Time
+	if srv != nil {
+		notBefore = srv.notBefore // read under the lock (recordStartFailure writes it)
+	}
 	e.mu.Unlock()
 	if srv == nil || srv.session == nil {
 		// Fail-soft: re-dial once (the server may have died) — honoring
 		// the restart backoff (a crash-looping server is not re-dialed
 		// from every stale tool call inside its window).
-		if srv != nil && time.Now().Before(srv.notBefore) {
+		if srv != nil && time.Now().Before(notBefore) {
 			return tools.Result{Err: &ExecFailure{Kind: FailUnavailable, Server: t.server, Tool: t.tool.Name,
-				Err: fmt.Errorf("server down; retry in %s", time.Until(srv.notBefore).Round(time.Second))}}
+				Err: fmt.Errorf("server down; retry in %s", time.Until(notBefore).Round(time.Second))}}
 		}
 		started := false
 		if e.Specs != nil {

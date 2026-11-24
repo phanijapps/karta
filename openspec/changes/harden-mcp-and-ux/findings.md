@@ -87,13 +87,39 @@ BOTH FIXED:
 
 - **P2-1 — Leave on wardens.** Hidden by design (D6); a "retire this
   ward's warden" surface is a later change if wanted.
-- **P2-2 — Streaming error frames carry no message** (OpenAI has no
-  spec'd error frame; `finish_reason: error` only). The non-stream
-  JSON path carries the message.
+- ~~**P2-2 — Streaming error frames carry no message**~~ — superseded
+  by gate fix G1-7 (the message rides a content chunk before
+  `finish_reason: error`).
 
 ## Final review
 
-(pending — zbot-reviewer)
+**zbot-reviewer (final gate): every terra + sol fix verified holding.
+1 P1 (documentation) + 5 P2 — ALL FIXED on receipt:**
 
-`task verify`: exit 0 after the gate fixes (gates + codegen zero
-drift + lint 0 + suites + budget OK; 92 Playwright).
+- **F-1 (P1) contract + architecture doc still said non-streaming** —
+  FIXED: the /v1 operation description and
+  docs/architecture/openai-channel.md now describe the chunk stream,
+  the pre-stream busy 409, and `finish_reason: error`.
+- **F-2 (P2) `srv.notBefore` read outside `e.mu`** — FIXED: captured
+  under the lock (a latent data race with recordStartFailure).
+- **F-3 (P2) host-drop path untested + dead scaffolding** — FIXED:
+  TestLeaveWardHandler wires a real SetWardDropper and asserts the
+  engine host drop; TestHostLeave pins Active()==nil + shell refusal.
+- **F-4 (P2) D3 (tool_call events carry Text) unpinned** — FIXED:
+  TestChildUsesToolResult now collects the stream and asserts the
+  clock_now event's Text (children surface as delegation events —
+  pinned on both kinds).
+- **F-5 (P2) AGENTS.md drift** — FIXED: server (streaming/finishAll/
+  leave), intent (TitleSession), store (SetSessionTitleIfUntitled),
+  wardtools (Host.Leave), engine/eino (DropWard + Text) each gained
+  their bullet.
+- **F-6 (P2) record/code drift** — FIXED: node ordering compares
+  numeric segments (v9 < v10); SlugTitle doc says spaced words; the
+  design's 48-char fallback claim corrected (no ASCII → no title);
+  the superseded P2-2 struck.
+
+**task verify: exit 0** — gates + codegen zero drift + lint 0 +
+full suites + budget gates OK (suite 27.3s / 28s — the hardening
+tests' cost trimmed honestly: the echo server builds once per test
+binary via sync.Once, the group-kill poll window tightened to 0.8s
+past the landing time); 92 Playwright.

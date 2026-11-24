@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,12 +37,32 @@ func nodeVersionDirs(home string) []string {
 			names = append(names, e.Name())
 		}
 	}
-	sort.Strings(names) // lexical = version order for the vNN.N.N form
+	// Version order: compare the dotted numeric segments (v9 < v10 —
+	// lexical order would misplace them), newest first.
+	sort.Slice(names, func(i, j int) bool { return versionLess(names[i], names[j]) })
 	var out []string
-	for i := len(names) - 1; i >= 0; i-- { // newest first
+	for i := len(names) - 1; i >= 0; i-- {
 		out = append(out, ".local/"+names[i]+"/bin")
 	}
 	return out
+}
+
+// atoiSeg parses a dotted version segment ("" → 0).
+func atoiSeg(s string) int {
+	n, _ := strconv.Atoi(s) //nolint:errcheck // non-numeric segments compare as 0 (documented)
+	return n
+}
+
+// versionLess orders "node-vA.B.C" names by numeric dotted segments.
+func versionLess(a, b string) bool {
+	pa, pb := strings.Split(strings.TrimPrefix(a, "node-v"), "."), strings.Split(strings.TrimPrefix(b, "node-v"), ".")
+	for i := 0; i < len(pa) && i < len(pb); i++ {
+		xa, xb := atoiSeg(pa[i]), atoiSeg(pb[i]) // non-numeric segments compare as 0
+		if xa != xb {
+			return xa < xb
+		}
+	}
+	return len(pa) < len(pb)
 }
 
 // resolveBinary finds an executable: as written first (absolute or on

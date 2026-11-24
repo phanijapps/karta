@@ -37,3 +37,7 @@ layout template + digest.
 
 `NewHost`, `(*Host).Active`, `(*Host).RefreshDigest`, `UseTool`,
 `CreateTool`, `Packet`.
+
+- `Host.Leave` clears the active ward (leave-ward): `Active()` is nil
+  and the file/shell tools refuse until re-entered. The binding
+  observer is the daemon's to update (it wires Leave on the endpoint).

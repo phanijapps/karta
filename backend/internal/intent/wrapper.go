@@ -57,8 +57,8 @@ type Config struct {
 }
 
 // SlugTitle turns a primary intent into a navigation label: ASCII
-// letters/digits, dashes, ≤ 64 chars, human-cased ("comparative
-// research on amd vs nvidia").
+// letters/digits as SPACED words, ≤ 64 chars, lower-cased
+// ("comparative research on amd vs nvidia").
 func SlugTitle(intent string) string {
 	var b strings.Builder
 	space := false

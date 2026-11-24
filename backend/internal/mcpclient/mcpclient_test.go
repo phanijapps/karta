@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,15 +21,36 @@ import (
 )
 
 // echoBin builds the test-only stdio server once for the package.
+var (
+	echoOnce sync.Once
+	echoPath string
+	echoErr  error
+)
+
+// echoBin builds the test MCP server ONCE per test binary (every
+// executor/probe test shares it — the suite budget noticed the
+// per-test `go build` cost).
 func echoBin(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "echo-mcp-server")
-	cmd := exec.Command("go", "build", "-o", bin, "./testdata/echoServer")
-	cmd.Dir = "."
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build echo server: %v: %s", err, out)
+	echoOnce.Do(func() {
+		dir, derr := os.MkdirTemp("", "echo-mcp-")
+		if derr != nil {
+			echoErr = derr
+			return
+		}
+		bin := filepath.Join(dir, "echo-mcp-server")
+		cmd := exec.Command("go", "build", "-o", bin, "./testdata/echoServer")
+		cmd.Dir = "."
+		if out, err := cmd.CombinedOutput(); err != nil {
+			echoErr = fmt.Errorf("build echo server: %w: %s", err, out)
+			return
+		}
+		echoPath = bin
+	})
+	if echoErr != nil {
+		t.Fatal(echoErr)
 	}
-	return bin
+	return echoPath
 }
 
 // httpMCPServer serves a real MCP streamable-http endpoint on a loopback

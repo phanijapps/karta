@@ -11,8 +11,12 @@ complete analysis surface (Task Analysis card, context panel).
 - `GET  http://127.0.0.1:8787/v1/models` — advertises `karta-research`
   and `karta-chat`.
 - `POST http://127.0.0.1:8787/v1/chat/completions` — the standard
-  OpenAI body (`model`, `messages`; `stream` is accepted and ignored —
-  non-streaming v1).
+  OpenAI body (`model`, `messages`). With `stream: true` the reply is
+  chunked SSE: `chat.completion.chunk` frames (bare `data:` lines)
+  ending in `finish_reason: stop` then `data: [DONE]`. Chat sessions
+  stream real content deltas; research sessions stream the live work
+  (🔧 tool calls, 👥 delegations, 🧠 steps) while the run executes, then
+  the final answer.
 
 ## Model → session mapping
 
@@ -58,7 +62,9 @@ should always set it.
 
 ## Limits (v1)
 
-- Non-streaming only (the reply arrives whole).
-- A busy research session answers 409 `session_busy` (extend it with
-  Karta's Continue, or wait).
+- Streaming research runs carry work frames as content (prefix
+  markers) — OpenAI clients render only `delta.content`.
+- A busy research session answers 409 `session_busy` as JSON before
+  any stream opens (extend it with Karta's Continue, or wait). A failed
+  run ends the stream with `finish_reason: error` and the message.
 - OpenWebUI-side renames don't propagate to the session title.

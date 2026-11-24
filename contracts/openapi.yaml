@@ -1134,8 +1134,7 @@ paths:
         session. The reply is the exchange's final assistant message
         content; typed failures (busy research run, provider errors,
         unknown session state) map to the OpenAI error shape.
-        Non-streaming in v1 (`stream` is accepted and ignored as
-        false).
+        With `stream: true` the response is `text/event-stream` of `chat.completion.chunk` frames terminated by `data: [DONE]` (chat sessions stream content deltas; research sessions stream the live work then the answer); otherwise JSON. The research session-busy conflict is answered as JSON before any stream opens.
       security:
         - bearerAuth: []
       requestBody:

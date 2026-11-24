@@ -900,7 +900,40 @@ func TestChildUsesToolResult(t *testing.T) {
 	// (the tool result was consumed, not repeated to the step bound).
 	a := newDelegatingAdapter(t, gen, agentSnap)
 	ch, _ := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "child-tool", Goal: "delegate now", Model: "prov/m1"})
-	drainUntilClosed(ch, 5*time.Second)
+	// Collect the stream: the tool_call event must carry the tool NAME
+	// in Text (every SSE consumer — the UI work stream, /v1 frames —
+	// renders Text; the name lives only in the structured payload
+	// otherwise). Live-caught regression, now pinned.
+	var toolEvents []domain.TimelineEvent
+	deadline := time.After(5 * time.Second)
+loop:
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				break loop
+			}
+			// Child tool calls surface as delegation events (Timeline
+			// Tree convention); the tool payload + Text ride both kinds.
+			if ev.Kind == domain.EventToolCall || ev.Kind == domain.EventDelegation {
+				toolEvents = append(toolEvents, ev)
+			}
+		case <-deadline:
+			t.Fatal("stream did not close")
+		}
+	}
+	named := 0
+	for _, ev := range toolEvents {
+		if ev.ToolCall != nil && ev.ToolCall.Tool == "clock_now" {
+			if ev.Text != "clock_now" {
+				t.Fatalf("tool_call event Text must name the tool: %q", ev.Text)
+			}
+			named++
+		}
+	}
+	if named == 0 {
+		t.Fatalf("no clock_now tool_call events observed (%d tool events)", len(toolEvents))
+	}
 	msgs, _ := a.st.Replay("child-tool", 0, 32)
 	var childToolRows, childFinal int
 	for _, m := range msgs {

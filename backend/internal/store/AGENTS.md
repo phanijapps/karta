@@ -23,3 +23,6 @@ observability, persisted before volatile notification).
   orders by recent activity (the sidebar's ordering) and exposes
   type + ward for grouping.
 - Imports only stdlib + modernc.org/sqlite; sits below chat and server.
+
+- `SetSessionTitleIfUntitled` (sessions.go) is the auto-titling write:
+  a conditional UPDATE that never overwrites a user title.

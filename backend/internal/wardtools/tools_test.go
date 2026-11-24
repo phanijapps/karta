@@ -357,17 +357,38 @@ func TestShellTimeoutKillsGroup(t *testing.T) {
 	sh := ShellTool{Host: host}
 	marker := filepath.Join(host.Active().Dir, "apps", ".group-marker")
 	res := sh.Exec(context.Background(), fmt.Sprintf(
-		`{"command":"rm -f %s && (sleep 2 && touch %s) & wait","timeout_seconds":1}`, marker, marker))
+		`{"command":"rm -f %s && (sleep 1.5 && touch %s) & wait","timeout_seconds":1}`, marker, marker))
 	if !strings.Contains(res.Output, "[timeout after 1s]") {
 		t.Fatalf("timeout missing: %s", res.Output)
 	}
 	// The backgrounded touch must NOT survive: WITHOUT the group kill,
-	// the descendant lands at ~2s — poll to 3s so a regression FAILS.
-	deadline := time.Now().Add(3 * time.Second)
+	// the descendant lands at ~1.5s — poll to 2.3s so a regression
+	// FAILS (0.8s past the landing time).
+	deadline := time.Now().Add(2300 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(marker); err == nil {
 			t.Fatal("descendant survived the group kill")
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// TestHostLeave (harden-mcp-and-ux): Leave clears the active ward —
+// Active() is nil and the shell/file tools refuse until re-entered.
+func TestHostLeave(t *testing.T) {
+	host, vault := newTestHost(t)
+	use := UseTool{Host: host, Vault: vault}
+	if res := use.Exec(context.Background(), `{"name":"stock-analysis"}`); res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if host.Active() == nil {
+		t.Fatal("ward not active")
+	}
+	host.Leave()
+	if host.Active() != nil {
+		t.Fatal("Leave must clear the active ward")
+	}
+	if res := (ShellTool{Host: host}).Exec(context.Background(), `{"command":"true"}`); res.Err == nil {
+		t.Fatal("shell must refuse after Leave")
 	}
 }
