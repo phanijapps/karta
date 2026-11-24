@@ -10,6 +10,7 @@ package server
 
 import (
 	"crypto/sha1"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -44,7 +45,10 @@ func (s *Server) v1Authorized(r *http.Request) bool {
 	if len(auth) <= len(prefix) || !strings.EqualFold(auth[:len(prefix)], prefix) {
 		return false
 	}
-	return strings.TrimSpace(auth[len(prefix):]) == s.apiToken
+	token := strings.TrimSpace(auth[len(prefix):])
+	// Constant-time compare (channel hygiene; loopback makes it moot
+	// today, an exposed bind may not).
+	return subtle.ConstantTimeCompare([]byte(token), []byte(s.apiToken)) == 1
 }
 
 // openAiError emits the OpenAI error shape with an HTTP status.
