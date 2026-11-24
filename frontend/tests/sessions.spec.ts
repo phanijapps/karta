@@ -354,4 +354,15 @@ test('ward rows select wardens: ensure on first select, reuse after, one row per
   await group.getByRole('button', { name: /warden · tap to open/ }).click();
   await expect.poll(() => ensured).toBe(1);
   await expect(page.getByLabel('Research question')).toBeVisible();
+  // Post-ensure: the warden session row REPLACES the placeholder (no
+  // duplicate row); the ordinary bound session still renders.
+  await page.waitForTimeout(400);
+  await expect(group.getByRole('button', { name: /warden · tap to open/ })).toHaveCount(0);
+  await expect(group.getByRole('button', { name: /stock-analysis/ })).toHaveCount(2);
+  // A warden session carrying its id (kind session, id ward-*) selects
+  // WITHOUT re-ensuring: switch away and select the warden row.
+  await nav.getByRole('button', { name: /Quick Chat/ }).click();
+  await group.getByRole('button', { name: /stock-analysis/ }).first().click();
+  await page.waitForTimeout(400);
+  expect(ensured).toBe(1); // reuse, not re-ensure
 });

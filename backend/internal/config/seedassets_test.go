@@ -293,3 +293,56 @@ func TestPersonaSeedUpgradeAndLifecycle(t *testing.T) {
 		t.Fatal("deleted persona resurrected")
 	}
 }
+
+// TestPersonaV2UpgradeMarkedHome (final-review P2-1): in a
+// persona-marked home, the v2 upgrade replaces only UNMODIFIED neutral
+// v1 seeds; user-modified files and DELETIONS stick.
+func TestPersonaV2UpgradeMarkedHome(t *testing.T) {
+	_, paths := tempHome(t)
+	if err := os.MkdirAll(paths.ConfigDir("prompts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	role := filepath.Join(paths.ConfigDir("prompts"), "role.md")
+	soul := filepath.Join(paths.ConfigDir("prompts"), "soul.md")
+	osLinux := filepath.Join(paths.ConfigDir("prompts"), "os-linux.md")
+	// role: unmodified v1 → replaced. soul: user-edited → untouched.
+	// os-linux: DELETED → stays deleted.
+	if err := os.WriteFile(role, []byte(personaV1Bodies["role.md"]), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(soul, []byte("# my own soul\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.Home, personaSeedMarker), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Bootstrap(context.Background(), paths); err != nil {
+		t.Fatalf("upgrade Bootstrap: %v", err)
+	}
+	raw, _ := os.ReadFile(role)
+	if string(raw) == personaV1Bodies["role.md"] {
+		t.Fatal("unmodified v1 seed must upgrade to the operator set")
+	}
+	if v1, ok := personaV1Bodies["role.md"]; ok {
+		_ = v1
+	}
+	newBody, err := seedFS.ReadFile("seedassets/prompts/role.md")
+	if err != nil || string(raw) != string(newBody) {
+		t.Fatalf("role must equal the operator seed: %v", err)
+	}
+	got, _ := os.ReadFile(soul)
+	if string(got) != "# my own soul\n" {
+		t.Fatalf("user edit clobbered: %q", got)
+	}
+	if _, err := os.Stat(osLinux); !os.IsNotExist(err) {
+		t.Fatal("deleted persona resurrected")
+	}
+	// Both markers now present: re-bootstrap is a no-op.
+	if err := Bootstrap(context.Background(), paths); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = os.ReadFile(soul)
+	if string(got) != "# my own soul\n" {
+		t.Fatalf("post-marker edit clobbered: %q", got)
+	}
+}

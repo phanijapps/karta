@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"zbot/backend/internal/store"
 
 	"zbot/backend/internal/wards"
 )
@@ -252,5 +253,50 @@ func TestWardsUnwiredIsServiceUnavailable(t *testing.T) {
 		if res.StatusCode != http.StatusServiceUnavailable || body.Code != "wards_unavailable" {
 			t.Fatalf("%s: want 503 wards_unavailable, got %d %+v", path, res.StatusCode, body)
 		}
+	}
+}
+
+// TestEnsureWardenHandler (final-review P1-3): the warden endpoint —
+// 201 on first ensure, 200 after (atomic), 404 for unknown wards, and
+// the session carries type + binding.
+func TestEnsureWardenHandler(t *testing.T) {
+	// A wards daemon WITH a session store (the warden seam).
+	root := filepath.Join(t.TempDir(), "wards")
+	if err := wards.Bootstrap(context.Background(), root); err != nil {
+		t.Fatalf("vault bootstrap: %v", err)
+	}
+	writeVaultFiles(t, filepath.Join(root, "amdfinancials"), map[string]string{
+		"amdfinancials.md": "# AMD financials\nsynthesis\n",
+		"AGENTS.md":        "readme\n",
+		"log.md":           "log\n",
+		"ward-conf.yaml":   researchConfFixture,
+	})
+	vault, err := wards.Open(context.Background(), root)
+	if err != nil {
+		t.Fatalf("vault open: %v", err)
+	}
+	db, err := store.Open(filepath.Join(t.TempDir(), "wardens.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	srv := New(nil, nil, nil, nil, nil, nil, db, nil, nil, nil, vault, "test")
+	daemon := httptest.NewServer(srv.Routes())
+	t.Cleanup(daemon.Close)
+
+	code, body := mutate(t, "POST", daemon.URL+"/api/wards/amdfinancials/warden", nil)
+	if code != http.StatusCreated {
+		t.Fatalf("first ensure: %d %v", code, body)
+	}
+	if body["id"] != "ward-amdfinancials" || body["type"] != "research" {
+		t.Fatalf("warden shape: %v", body)
+	}
+	code, body = mutate(t, "POST", daemon.URL+"/api/wards/amdfinancials/warden", nil)
+	if code != http.StatusOK || body["id"] != "ward-amdfinancials" {
+		t.Fatalf("second ensure must reuse (200): %d %v", code, body)
+	}
+	code, _ = mutate(t, "POST", daemon.URL+"/api/wards/no-such-ward/warden", nil)
+	if code != http.StatusNotFound {
+		t.Fatalf("unknown ward: %d", code)
 	}
 }

@@ -76,10 +76,10 @@ emits a tool_call event.
 ### Requirement: The retrieval plane (live MCP tools on hosted runs)
 
 The daemon SHALL execute configured stdio MCP servers and mount
-their tools on hosted root runs (children inherit), prefixed
-`mcp_<server>_<tool>`. A server that fails to start or dies degrades
-non-fatally: its tools are absent and the failure is logged (and
-surfaces in the boot event); quick chat mounts no MCP tools.
+their tools on root engine runs, prefixed `mcp_<server>_<tool>`. A
+server that fails to start or dies degrades non-fatally: its tools
+are absent and the failure is logged; dead servers re-dial on the
+next tool-plane assembly. Quick chat mounts no MCP tools.
 
 #### Scenario: A hosted run searches the web
 

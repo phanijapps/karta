@@ -66,32 +66,34 @@ func seedExamples(ctx context.Context, paths Paths) error {
 }
 
 // upgradePersonaSeeds carries the three persona files to the operator
-// set: absent → seed (write-once); present-but-UNMODIFIED neutral v1
-// seed → replace (content migration); present-and-user-modified →
-// untouched. Nothing else in prompts/ is touched.
+// set. In a MARKED home (the only homes that reach this path) all
+// three were shipped once, so: present-but-UNMODIFIED neutral v1 seed
+// → replace (crash-atomic temp+rename); present-and-user-modified →
+// untouched; ABSENT → the user deleted it — deletions stick (D7).
 func upgradePersonaSeeds(ctx context.Context, paths Paths) error {
 	for name, oldBody := range personaV1Bodies {
 		dst := filepath.Join(paths.ConfigDir("prompts"), name)
 		raw, err := os.ReadFile(dst)
-		if err == nil {
-			if string(raw) == oldBody {
-				// Unmodified neutral seed: replace with the operator's.
-				newBody, rerr := seedAssetFSRead(ctx, "seedassets/prompts/"+name)
-				if rerr != nil {
-					return rerr
-				}
-				if werr := os.WriteFile(dst, []byte(newBody), 0o644); werr != nil {
-					return werr
-				}
-			}
+		if err != nil {
+			continue // absent (deleted — sticks) or unreadable: leave alone
+		}
+		if string(raw) != oldBody {
 			continue // user-modified: untouched
 		}
-		if !errors.Is(err, os.ErrNotExist) {
-			continue // unreadable: leave alone
+		// Unmodified neutral seed: replace with the operator's,
+		// crash-atomically (temp file + rename — an interrupted process
+		// never strands a partial that later runs treat as user-owned).
+		newBody, rerr := seedAssetFSRead(ctx, "seedassets/prompts/"+name)
+		if rerr != nil {
+			return rerr
 		}
-		// Absent (never shipped to this home): seed it now.
-		if err := seedWalk(ctx, "seedassets/prompts", paths.ConfigDir("prompts")); err != nil {
-			return err
+		tmp := dst + ".upgrade-tmp"
+		if werr := os.WriteFile(tmp, []byte(newBody), 0o644); werr != nil {
+			return werr
+		}
+		if rerr := os.Rename(tmp, dst); rerr != nil {
+			_ = os.Remove(tmp)
+			return rerr
 		}
 	}
 	return nil

@@ -106,4 +106,38 @@ FIXED:
 
 ## Final review
 
-(pending — zbot-reviewer + task verify)
+**zbot-reviewer (final gate): 0 P0; 3 P1 + 7 P2 — ALL FIXED on
+receipt.**
+
+- **F-1 (P1) warden row lookup keyed by id against a name-keyed map**
+  — the real G2-1 root cause surfaced late: byWard was keyed by ward
+  NAME but probed by warden ID, so wardens never matched AND ordinary
+  bound sessions collided (last-in-roster silently dropped). FIXED:
+  byWard maps ward → ALL bound sessions; the warden (id ward-<name>)
+  renders first, the ward's other conversations after, deleted-ward
+  sessions still render; the Playwright test now pins post-ensure
+  rows + reuse-without-re-ensure.
+- **F-2 (P1) vacuous group-kill test** — FIXED: the descendant lands
+  at ~2s; the test polls to 3s so a regression FAILS.
+- **F-3 (P1) warden backend untested** — FIXED:
+  TestEnsureWardenSession (atomic created; 8 concurrent callers →
+  exactly 1) + TestEnsureWardenHandler (201→200, typed shape, 404).
+- **F-4..10 (P2)** — FIXED: persona upgrade semantics aligned with D7
+  (marked-home deletions stick; atomic temp+rename replace;
+  TestPersonaV2UpgradeMarkedHome); executor coverage (changed-spec
+  restart, dead recovery via Tools, collision suffix — which ALSO
+  fixed a real ext[:55] panic on short names); spec text corrected
+  (root-only MCP, no boot-event claim); shell group-kill split
+  unix/other (GOOS=windows builds); TouchLastUsed exact-key append
+  gate + no-op cleanup; concurrent-start leak guard; restrictive
+  allowlist test + detail assertions.
+
+**task verify: exit 0** (gates + codegen zero drift + lint 0 + full
+suites + budget OK + 89 Playwright).
+
+**LIVE full-session smoke (5.2's verify)**: warden run in
+stock-analysis — mcp_ddg-search_search executed (DDG bot-blocks
+results; plane proven), ward_shell ran `echo shell-works && date`
+(54ms, in-ward), wiki/2026-11-23-capability-check.md written with the
+honest blocked-search note. Brave-with-key is the drop-in replacement
+for DDG's blocking (P2-1).

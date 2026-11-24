@@ -31,6 +31,7 @@ func wireRetrievalPlane(ctx context.Context, eng *einoengine.Adapter, snapshot f
 		},
 		Log: func(format string, args ...any) { log.Printf("zbotd: "+format, args...) },
 	}
+	mcpExec.BaseCtx = context.WithoutCancel(ctx)
 	mcpExec.Refresh(ctx)
 	eng.SetMCPTools(mcpExec.Tools)
 	return mcpExec

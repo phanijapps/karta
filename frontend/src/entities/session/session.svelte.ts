@@ -47,33 +47,44 @@ export function createSessions() {
   let sendError = $state('');
 
   const groups = $derived.by<SessionGroups>(() => {
-    const byWard = new Map<string, SessionView>();
+    // Ward name → ALL its bound sessions (a ward can hold its warden
+    // AND ordinary research conversations — none may be dropped).
+    const byWard = new Map<string, SessionView[]>();
     const g: SessionGroups = { chat: null, wardBots: [], research: [] };
     for (const s of sessions) {
       if (s.id === 'default') g.chat = s; // the ONE quick chat
       else if (s.type === 'research') {
-        if (s.ward) byWard.set(s.ward, s);
+        if (s.ward) byWard.set(s.ward, [...(byWard.get(s.ward) ?? []), s]);
         else g.research.push(s);
       }
       // Legacy chat-typed engine sessions (pre-migration goal runs)
       // stay out of the navigator until run-state surfacing lands.
     }
-    // Every ward renders its WARDEN row first: the real warden (id
-    // ward-<name>) when it exists, else the ward itself (select →
-    // ensure). Other ward-BOUND sessions render after it (they are
-    // real conversations in that ward, not its bot).
+    // Every ward renders its WARDEN row first — the session whose ID
+    // IS ward-<name> — else the ward itself (select → ensure). The
+    // ward's OTHER bound sessions render after it (real conversations,
+    // not its bot); bound sessions of wards absent from the roster
+    // (deleted vault entries) still render.
+    const wardenOf = (ward: string): SessionView | undefined =>
+      (byWard.get(ward) ?? []).find((s) => s.id === `ward-${ward}`);
+    const knownWards = new Set(wards.map((w) => w.name));
     for (const w of wards) {
-      const wardenId = `ward-${w.name}`;
-      const warden = byWard.get(wardenId);
-      byWard.delete(wardenId);
+      const bound = byWard.get(w.name) ?? [];
+      const warden = wardenOf(w.name);
       if (warden) {
         g.wardBots.push({ kind: 'session', session: warden, ward: w.name });
+        for (const s of bound) {
+          if (s.id !== warden.id) g.wardBots.push({ kind: 'session', session: s, ward: w.name });
+        }
       } else {
         g.wardBots.push({ kind: 'ward', ward: w.name, title: w.title ?? w.name });
+        for (const s of bound) g.wardBots.push({ kind: 'session', session: s, ward: w.name });
       }
     }
-    for (const s of byWard.values()) {
-      g.wardBots.push({ kind: 'session', session: s, ward: s.ward! });
+    for (const [ward, bound] of byWard) {
+      if (!knownWards.has(ward)) {
+        for (const s of bound) g.wardBots.push({ kind: 'session', session: s, ward });
+      }
     }
     return g;
   });
@@ -193,7 +204,7 @@ export function createSessions() {
     const row = groups.wardBots.find((r) => r.ward === ward);
     if (row && row.kind === 'session' && row.session.id === `ward-${ward}`) {
       await select(row.session.id);
-      return;
+      return; // the warden exists in the roster: reuse, no re-ensure
     }
     const res = await ensureWarden(ward);
     if (res.ok) {

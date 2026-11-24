@@ -60,9 +60,9 @@
 
 ## 5. Review and hardening
 
-- [ ] 5.1 Phase gates (gpt-6.1-terra + gpt-6.1-sol); fix P0/P1, P2s
+- [x] 5.1 Phase gates (gpt-6.1-terra + gpt-6.1-sol); fix P0/P1, P2s
   fix or record. Verify: ledger zero open P0/P1.
-- [ ] 5.2 zbot-reviewer + `task verify` green + live full-session
+- [x] 5.2 zbot-reviewer + `task verify` green + live full-session
   smoke (a research run in a ward: searches, runs a script in apps/,
   writes a dated report + wiki entry, persists the answer). Verify:
   reviewer zero open P0/P1; verify exits zero; artifacts on disk.

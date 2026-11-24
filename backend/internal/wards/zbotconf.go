@@ -72,7 +72,8 @@ func TouchLastUsed(wardDir string) {
 		return
 	}
 	stamped := stampLine(string(raw), time.Now())
-	if stamped == string(raw) && !strings.Contains(string(raw), "last_used:") {
+	if stamped == string(raw) && !hasLastUsedKey(string(raw)) {
+		// No exact last_used key (prefixed keys do NOT count): append.
 		stamped += lastUsedLine(time.Now())
 		if !strings.HasSuffix(stamped, "\n") {
 			stamped += "\n"
@@ -97,7 +98,7 @@ func stampLine(text string, t time.Time) string {
 		if trimmed == line {
 			rest = ""
 		}
-		if key, after, ok := strings.Cut(trimmed, ":"); ok && key == "last_used" && strings.HasPrefix(strings.TrimLeft(after, " "), "") {
+		if key, after, ok := strings.Cut(trimmed, ":"); ok && key == "last_used" {
 			// Preserve an inline comment after the scalar.
 			comment := ""
 			if ci := strings.Index(after, "#"); ci >= 0 {
@@ -108,5 +109,18 @@ func stampLine(text string, t time.Time) string {
 		}
 		b.WriteString(line)
 	}
-	return strings.TrimSuffix(b.String(), "")
+	return b.String()
+}
+
+// hasLastUsedKey reports whether the YAML text carries an exact
+// top-level last_used key (the append gate — prefixed keys don't
+// count).
+func hasLastUsedKey(text string) bool {
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimLeft(line, " \t")
+		if key, _, ok := strings.Cut(trimmed, ":"); ok && key == "last_used" {
+			return true
+		}
+	}
+	return false
 }

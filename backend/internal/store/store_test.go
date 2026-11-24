@@ -327,3 +327,45 @@ func TestLatestEventOfKindFractionalOrdering(t *testing.T) {
 		t.Fatalf("insertion order must win over text order: %q", ev.CreatedAt)
 	}
 }
+
+// TestEnsureWardenSession (final-review P1-3): the warden ensure is
+// idempotent with an ATOMIC created signal — concurrent-first callers
+// see exactly one creation; the binding sticks.
+func TestEnsureWardenSession(t *testing.T) {
+	s := openMem(t)
+	id1, created1, err := s.EnsureWardenSession("stock-analysis")
+	if err != nil || !created1 || id1 != "ward-stock-analysis" {
+		t.Fatalf("first ensure: id=%s created=%v err=%v", id1, created1, err)
+	}
+	id2, created2, err := s.EnsureWardenSession("stock-analysis")
+	if err != nil || created2 || id2 != id1 {
+		t.Fatalf("second ensure must reuse: id=%s created=%v err=%v", id2, created2, err)
+	}
+	sess, err := s.Session(id1)
+	if err != nil || sess == nil || sess.Type != "research" || sess.Ward != "stock-analysis" {
+		t.Fatalf("warden row: %v %+v", err, sess)
+	}
+	// Concurrent first callers: exactly one created.
+	var mu sync.Mutex
+	createdCount := 0
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, created, err := s.EnsureWardenSession("india-analysis")
+			if err != nil {
+				t.Errorf("concurrent ensure: %v", err)
+			}
+			if created {
+				mu.Lock()
+				createdCount++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if createdCount != 1 {
+		t.Fatalf("want exactly 1 creator among concurrent callers, got %d", createdCount)
+	}
+}

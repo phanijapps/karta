@@ -334,3 +334,56 @@ func TestExecutorSanitizeName(t *testing.T) {
 		t.Fatalf("long name not bounded: %d", len(long))
 	}
 }
+
+// TestExecutorChangedSpecRestartsAndCollisions (final-review P2-2):
+// a changed spec restarts the server; a dead server recovers via
+// Tools(); normalizing collisions get distinct suffixed names.
+func TestExecutorChangedSpecRestartsAndCollisions(t *testing.T) {
+	t.Parallel()
+	bin := echoBin(t)
+	spec := func(args ...string) registry.MCPSpec {
+		return registry.MCPSpec{Command: bin, Args: args}
+	}
+	current := []ServerSpec{{Name: "echo", Spec: spec("2")}}
+	ex := &Executor{
+		Specs: func() []ServerSpec { return current },
+		Log:   func(string, ...any) {},
+	}
+	ctx := context.Background()
+	ex.Refresh(ctx)
+	if got := len(ex.Tools()); got != 2 {
+		t.Fatalf("initial tools: %d", got)
+	}
+
+	// Changed spec (more tools): Refresh restarts under the same name.
+	current = []ServerSpec{{Name: "echo", Spec: spec("4")}}
+	ex.Refresh(ctx)
+	if got := len(ex.Tools()); got != 4 {
+		t.Fatalf("changed spec must restart: %d tools", got)
+	}
+
+	// Dead server: drop the session, Tools() reconciles it back.
+	ex.mu.Lock()
+	for name, srv := range ex.servers {
+		_ = srv.session.Close()
+		delete(ex.servers, name)
+	}
+	ex.mu.Unlock()
+	if got := len(ex.Tools()); got != 4 {
+		t.Fatalf("dead server must recover via Tools(): %d", got)
+	}
+
+	// Collision: two servers whose sanitized names coincide.
+	current = []ServerSpec{
+		{Name: "a b", Spec: spec("1")},
+		{Name: "a_b", Spec: spec("1")},
+	}
+	ex.Refresh(ctx)
+	names := map[string]bool{}
+	for _, tl := range ex.Tools() {
+		names[tl.Def().Name] = true
+	}
+	if len(names) != 2 {
+		t.Fatalf("colliding names must resolve distinctly: %v", names)
+	}
+}

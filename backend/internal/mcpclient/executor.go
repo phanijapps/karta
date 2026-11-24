@@ -42,6 +42,10 @@ type Executor struct {
 	Specs func() []ServerSpec
 	// Log is the daemon's logger (fail-soft reporting).
 	Log func(format string, args ...any)
+	// BaseCtx backs the tool-plane reconciliation (Tools() has no
+	// caller ctx; the daemon wires context.WithoutCancel(app ctx) —
+	// a server START is bounded by DefaultDeadline inside start).
+	BaseCtx context.Context // ctx-ok: wv2-tools-reconcile (daemon-lifetime reconcile)
 
 	mu      sync.Mutex
 	servers map[string]*managedServer
@@ -124,10 +128,6 @@ func (e *Executor) Refresh(ctx context.Context) {
 	e.mu.Unlock()
 }
 
-// Tools returns the live roster adapted to Karta's tool plane —
-// reconciling first so a server that died mid-run recovers for THIS
-// run's next model round (bounded by Refresh's fail-soft start).
-
 // start dials one server and lists its tools (bounded by the probe
 // deadline discipline).
 func (e *Executor) start(ctx context.Context, want ServerSpec) error {
@@ -155,6 +155,14 @@ func (e *Executor) start(ctx context.Context, want ServerSpec) error {
 		cursor = res.NextCursor
 	}
 	e.mu.Lock()
+	if cur := e.servers[want.Name]; cur != nil && cur.session != nil {
+		// A concurrent Refresh/start won: discard THIS session (its
+		// process closes) rather than stranding it as a leaked child.
+		e.mu.Unlock()
+		_ = sess.Close()
+		e.logf("server %q: concurrent start discarded", want.Name)
+		return nil
+	}
 	e.servers[want.Name] = &managedServer{name: want.Name, spec: want, session: sess, tools: live}
 	e.mu.Unlock()
 	e.logf("server %q live (%d tools)", want.Name, len(live))
@@ -293,7 +301,11 @@ func contentText(res *mcp.CallToolResult) string {
 // (mcp_<server>_<tool>, sanitized; collisions impossible by hash
 // suffix).
 func (e *Executor) Tools() []tools.Tool {
-	e.Refresh(context.Background())
+	ctx := e.BaseCtx
+	if ctx == nil {
+		ctx = context.Background() // ctx-ok: wv2-tools-reconcile (zero-value Executor: tests; daemon always wires BaseCtx)
+	}
+	e.Refresh(ctx)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	var out []tools.Tool
@@ -309,8 +321,13 @@ func (e *Executor) Tools() []tools.Tool {
 			ext := sanitizeName("mcp", name, tl.Name)
 			if owner, clash := seen[ext]; clash {
 				// Normalization collision (e.g. "a b" vs "a_b"): suffix
-				// a stable hash of the ORIGINAL pair.
-				ext = ext[:55] + "_" + fmt.Sprintf("%08x", fnv32(name+"/"+tl.Name))
+				// a stable hash of the ORIGINAL pair (bounded to 64).
+				suffix := "_" + fmt.Sprintf("%08x", fnv32(name+"/"+tl.Name))
+				cut := 64 - len(suffix)
+				if cut > len(ext) {
+					cut = len(ext)
+				}
+				ext = ext[:cut] + suffix
 				if _, again := seen[ext]; again {
 					continue // pathological: drop rather than alias
 				}
