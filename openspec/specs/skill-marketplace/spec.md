@@ -42,6 +42,7 @@ by the preview flow directly, bypassing search.
   re-queries synchronously
 - **THEN** there is no background refresh and no stale success
 
+
 ### Requirement: Mandatory preview
 
 No skill SHALL install without an explicit preview the user saw first:
@@ -57,6 +58,7 @@ and SHALL NOT execute anything.
 - **WHEN** the user selects a marketplace result or submits an archive
 - **THEN** the preview dialog shows the SKILL.md content and every
   bundled file before any install action is offered
+
 
 ### Requirement: Preview capability binds the reviewed bytes
 
@@ -78,6 +80,7 @@ preview and install cannot change the installed bytes.
   before the install
 - **THEN** the install fetches the preview's pinned commit and the
   installed files match the previewed digests exactly
+
 
 ### Requirement: One safety envelope for all remote content
 
@@ -107,21 +110,23 @@ never an arbitrary fetch destination.
 - **WHEN** archive headers understate sizes beyond a cap
 - **THEN** streaming enforcement rejects the archive mid-read
 
+
 ### Requirement: Marketplace install
 
 Installing SHALL land each selected skill atomically under
-`config/skills/<slug>/` by the registry's rules (slug from the skill
-name, capacity, duplicate refusal leaving the existing skill
-untouched) through a validate-stage-rename primitive: every file path
-and mode (0o644/0o755 only) validated, the SKILL.md validated with
-the LOADER's exact rules (accepted frontmatter: `name`,
-`description`, and the ignored `path` sink — nothing else), the tree
-built in a private staging sibling, and installed by the atomic
-directory no-clobber rename. Bundled files copy verbatim (executable
-bits preserved for scripts); multi-skill repositories install a
-chosen subset with per-skill outcomes. Failures are typed
-(unreachable, not found, no skills found, invalid skill, upstream
-rate-limited, changed-upstream).
+`skills/<slug>/` (the top-level `~/.zbot/skills/` root) by the
+registry's rules (slug from the skill name, capacity, duplicate
+refusal leaving the existing skill untouched) through a
+validate-stage-rename primitive: every file path and mode
+(0o644/0o755 only) validated, the SKILL.md validated with the
+LOADER's exact rules (accepted frontmatter: `name`, `description`,
+and the ignored sink keys `path`, `license`, `metadata`,
+`allowed-tools` — nothing else), the tree built in a private staging
+sibling, and installed by the atomic directory no-clobber rename.
+Bundled files copy verbatim (executable bits preserved for scripts);
+multi-skill repositories install a chosen subset with per-skill
+outcomes. Failures are typed (unreachable, not found, no skills
+found, invalid skill, upstream rate-limited, changed-upstream).
 
 #### Scenario: Install a marketplace skill
 
@@ -155,6 +160,7 @@ rate-limited, changed-upstream).
 - **THEN** the preview refuses it — the registry can never
   subsequently drop a previewed skill
 
+
 ### Requirement: Staging lifecycle
 
 File-import staging SHALL use opaque high-entropy bearer capabilities
@@ -171,6 +177,7 @@ uploads SHALL be bounded (oldest evicted with a typed busy error).
   with staged directories on disk
 - **THEN** the second commit is an expired 404 and startup removes
   the orphans
+
 
 ### Requirement: Archive file import
 
@@ -204,6 +211,7 @@ cleaned up on a short TTL.
 - **WHEN** the same skill arrives as `name.skill` or `name.zip`, with
   `SKILL.md` at the root or inside exactly one directory
 - **THEN** both install identically
+
 
 ### Requirement: Provenance
 

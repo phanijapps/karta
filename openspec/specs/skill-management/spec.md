@@ -8,7 +8,7 @@ Daemon-managed lifecycle for workspace skills: CRUD over `config/skills/<dir>/SK
 
 ### Requirement: Skill directories and frontmatter
 
-A skill SHALL be one directory under `config/skills/` containing a `SKILL.md` whose YAML frontmatter carries `name` and `description` (both required, non-empty) and whose body is markdown. The directory name SHALL be the slugified skill name, enforced on create and rename; entries with other directory names remain loadable and manageable in place. Skill files beyond `SKILL.md` are the skill's bundle and are opaque to management: they are preserved verbatim by every operation that keeps the skill. Authored frontmatter SHALL NOT influence a skill's filesystem location — management targets are derived from the skills root and the slug, never from frontmatter-supplied paths.
+A skill SHALL be one directory under `skills/` (the top-level `~/.zbot/skills/` root) containing a `SKILL.md` whose YAML frontmatter carries `name` and `description` (both required, non-empty) and whose body is markdown. The directory name SHALL be the slugified skill name, enforced on create and rename; entries with other directory names remain loadable and manageable in place. Skill files beyond `SKILL.md` are the skill's bundle and are opaque to management: they are preserved verbatim by every operation that keeps the skill. Authored frontmatter SHALL NOT influence a skill's filesystem location — management targets are derived from the skills root and the slug, never from frontmatter-supplied paths.
 
 #### Scenario: Created skill matches the loader
 
@@ -22,8 +22,9 @@ A skill SHALL be one directory under `config/skills/` containing a `SKILL.md` wh
 
 #### Scenario: Authored path is ignored
 
-- **WHEN** a hand-authored `SKILL.md` frontmatter carries a `path` field pointing outside the skills root
-- **THEN** the skill's directory is where the file lives under the skills root and detail, edit, rename, and delete all target that directory
+- **WHEN** a SKILL.md carries a `path` (or other sink) frontmatter key
+- **THEN** the skill manages at its directory-derived location and the authored value never becomes a target
+
 
 ### Requirement: Skill CRUD applies immediately
 
@@ -68,6 +69,7 @@ Create SHALL write the directory and `SKILL.md` atomically (no reader observes a
 
 - **WHEN** a delete removes some but not all of a skill's directory
 - **THEN** the registry publishes the state actually on disk, the residual is reported as a load error or an assets-only directory, and a typed error is returned
+
 
 ### Requirement: Skill body is retrievable
 

@@ -48,5 +48,6 @@ reasoning_effort=low (the ParamCompleter seam).
 
 `Router.Bypass`, `(*Analyzer).Analyze`, the `Packet` builders
 (`packet.go`), and the Wrapper constructor. See the change artifacts:
-`openspec/changes/add-intent-analysis/` (slice 2) and
-`openspec/changes/intent-context-packet/` (the packet rework).
+`openspec/changes/archive/2026-11-24-add-intent-analysis/` (slice 2)
+and `openspec/changes/archive/2026-11-24-intent-context-packet/` (the
+packet rework); the living spec is `openspec/specs/intent-analysis/`.
