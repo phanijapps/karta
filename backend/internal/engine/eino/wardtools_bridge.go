@@ -29,6 +29,7 @@ func wardToolSet(in runInput) []tools.Tool {
 		wardtools.ReadTool{F: files},
 		wardtools.WriteTool{F: files},
 		wardtools.ListTool{F: files},
+		wardtools.ShellTool{Host: in.wardHost}, // the execution plane (ward-v2)
 	}
 	if !in.isChild {
 		set = append(set,
@@ -65,6 +66,10 @@ func (a *Adapter) wardHost(sessionID string) *wardtools.Host {
 	}
 	return h
 }
+
+// SetMCPTools wires the retrieval plane: fn returns the live MCP
+// tools (nil/empty = none). Mounted on ROOT runs only.
+func (a *Adapter) SetMCPTools(fn func() []tools.Tool) { a.mcpTools = fn }
 
 // SetWardBinder wires the session-row ward binding: every ward enter
 // (ward_use/ward_create, or EnsureWard) in a session fires fn with the

@@ -132,6 +132,12 @@ func (t CreateTool) instantiate(ctx context.Context, name, archetype string) err
 			target = name + ".md"
 		}
 		dst := filepath.Join(dest, target)
+		if e.IsDir() {
+			if err := copyTreeIfAbsent(src, dst); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := copyFileIfAbsent(src, dst); err != nil {
 			return err
 		}
@@ -151,6 +157,31 @@ func (t CreateTool) instantiate(ctx context.Context, name, archetype string) err
 	}
 	if len(findings) > 0 {
 		return fmt.Errorf("created ward does not lint clean: %+v", findings)
+	}
+	return nil
+}
+
+// copyTreeIfAbsent recursively copies a template directory (write-once
+// at every level; the v2 homes .zbot/wiki/reports/apps instantiate).
+func copyTreeIfAbsent(src, dst string) error {
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		s, d := filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())
+		if e.IsDir() {
+			if err := copyTreeIfAbsent(s, d); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := copyFileIfAbsent(s, d); err != nil {
+			return err
+		}
 	}
 	return nil
 }

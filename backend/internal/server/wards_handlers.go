@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	apigen "zbot/backend/internal/server/apigen"
 	"zbot/backend/internal/wards"
@@ -63,6 +64,13 @@ func (s *Server) GetWard(w http.ResponseWriter, r *http.Request, name string) {
 	for i, f := range detail.Findings {
 		view.Findings[i] = wardFindingView(f)
 	}
+	if detail.Info.Description != "" {
+		d := detail.Info.Description
+		view.Description = &d
+	}
+	if t, err := time.Parse(time.RFC3339, detail.Info.LastUsed); err == nil {
+		view.LastUsed = &t
+	}
 	if detail.Info.CanonicalTitle != "" {
 		title := detail.Info.CanonicalTitle
 		view.CanonicalTitle = &title
@@ -86,7 +94,54 @@ func wardSummaryView(info wards.WardInfo) apigen.WardSummary {
 		title := info.CanonicalTitle
 		view.CanonicalTitle = &title
 	}
+	if info.Description != "" {
+		d := info.Description
+		view.Description = &d
+	}
+	if t, err := time.Parse(time.RFC3339, info.LastUsed); err == nil {
+		view.LastUsed = &t
+	}
 	return view
+}
+
+// EnsureWarden ensures the ward's persistent home session (the
+// warden — every ward's selectable bot). Idempotent: creates on first
+// select, returns the existing one after.
+func (s *Server) EnsureWarden(w http.ResponseWriter, r *http.Request, name string) {
+	if s.wards == nil {
+		writeError(w, http.StatusServiceUnavailable, "wards_unavailable", "ward vault is not wired")
+		return
+	}
+	if s.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "session store not wired")
+		return
+	}
+	// Membership check: the ward must exist (typed unknown-ward).
+	if _, err := s.wards.Detail(r.Context(), name); err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "no such ward: "+name)
+		return
+	}
+	// Idempotence signal: 201 only on the FIRST creation.
+	before, err := s.db.Session("ward-" + name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	id, err := s.db.EnsureWardenSession(name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	sess, err := s.db.Session(id)
+	if err != nil || sess == nil {
+		writeError(w, http.StatusInternalServerError, "internal", "warden vanished after ensure")
+		return
+	}
+	status := http.StatusOK
+	if before == nil {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, sessionView(sess, false, time.Time{}))
 }
 
 // wardFindingView maps one lint finding; nodes without a declared id are

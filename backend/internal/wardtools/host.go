@@ -104,6 +104,7 @@ func (h *Host) enter(ctx context.Context, name string) (*WardView, error) {
 	if onEnter != nil {
 		onEnter(name) // session-ward binding update (best-effort)
 	}
+	wards.TouchLastUsed(dir) // .zbot/config.yaml v2 state (best-effort)
 	return &WardView{Name: name, Dir: dir, Conf: conf, Constitution: constitution, Digest: h.digest}, nil
 }
 

@@ -4,18 +4,24 @@
 // toggle anywhere; switching sessions switches the conversation.
 import {
   createSession,
+  ensureWarden,
   getDefaultModel,
   getSessionState,
   listSessions,
+  listWards,
   syncChatMessages,
   type ChatMessage,
   type SessionAnalysis,
   type SessionView,
 } from '../../shared/api/client';
 
+export type WardBotRow =
+  | { kind: 'session'; session: SessionView; ward: string }
+  | { kind: 'ward'; ward: string; title: string };
+
 export type SessionGroups = {
   chat: SessionView | null;
-  wardBots: SessionView[];
+  wardBots: WardBotRow[];
   research: SessionView[];
 };
 
@@ -27,6 +33,9 @@ export function createSessions() {
   let model = $state(''); // catalog-backed picker sets this
   let loading = $state(true);
   let rosterError = $state('');
+  // The ward roster (v2): wards WITHOUT a live session still render as
+  // rows — selecting one ensures the ward's warden session.
+  let wards = $state<{ name: string; title?: string }[]>([]);
   // The ACTIVE session's latest intent analysis (the state surface —
   // the analysis card and the context panel render from this, never
   // from transcript parsing).
@@ -38,15 +47,29 @@ export function createSessions() {
   let sendError = $state('');
 
   const groups = $derived.by<SessionGroups>(() => {
+    const byWard = new Map<string, SessionView>();
     const g: SessionGroups = { chat: null, wardBots: [], research: [] };
     for (const s of sessions) {
       if (s.id === 'default') g.chat = s; // the ONE quick chat
       else if (s.type === 'research') {
-        if (s.ward) g.wardBots.push(s);
+        if (s.ward) byWard.set(s.ward, s);
         else g.research.push(s);
       }
       // Legacy chat-typed engine sessions (pre-migration goal runs)
       // stay out of the navigator until run-state surfacing lands.
+    }
+    // Every ward renders a row: its live session (warden) when one
+    // exists, else the ward itself (select → ensure the warden).
+    for (const w of wards) {
+      if (byWard.has(w.name)) {
+        g.wardBots.push({ kind: 'session', session: byWard.get(w.name)!, ward: w.name });
+        byWard.delete(w.name);
+      } else {
+        g.wardBots.push({ kind: 'ward', ward: w.name, title: w.title ?? w.name });
+      }
+    }
+    for (const s of byWard.values()) {
+      g.wardBots.push({ kind: 'session', session: s, ward: s.ward! });
     }
     return g;
   });
@@ -72,6 +95,16 @@ export function createSessions() {
     } else {
       rosterError = 'daemon';
       sessions = [];
+    }
+    // The ward roster rides along (fail-soft: wards are enrichment).
+    try {
+      const roster = await listWards();
+      if (roster) {
+        wards = roster.wards
+          .map((w) => ({ name: w.name, title: w.canonical_title ?? undefined }));
+      }
+    } catch {
+      /* wards are enrichment; sessions stand alone */
     }
     // The quick chat is ALWAYS there — locally injected when the daemon
     // omits it or the roster call fails (it is created on first send).
@@ -150,6 +183,22 @@ export function createSessions() {
     void loadAnalysis(sessionId);
   }
 
+  /** Select a ward's bot: its live session, or ensure the warden. */
+  async function selectWard(ward: string) {
+    const row = groups.wardBots.find((r) => r.ward === ward);
+    if (row && row.kind === 'session') {
+      await select(row.session.id);
+      return;
+    }
+    const res = await ensureWarden(ward);
+    if (res.ok) {
+      await loadRoster();
+      await select(res.sessionId);
+    } else {
+      sendError = res.error;
+    }
+  }
+
   /** [+ New Research]: create a shell session and activate it. */
   async function newResearch(title?: string) {
     const res = await createSession(title);
@@ -194,6 +243,7 @@ export function createSessions() {
     load,
     loadRoster,
     select,
+    selectWard,
     newResearch,
     reconcile,
     clearedLocally,

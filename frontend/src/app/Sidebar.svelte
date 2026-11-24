@@ -4,11 +4,11 @@
   import type { SessionView } from '../shared/api/client';
 
   let {
-    sessions, rail = false, ontoggle, onselect, onsettings, onschedules, onwards,
+    sessions, rail = false, ontoggle, onselect, onselectWard, onsettings, onschedules, onwards,
   }: {
     sessions: Sessions; rail?: boolean; ontoggle: () => void;
-    onselect: (id: string) => void; onsettings: () => void;
-    onschedules: () => void; onwards: () => void;
+    onselect: (id: string) => void; onselectWard: (ward: string) => void;
+    onsettings: () => void; onschedules: () => void; onwards: () => void;
   } = $props();
 
   let creating = $state(false);
@@ -62,18 +62,26 @@
       {/if}
     </ul></li>
 
-    <!-- Ward Bots: research sessions bound to a ward -->
+    <!-- Ward Bots: every ward renders a row — its live warden session,
+         or the ward itself (select → ensure the warden) -->
     <li aria-labelledby="ward-group"><p class="group-label" id="ward-group">Ward Bots</p>
     <ul class="group">
-      {#each groups.wardBots as s (s.id)}
+      {#each groups.wardBots as row (row.ward)}
         <li>
-          <button class="session" class:active={sessions.activeId === s.id} aria-current={sessions.activeId === s.id ? 'true' : undefined} onclick={() => onselect(s.id)} title={s.ward}>
-            <span class="icon ward"><Folder size={16} aria-hidden="true" /></span>
-            <span class="meta"><span class="name">{s.ward}</span><span class="sub">{timeHint(s.updated_at)}</span></span>
-          </button>
+          {#if row.kind === 'session'}
+            <button class="session" class:active={sessions.activeId === row.session.id} aria-current={sessions.activeId === row.session.id ? 'true' : undefined} onclick={() => onselect(row.session.id)} title={row.ward}>
+              <span class="icon ward"><Folder size={16} aria-hidden="true" /></span>
+              <span class="meta"><span class="name">{row.ward}</span><span class="sub">{timeHint(row.session.updated_at)}</span></span>
+            </button>
+          {:else}
+            <button class="session" title={`${row.ward} — start its warden`} onclick={() => onselectWard(row.ward)}>
+              <span class="icon ward"><Folder size={16} aria-hidden="true" /></span>
+              <span class="meta"><span class="name">{row.ward}</span><span class="sub">warden · tap to open</span></span>
+            </button>
+          {/if}
         </li>
       {:else}
-        <li class="empty">No ward bots yet</li>
+        <li class="empty">No wards in the vault</li>
       {/each}
     </ul></li>
 

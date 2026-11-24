@@ -383,6 +383,43 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /api/wards/{name}/warden:
+    post:
+      operationId: ensureWarden
+      summary: Ensure the ward's persistent session (the warden)
+      description: |
+        Every ward has a warden: its persistent home conversation (a
+        research session, id `ward-<name>`, ward-bound). Idempotent —
+        creates on first select, returns the existing one after. The
+        sidebar's ward rows select wardens.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 255
+      responses:
+        '200':
+          description: The warden session (existing).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '201':
+          description: The warden session (freshly created).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: The ward vault is not wired (daemon wiring failure).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/mcps:
     get:
       operationId: listMcps
@@ -2680,6 +2717,14 @@ components:
         lint_status:
           type: string
           enum: [clean, violations]
+        description:
+          type: string
+          maxLength: 512
+          description: The .zbot/config.yaml one-liner (v2 identity).
+        last_used:
+          type: string
+          format: date-time
+          description: Last ward entry (v2 state, best-effort).
         finding_count:
           type: integer
           minimum: 0
@@ -2706,6 +2751,14 @@ components:
         lint_status:
           type: string
           enum: [clean, violations]
+        description:
+          type: string
+          maxLength: 512
+          description: The .zbot/config.yaml one-liner (v2 identity).
+        last_used:
+          type: string
+          format: date-time
+          description: Last ward entry (v2 state, best-effort).
         finding_count:
           type: integer
           minimum: 0

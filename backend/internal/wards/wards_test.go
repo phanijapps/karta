@@ -102,22 +102,35 @@ func TestSeedTemplatesLintClean(t *testing.T) {
 				t.Fatalf("parse conf: %v", err)
 			}
 			ward := t.TempDir()
-			entries, err := os.ReadDir(src)
-			if err != nil {
-				t.Fatalf("read dir: %v", err)
-			}
-			for _, e := range entries {
-				if e.Name() == "ward-conf.yaml" || e.Name() == "canonical.md" {
-					continue
-				}
-				data, err := os.ReadFile(filepath.Join(src, e.Name()))
+			var copyTree func(from, to string) // recursive: the v2 homes are dirs
+			copyTree = func(from, to string) {
+				t.Helper()
+				es, err := os.ReadDir(from)
 				if err != nil {
-					t.Fatalf("read %s: %v", e.Name(), err)
+					t.Fatalf("read %s: %v", from, err)
 				}
-				if err := os.WriteFile(filepath.Join(ward, e.Name()), data, 0o644); err != nil {
-					t.Fatalf("write %s: %v", e.Name(), err)
+				for _, e := range es {
+					if e.Name() == "ward-conf.yaml" || e.Name() == "canonical.md" {
+						continue // canonical lands under the ward's own name
+					}
+					s, d := filepath.Join(from, e.Name()), filepath.Join(to, e.Name())
+					if e.IsDir() {
+						if err := os.MkdirAll(d, 0o755); err != nil {
+							t.Fatalf("mkdir %s: %v", d, err)
+						}
+						copyTree(s, d)
+						continue
+					}
+					data, err := os.ReadFile(s)
+					if err != nil {
+						t.Fatalf("read %s: %v", s, err)
+					}
+					if err := os.WriteFile(d, data, 0o644); err != nil {
+						t.Fatalf("write %s: %v", d, err)
+					}
 				}
 			}
+			copyTree(src, ward)
 			// The canonical starter lands under the ward's own name.
 			canonical, err := os.ReadFile(filepath.Join(src, "canonical.md"))
 			if err != nil {
@@ -437,6 +450,84 @@ func writeWardFiles(t *testing.T, dir string, entries map[string]string) {
 		}
 		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+}
+
+// TestMigrateV2 (task 1.1): existing wards gain the v2 homes
+// additively (nothing moved/overwritten); last_used round-trips
+// through TouchLastUsed; lint stays clean with the new dirs.
+func TestMigrateV2(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "wards")
+	if err := Bootstrap(context.Background(), root); err != nil {
+		t.Fatal(err)
+	}
+	// A legacy ward: v1 shape only, with a user-edited canonical.
+	legacy := filepath.Join(root, "legacy-ward")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, "legacy-ward.md"), []byte("# Legacy\nuser content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MigrateV2(context.Background(), root); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	for _, home := range []string{"wiki", "reports", "apps"} {
+		if _, err := os.Stat(filepath.Join(legacy, home)); err != nil {
+			t.Fatalf("home %s missing: %v", home, err)
+		}
+	}
+	cfgPath := filepath.Join(legacy, ".zbot", "config.yaml")
+	if _, err := os.Stat(cfgPath); err != nil {
+		t.Fatalf(".zbot/config.yaml missing: %v", err)
+	}
+	// User content untouched.
+	raw, _ := os.ReadFile(filepath.Join(legacy, "legacy-ward.md"))
+	if string(raw) != "# Legacy\nuser content\n" {
+		t.Fatalf("user file mutated: %q", raw)
+	}
+	// Idempotent: a user-edited config survives re-migration.
+	if err := os.WriteFile(cfgPath, []byte("name: my-ward\ndescription: mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateV2(context.Background(), root); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = os.ReadFile(cfgPath)
+	if string(raw) != "name: my-ward\ndescription: mine\n" {
+		t.Fatalf("config overwritten: %q", raw)
+	}
+
+	// TouchLastUsed: stamps in place, preserves fields.
+	TouchLastUsed(legacy)
+	cfg := ReadZbotConfig(legacy)
+	if cfg.Name != "my-ward" || cfg.Description != "mine" {
+		t.Fatalf("fields lost: %+v", cfg)
+	}
+	if cfg.LastUsed == "" {
+		t.Fatal("last_used not stamped")
+	}
+
+	// The legacy ward lints clean (conf-less freeform + v2 homes).
+	vault, err := Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	infos, err := vault.Index(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wi := range infos {
+		if wi.Name == "legacy-ward" && wi.FindingCount != 0 {
+			t.Fatalf("legacy ward dirty post-migration: %+v", wi)
+		}
+	}
+	// Index carries the v2 identity.
+	for _, wi := range infos {
+		if wi.Name == "legacy-ward" && (wi.Description != "mine" || wi.LastUsed == "") {
+			t.Fatalf("v2 identity not indexed: %+v", wi)
 		}
 	}
 }

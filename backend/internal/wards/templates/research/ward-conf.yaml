@@ -23,3 +23,7 @@ layout:
     - { id: sources, match: sources, kind: directory, required: false }
     - { id: data, match: data, kind: directory, required: false }
     - { id: outputs, match: outputs, kind: directory, required: false }
+    # v2 homes (optional; the linter treats them as built-in in every ward)
+    - { id: wiki, match: wiki, kind: directory, required: false }
+    - { id: reports, match: reports, kind: directory, required: false }
+    - { id: apps, match: apps, kind: directory, required: false }

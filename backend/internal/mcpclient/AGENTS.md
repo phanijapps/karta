@@ -27,3 +27,11 @@ fallback behind the seam).
   tests), `GoSDKProber.Test`, `ProbeResult` / `TransportResult` /
   `Failure`. Tests build a real stdio server from `testdata/echoServer`
   and serve loopback-only HTTP endpoints; zero external network.
+
+## Execution bridge (ward-v2)
+
+`Executor` (executor.go) keeps configured stdio MCP servers connected
+and executes their tools live: Refresh reconciles the roster (registry
+snapshot), Tools() adapts them to the tool plane (mcp_<server>_<tool>,
+sanitized), Call routes with re-dial after a dead session. Fail-soft:
+a server that cannot start just has absent tools + a log line.

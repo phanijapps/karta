@@ -108,6 +108,11 @@ func lintDir(ctx context.Context, dir, ward string, nodes []Node, rel string, ou
 		}
 	}
 	for _, e := range entries {
+		// Root-level v2 homes (wiki/reports/apps) are built-in optional
+		// nodes in EVERY ward — legacy confs lint clean post-migration.
+		if rel == "" && v2Homes[e.Name()] {
+			continue
+		}
 		if consumed[e.Name()] || strings.HasPrefix(e.Name(), ".") || e.Name() == confFile {
 			continue
 		}

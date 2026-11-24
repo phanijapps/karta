@@ -1,0 +1,7 @@
+# Ward identity + state. USER-OWNED: Karta touches only last_used
+# (on ward entry); everything else is yours.
+name: ""            # defaults to the ward directory name
+description: ""     # one line: what this ward is for
+last_used: ""       # RFC3339, touched by Karta on ward entry
+agents: []          # ward-scoped agent seeds (future surface)
+skills: []          # ward-scoped skill seeds (future surface)

@@ -41,9 +41,23 @@ func seedExamples(ctx context.Context, paths Paths) error {
 	// the earlier roster change still receive the persona once (upgrade
 	// path); after this marker, deletions stick like everywhere else.
 	if markerExists(paths.Home, personaSeedMarker) {
-		return nil
+		// v2 (ward-v2-full-session): the operator's agentzero persona
+		// set (SOUL/OS/INSTRUCTIONS) seeds once more on pre-v2 homes —
+		// write-once, so user edits since the first seeding win.
+		if markerExists(paths.Home, personaSeedV2Marker) {
+			return nil
+		}
+		if err := seedWalk(ctx, "seedassets/prompts", paths.ConfigDir("prompts")); err != nil {
+			return err
+		}
+		return dropMarker(filepath.Join(paths.Home, personaSeedV2Marker))
 	}
 	if err := seedWalk(ctx, "seedassets/prompts", paths.ConfigDir("prompts")); err != nil {
+		return err
+	}
+	// Fresh installs seed the v2 persona directly: both markers drop so
+	// the v2 re-seed never resurrects a later deletion.
+	if err := dropMarker(filepath.Join(paths.Home, personaSeedV2Marker)); err != nil {
 		return err
 	}
 	return dropMarker(filepath.Join(paths.Home, personaSeedMarker))
@@ -52,6 +66,9 @@ func seedExamples(ctx context.Context, paths Paths) error {
 // personaSeedMarker gates the one-time persona seeding (a later addition
 // than the example roster; separate so pre-persona installs upgrade).
 const personaSeedMarker = ".persona-seeded"
+
+// personaSeedV2Marker gates the operator-persona re-seed (ward-v2).
+const personaSeedV2Marker = ".persona-seeded-v2"
 
 func markerExists(home, name string) bool {
 	_, err := os.Stat(filepath.Join(home, name))

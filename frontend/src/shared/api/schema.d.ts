@@ -252,6 +252,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/wards/{name}/warden": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ensure the ward's persistent session (the warden)
+         * @description Every ward has a warden: its persistent home conversation (a
+         *     research session, id `ward-<name>`, ward-bound). Idempotent —
+         *     creates on first select, returns the existing one after. The
+         *     sidebar's ward rows select wardens.
+         */
+        post: operations["ensureWarden"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mcps": {
         parameters: {
             query?: never;
@@ -1426,6 +1449,13 @@ export interface components {
             archetype: string;
             /** @enum {string} */
             lint_status: "clean" | "violations";
+            /** @description The .zbot/config.yaml one-liner (v2 identity). */
+            description?: string;
+            /**
+             * Format: date-time
+             * @description Last ward entry (v2 state, best-effort).
+             */
+            last_used?: string;
             /** @description Lint findings against the ward's conf (0 = clean). */
             finding_count: number;
             /** @description The canonical page's title (first level-1 heading, else the file name); absent when the ward has no canonical page yet. */
@@ -1436,6 +1466,13 @@ export interface components {
             archetype: string;
             /** @enum {string} */
             lint_status: "clean" | "violations";
+            /** @description The .zbot/config.yaml one-liner (v2 identity). */
+            description?: string;
+            /**
+             * Format: date-time
+             * @description Last ward entry (v2 state, best-effort).
+             */
+            last_used?: string;
             finding_count: number;
             canonical_title?: string;
             findings: components["schemas"]["WardFinding"][];
@@ -2123,6 +2160,47 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description The ward vault is not wired (daemon wiring failure). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    ensureWarden: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The warden session (existing). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            /** @description The warden session (freshly created). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            404: components["responses"]["NotFound"];
             /** @description The ward vault is not wired (daemon wiring failure). */
             503: {
                 headers: {

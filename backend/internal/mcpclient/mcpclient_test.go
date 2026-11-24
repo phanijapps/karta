@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -262,5 +263,74 @@ func TestProberSeamIsImplementable(t *testing.T) {
 	}
 	if _, err := os.Stat("/nonexistent"); !os.IsNotExist(err) {
 		t.Fatal("sanity")
+	}
+}
+
+// TestExecutorLifecycleAndCalls (task 3.1): the execution bridge keeps
+// a stdio server connected, lists + calls its tools live, drops
+// deconfigured servers, and re-dials after the session dies.
+func TestExecutorLifecycleAndCalls(t *testing.T) {
+	t.Parallel()
+	bin := echoBin(t)
+	spec := registry.MCPSpec{Command: bin, Args: []string{"2"}}
+	ex := &Executor{
+		Specs: func() []ServerSpec { return []ServerSpec{{Name: "echo", Spec: spec}} },
+		Log:   func(string, ...any) {},
+	}
+	ctx := context.Background()
+	ex.Refresh(ctx)
+
+	live := ex.Tools()
+	if len(live) != 2 {
+		t.Fatalf("want 2 tools, got %d", len(live))
+	}
+	if live[0].Def().Name != "mcp_echo_tool_0000" {
+		t.Fatalf("prefixed name: %s", live[0].Def().Name)
+	}
+	def := live[0].Def()
+	if def.Description == "" || def.ParamsJSON == "" {
+		t.Fatalf("def incomplete: %+v", def)
+	}
+
+	// A live call round-trips the arguments.
+	res := live[0].Exec(ctx, `{"hello":"world"}`)
+	if res.Err != nil {
+		t.Fatalf("call: %v", res.Err)
+	}
+	if !strings.Contains(res.Output, "echo:") || !strings.Contains(res.Output, "world") {
+		t.Fatalf("output: %s", res.Output)
+	}
+
+	// Deconfigured: the roster empties.
+	ex.Specs = func() []ServerSpec { return nil }
+	ex.Refresh(ctx)
+	if got := ex.Tools(); len(got) != 0 {
+		t.Fatalf("deconfigured tools linger: %d", len(got))
+	}
+
+	// Re-dial on call after the roster returns (the dead-session path).
+	ex.Specs = func() []ServerSpec { return []ServerSpec{{Name: "echo", Spec: spec}} }
+	res = live[0].Exec(ctx, `{"again":true}`)
+	if res.Err != nil {
+		t.Fatalf("re-dial call: %v", res.Err)
+	}
+	if !strings.Contains(res.Output, "again") {
+		t.Fatalf("re-dial output: %s", res.Output)
+	}
+}
+
+// TestExecutorSanitizeName: external names obey provider rules.
+func TestExecutorSanitizeName(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"ddg-search", "ddg-search"}, // dashes are valid function-name chars
+		{"a b", "a_b"},
+	} {
+		if got := sanitizeName("mcp", tc.in, "search"); got != "mcp_"+tc.want+"_search" {
+			t.Fatalf("sanitize(%q) = %q", tc.in, got)
+		}
+	}
+	long := sanitizeName("mcp", strings.Repeat("x", 80), strings.Repeat("y", 80))
+	if len(long) > 64 {
+		t.Fatalf("long name not bounded: %d", len(long))
 	}
 }

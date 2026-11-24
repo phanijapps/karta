@@ -264,3 +264,82 @@ func TestOnEnterFires(t *testing.T) {
 		t.Fatalf("fired: %v", fired)
 	}
 }
+
+// TestShellTool (task 2.1): ward_shell runs bash pinned to the ward,
+// scrubs env, caps output, times out, and refuses without a ward.
+// Non-zero exits are RESULTS (model-visible), not tool errors.
+func TestShellTool(t *testing.T) {
+	host, vault := newTestHost(t)
+	sh := ShellTool{Host: host}
+	ctx := context.Background()
+
+	t.Run("refuses without a ward", func(t *testing.T) {
+		res := sh.Exec(ctx, `{"command":"pwd"}`)
+		if res.Err == nil || !strings.Contains(res.Err.Error(), "ward_use") {
+			t.Fatalf("want typed refusal naming ward_use, got %v", res.Err)
+		}
+	})
+
+	enter := func() {
+		use := UseTool{Host: host, Vault: vault}
+		if res := use.Exec(ctx, `{"name":"stock-analysis"}`); res.Err != nil {
+			t.Fatalf("enter: %v", res.Err)
+		}
+	}
+	enter()
+
+	t.Run("cwd pinned to the ward", func(t *testing.T) {
+		res := sh.Exec(ctx, `{"command":"pwd"}`)
+		if res.Err != nil {
+			t.Fatalf("exec: %v", res.Err)
+		}
+		if !strings.Contains(res.Output, host.Active().Dir) {
+			t.Fatalf("cwd not the ward: %s", res.Output)
+		}
+	})
+
+	t.Run("env scrubbed + ward vars present", func(t *testing.T) {
+		t.Setenv("SECRET_TOKEN", "leaky") //nolint:paralleltest // setenv in subtest
+		res := sh.Exec(ctx, `{"command":"echo ${SECRET_TOKEN:-no-secret} ${WARD_NAME:-no-ward}"}`)
+		if strings.Contains(res.Output, "leaky") {
+			t.Fatalf("env leaked: %s", res.Output)
+		}
+		if !strings.Contains(res.Output, "stock-analysis") {
+			t.Fatalf("WARD_NAME missing: %s", res.Output)
+		}
+	})
+
+	t.Run("writes and runs code in apps/", func(t *testing.T) {
+		res := sh.Exec(ctx, `{"command":"mkdir -p apps && printf 'print(6*7)\\n' > apps/x.py && python3 apps/x.py"}`)
+		if res.Err != nil || !strings.Contains(res.Output, "42") {
+			t.Fatalf("apps round-trip: %v %s", res.Err, res.Output)
+		}
+	})
+
+	t.Run("non-zero exit is a result", func(t *testing.T) {
+		res := sh.Exec(ctx, `{"command":"exit 3"}`)
+		if res.Err != nil {
+			t.Fatalf("exit code must not be a tool error: %v", res.Err)
+		}
+		if !strings.Contains(res.Output, "[exit:") {
+			t.Fatalf("exit not reported: %s", res.Output)
+		}
+	})
+
+	t.Run("timeout bounds the command", func(t *testing.T) {
+		res := sh.Exec(ctx, `{"command":"sleep 5","timeout_seconds":1}`)
+		if !strings.Contains(res.Output, "[timeout after 1s]") {
+			t.Fatalf("timeout missing: %s", res.Output)
+		}
+	})
+
+	t.Run("output cap truncates", func(t *testing.T) {
+		res := sh.Exec(ctx, `{"command":"head -c 400000 /dev/zero | tr '\\0' 'x'"}`)
+		if !strings.Contains(res.Output, "[output truncated at 256KB]") {
+			t.Fatalf("truncation missing (len %d)", len(res.Output))
+		}
+		if len(res.Output) > shellOutputCap+1024 {
+			t.Fatalf("cap exceeded: %d", len(res.Output))
+		}
+	})
+}

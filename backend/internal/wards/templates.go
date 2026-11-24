@@ -15,7 +15,7 @@ import (
 // (spec/plan/tasks + material roles). Embedded so the daemon needs no
 // external assets; seeded write-once — user-owned after first write.
 //
-//go:embed templates/generic/* templates/research/*
+//go:embed all:templates/generic all:templates/research
 var templateFS embed.FS
 
 // templatesDir is the vault's machinery directory holding the archetype

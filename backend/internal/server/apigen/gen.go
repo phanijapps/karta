@@ -1959,10 +1959,16 @@ type UserInput struct {
 
 // Ward defines model for Ward.
 type Ward struct {
-	Archetype      string        `json:"archetype"`
-	CanonicalTitle *string       `json:"canonical_title,omitempty"`
-	FindingCount   int           `json:"finding_count"`
-	Findings       []WardFinding `json:"findings"`
+	Archetype      string  `json:"archetype"`
+	CanonicalTitle *string `json:"canonical_title,omitempty"`
+
+	// Description The .zbot/config.yaml one-liner (v2 identity).
+	Description  *string       `json:"description,omitempty"`
+	FindingCount int           `json:"finding_count"`
+	Findings     []WardFinding `json:"findings"`
+
+	// LastUsed Last ward entry (v2 state, best-effort).
+	LastUsed *time.Time `json:"last_used,omitempty"`
 
 	// Layout The parsed ward-conf.yaml layout tree; absent for conf-less wards and unparseable confs.
 	Layout     *WardNode      `json:"layout,omitempty"`
@@ -2031,9 +2037,15 @@ type WardSummary struct {
 	// CanonicalTitle The canonical page's title (first level-1 heading, else the file name); absent when the ward has no canonical page yet.
 	CanonicalTitle *string `json:"canonical_title,omitempty"`
 
+	// Description The .zbot/config.yaml one-liner (v2 identity).
+	Description *string `json:"description,omitempty"`
+
 	// FindingCount Lint findings against the ward's conf (0 = clean).
-	FindingCount int                   `json:"finding_count"`
-	LintStatus   WardSummaryLintStatus `json:"lint_status"`
+	FindingCount int `json:"finding_count"`
+
+	// LastUsed Last ward entry (v2 state, best-effort).
+	LastUsed   *time.Time            `json:"last_used,omitempty"`
+	LintStatus WardSummaryLintStatus `json:"lint_status"`
 
 	// Name The ward's directory name in the vault.
 	Name string `json:"name"`
@@ -2316,6 +2328,9 @@ type ServerInterface interface {
 	// GetWard Read one ward (layout tree + lint findings)
 	// (GET /api/wards/{name})
 	GetWard(w http.ResponseWriter, r *http.Request, name string)
+	// EnsureWarden Ensure the ward's persistent session (the warden)
+	// (POST /api/wards/{name}/warden)
+	EnsureWarden(w http.ResponseWriter, r *http.Request, name string)
 	// GetHealth Liveness probe
 	// (GET /healthz)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -2604,6 +2619,12 @@ func (_ Unimplemented) ListWards(w http.ResponseWriter, r *http.Request) {
 // GetWard Read one ward (layout tree + lint findings)
 // (GET /api/wards/{name})
 func (_ Unimplemented) GetWard(w http.ResponseWriter, r *http.Request, name string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// EnsureWarden Ensure the ward's persistent session (the warden)
+// (POST /api/wards/{name}/warden)
+func (_ Unimplemented) EnsureWarden(w http.ResponseWriter, r *http.Request, name string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3633,6 +3654,32 @@ func (siw *ServerInterfaceWrapper) GetWard(w http.ResponseWriter, r *http.Reques
 	handler.ServeHTTP(w, r)
 }
 
+// EnsureWarden operation middleware
+func (siw *ServerInterfaceWrapper) EnsureWarden(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", chi.URLParam(r, "name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EnsureWarden(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
 
@@ -3832,6 +3879,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/wards/{name}", wrapper.GetWard)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/wards/{name}/warden", wrapper.EnsureWarden)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/mcps", wrapper.ListMcps)

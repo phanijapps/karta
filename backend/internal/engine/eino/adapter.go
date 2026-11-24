@@ -70,6 +70,9 @@ type Adapter struct {
 	// wardBinder observes ward enters per session (session-row binding;
 	// nil = no binding updates).
 	wardBinder func(sessionID, ward string)
+	// mcpTools supplies the live MCP tool plane (the retrieval plane;
+	// nil = none mounted).
+	mcpTools func() []tools.Tool
 	// wardVault builds the ward tool plane for a session (nil = wards
 	// off, e.g. no vault configured). Sticky per session.
 	wardVault func() *wards.Vault
@@ -188,26 +191,6 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 	events := make(chan domain.TimelineEvent, 64)
 	go a.run(runCtx, cancel, events, in)
 	return events, nil
-}
-
-type runInput struct {
-	sessionID, execID, goal      string
-	providerName, modelID, token string
-	prov                         providers.Provider
-	maxSteps                     int // per-run bound (clamped to MaxSteps; 0 = default)
-
-	// Delegation wiring: agent-shaped runs and children.
-	systemPrompt string   // resolved system prompt (agent body or default)
-	toolAllow    []string // agent allowlist (nil = all tools)
-	agentName    string   // "" for root default wiring
-	depth        int      // 0 = root
-	grant        int      // may delegate while depth < grant (agent max_depth; root = cap)
-	isChild      bool     // children surface steps as delegation events
-
-	// Ward hosting (slice 3): the session's sticky host; nil = wards
-	// off. Root runs get the ward tools; children get the file tools +
-	// the Active Ward packet on their prompt (read + declared roles).
-	wardHost *wardtools.Host
 }
 
 // run is the ROOT wrapper: cleanup, cancellation registration, channel
@@ -366,6 +349,12 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 				offered = append(offered, a.delegateTool(ctx, events, in))
 			}
 			offered = append(offered, wardToolSet(in)...)
+			// The retrieval plane (ward-v2): live MCP tools on ROOT
+			// runs — research sessions search/fetch; quick chat (the
+			// chat service's lean plane) never mounts them.
+			if !in.isChild && a.mcpTools != nil {
+				offered = append(offered, a.mcpTools()...)
+			}
 			// Inject progress nudges (advisory user messages, not system
 			// prompts — the model sees them as steering, not overrides).
 			if nudge := tracker.Nudge(step, softBudget, hardBudget); nudge != "" {

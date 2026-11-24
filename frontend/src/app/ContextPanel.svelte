@@ -85,6 +85,12 @@
           <div class="ward-card">
             <p class="name">{wardDetail.name}</p>
             <p class="type">{wardDetail.archetype} archetype · lint {wardDetail.lint_status}</p>
+            {#if wardDetail.description}
+              <p class="desc">{wardDetail.description}</p>
+            {/if}
+            {#if wardDetail.last_used}
+              <p class="type">last used {new Date(wardDetail.last_used).toLocaleString()}</p>
+            {/if}
             {#if wardDetail.canonical_title}
               <p class="canonical">{wardDetail.canonical_title}</p>
             {/if}
@@ -144,6 +150,7 @@
   .ward-card { border: 1px solid color-mix(in oklch, var(--ds-color-success, #22c55e) 25%, transparent); border-radius: 10px; padding: var(--ds-space-3); background: var(--ds-color-surface, #1e1e1e); display: grid; gap: var(--ds-space-2); }
   .ward-card .name { margin: 0; font-weight: 600; color: var(--ds-color-success, #22c55e); }
   .ward-card .type { margin: 0; font-size: 0.72rem; color: var(--ds-color-muted); }
+  .ward-card .desc { margin: 0; font-size: 0.76rem; color: var(--ds-color-text); }
   .ward-card .canonical { margin: 0; font-size: 0.78rem; padding: var(--ds-space-2); border-left: 2px solid var(--ds-color-success, #22c55e); border-radius: 4px; background: var(--ds-color-field, #1a1a1a); color: var(--ds-color-text); }
   .ward-files { display: grid; gap: 2px; font-size: 0.7rem; }
   .ward-files code { font-family: ui-monospace, monospace; white-space: pre; color: var(--ds-color-muted); }

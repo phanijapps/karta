@@ -185,6 +185,11 @@ func run(ctx context.Context, homeFlag string) error {
 	if err != nil {
 		return fmt.Errorf("ward vault open: %w", err)
 	}
+	// Ward v2: existing wards gain the new homes additively
+	// (wiki/reports/apps + .zbot/config.yaml; nothing moves).
+	if err := wards.MigrateV2(ctx, vaultRoot); err != nil {
+		return fmt.Errorf("ward vault v2 migration: %w", err)
+	}
 
 	// Composed system prompt: static sections for BOTH surfaces (chat
 	// is static-only; goal runs add dynamic sections in the wrapper).
@@ -328,6 +333,10 @@ func run(ctx context.Context, homeFlag string) error {
 		}
 	}
 
+	// The retrieval plane (ward-v2): configured stdio MCP servers stay
+	// connected; root engine runs mount their tools live (search!).
+	mcpExec := wireRetrievalPlane(ctx, eng, reg.Snapshot)
+
 	// The session model (add-chat-modes): research sessions run the
 	// engine pipeline in their own transcript, and ward enters update
 	// the session-row binding.
@@ -411,7 +420,8 @@ func run(ctx context.Context, homeFlag string) error {
 		}
 	}()
 	watcher.OnChange(func(registry.Change) {
-		select { // coalesce: one pending signal is enough
+		mcpExec.Refresh(context.WithoutCancel(ctx)) // live tools follow the registry
+		select {                                    // coalesce: one pending signal is enough
 		case indexDirty <- struct{}{}:
 		default:
 		}

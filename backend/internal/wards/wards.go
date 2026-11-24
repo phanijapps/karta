@@ -39,6 +39,9 @@ type WardInfo struct {
 	HasConf        bool
 	FindingCount   int
 	CanonicalTitle string // "" when the ward has no canonical page yet
+	// v2 identity (from .zbot/config.yaml; defaults when absent).
+	Description string
+	LastUsed    string
 }
 
 // LintStatus classifies a ward for the API surface.
@@ -105,6 +108,9 @@ func (v *Vault) Index(ctx context.Context) ([]WardInfo, error) {
 func (v *Vault) indexWard(ctx context.Context, name string) (WardInfo, error) {
 	dir := filepath.Join(v.root, name)
 	info := WardInfo{Name: name, Archetype: "generic"}
+	// v2 identity rides every index (absent .zbot = zero defaults).
+	zc := ReadZbotConfig(dir)
+	info.Description, info.LastUsed = zc.Description, zc.LastUsed
 	raw, err := os.ReadFile(filepath.Join(dir, confFile))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -329,3 +335,50 @@ const canonicalNodeID = "canonical"
 
 // confFile is the ward layout schema file name (agentzero convention).
 const confFile = "ward-conf.yaml"
+
+// v2Homes are the ward-v2 directory homes (wiki, reports, apps): the
+// linter treats them as BUILT-IN optional nodes in every ward — legacy
+// ward-conf.yaml files need no edits to stay clean once MigrateV2
+// creates the directories.
+var v2Homes = map[string]bool{"wiki": true, "reports": true, "apps": true}
+
+// MigrateV2 carries existing wards to the v2 layout, additively:
+// wiki/, reports/, apps/ created (write-once starters) and
+// .zbot/config.yaml seeded when absent. NOTHING is moved or
+// overwritten — the v1 roles keep their meaning.
+func MigrateV2(ctx context.Context, vaultRoot string) error {
+	entries, err := os.ReadDir(vaultRoot)
+	if err != nil {
+		return fmt.Errorf("wards: migrate v2: %w", err)
+	}
+	for _, e := range entries {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("wards: migrate v2: %w", err)
+		}
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		wardDir := filepath.Join(vaultRoot, e.Name())
+		for _, home := range []string{"wiki", "reports", "apps"} {
+			if err := os.MkdirAll(filepath.Join(wardDir, home), 0o755); err != nil {
+				return fmt.Errorf("wards: migrate v2 %s/%s: %w", e.Name(), home, err)
+			}
+			keep := filepath.Join(wardDir, home, ".gitkeep")
+			if _, err := os.Stat(keep); os.IsNotExist(err) {
+				if err := os.WriteFile(keep, nil, 0o644); err != nil {
+					return fmt.Errorf("wards: migrate v2 %s/%s: %w", e.Name(), home, err)
+				}
+			}
+		}
+		cfgPath := filepath.Join(wardDir, ".zbot", "config.yaml")
+		if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
+			if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+				return fmt.Errorf("wards: migrate v2 %s/.zbot: %w", e.Name(), err)
+			}
+			if err := os.WriteFile(cfgPath, []byte(zbotConfigStarter), 0o644); err != nil {
+				return fmt.Errorf("wards: migrate v2 %s/.zbot/config.yaml: %w", e.Name(), err)
+			}
+		}
+	}
+	return nil
+}

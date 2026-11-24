@@ -340,6 +340,20 @@ func (s *Store) SessionUpdated(sessionID string) (string, error) {
 	return updated, nil
 }
 
+// EnsureWardenSession ensures the ward's persistent home session
+// exists (id ward-<name>, type research, ward-bound) and returns its
+// id — the warden: every ward's selectable bot (ward-v2).
+func (s *Store) EnsureWardenSession(ward string) (string, error) {
+	id := "ward-" + ward
+	if _, err := s.EnsureSession(id, "research"); err != nil {
+		return "", err
+	}
+	if err := s.SetSessionWard(id, ward); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
 // SetSessionWard rebinds a session's sticky ward ("" unbinds). The
 // ward tools fire this on ward_use/ward_create; the binding drives the
 // sidebar grouping and the next run's pre-loaded ward context.

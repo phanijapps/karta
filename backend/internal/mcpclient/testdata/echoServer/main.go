@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -22,9 +23,18 @@ func main() {
 	server := mcp.NewServer(&mcp.Implementation{Name: "echo-mcp-server", Version: "0"}, nil)
 	for i := 0; i < count; i++ {
 		name := fmt.Sprintf("tool_%04d", i)
-		mcp.AddTool(server, &mcp.Tool{Name: name, Description: "test tool " + name},
-			func(ctx context.Context, req *mcp.CallToolRequest, in struct{}) (*mcp.CallToolResult, any, error) {
-				return &mcp.CallToolResult{}, nil, nil
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        name,
+			Description: "test tool " + name,
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+		},
+			func(ctx context.Context, req *mcp.CallToolRequest, in map[string]any) (*mcp.CallToolResult, any, error) {
+				// Echo the arguments back as text (executor tests assert
+				// the round-trip).
+				raw, _ := json.Marshal(in)
+				return &mcp.CallToolResult{
+					Content: []mcp.Content{&mcp.TextContent{Text: "echo:" + string(raw)}},
+				}, nil, nil
 			})
 	}
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {

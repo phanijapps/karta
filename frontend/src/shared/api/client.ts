@@ -341,6 +341,29 @@ export async function getSessionState(
   }
 }
 
+/** Ensure the ward's persistent warden session (POST
+ * /api/wards/{name}/warden) — every ward's selectable bot. */
+export const WARDEN_ROUTE = "/api/wards/{name}/warden" as const satisfies keyof paths;
+
+export async function ensureWarden(
+  ward: string,
+): Promise<{ ok: true; sessionId: string } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(
+      `${BASE}${WARDEN_ROUTE.replace("{name}", encodeURIComponent(ward))}`,
+      { method: "POST", headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { message?: string } | null;
+      return { ok: false, error: body?.message ?? `daemon answered ${res.status}` };
+    }
+    const session = (await res.json()) as { id: string };
+    return { ok: true, sessionId: session.id };
+  } catch (err) {
+    return { ok: false, error: `daemon unreachable (${String(err)})` };
+  }
+}
+
 /** Create a research session (POST /api/sessions) — a shell ready for
  * its first exchange. Optional title. */
 export async function createSession(

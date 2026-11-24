@@ -5,6 +5,17 @@ OUTSIDE `~/.zbot` (default `~/Documents/wards`, overridable via
 `config.yaml` `wards.vault_root`). This package is the foundation of
 ward-based research (slice 1 of `docs/architecture/ward-research-exploration.md`).
 
+## Ward v2 (intent: ward-v2-full-session)
+
+Every ward carries the v2 homes — `.zbot/` (config.yaml identity:
+name/description/last_used/agents/skills — user-owned, the daemon
+touches ONLY last_used via TouchLastUsed), `wiki/` (dated knowledge),
+`reports/` (run outputs by date), `apps/` (code) — alongside the v1
+roles. `MigrateV2` carries existing wards additively on boot
+(write-once, nothing moves); the linter treats the homes as built-in
+optional nodes (legacy confs stay clean). Index exposes the v2
+identity fields.
+
 ## Responsibility
 
 - **Vault resolution** — `ResolveVaultRoot(configured, daemonHome)`:

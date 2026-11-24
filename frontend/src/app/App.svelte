@@ -40,6 +40,7 @@ import { clearChat } from '../shared/api/client';
   function toggleRight() { if (rightDocked) rightExpanded = !rightExpanded; else drawer = drawer === 'right' ? null : 'right'; }
   async function showChat() { drawer = null; view = 'chat'; await tick(); main.focus(); }
   async function showSession(id: string) { drawer = null; view = 'chat'; await sessions.select(id); await tick(); main.focus(); }
+  async function showWard(ward: string) { drawer = null; view = 'chat'; await sessions.selectWard(ward); await tick(); main.focus(); }
   async function showSchedules() { drawer = null; view = 'schedules'; await tick(); main.focus(); }
   async function showWards() { drawer = null; view = 'wards'; await tick(); main.focus(); }
   async function openSettings() { drawer = null; await tick(); settings = true; }
@@ -47,7 +48,7 @@ import { clearChat } from '../shared/api/client';
 
 <a class="skip-link" href="#workspace">Skip to conversation</a>
 <div class="workspace" class:left-rail={!leftExpanded} class:right-open={rightExpanded}>
-  {#if leftDocked}<div class="left-panel" id="left-sidebar"><Sidebar {sessions} rail={!leftExpanded} ontoggle={toggleLeft} onselect={showSession} onsettings={openSettings} onschedules={showSchedules} onwards={showWards} /></div>{/if}
+  {#if leftDocked}<div class="left-panel" id="left-sidebar"><Sidebar {sessions} rail={!leftExpanded} ontoggle={toggleLeft} onselect={showSession} onselectWard={showWard} onsettings={openSettings} onschedules={showSchedules} onwards={showWards} /></div>{/if}
   <div class="main-column">
     <header class="workspace-header">
       <button class="icon-button" onclick={toggleLeft} aria-label="Toggle left sidebar" aria-expanded={leftDocked ? leftExpanded : drawer === 'left'} aria-controls={leftDocked || drawer === 'left' ? 'left-sidebar' : undefined}><PanelLeft size={20} strokeWidth={1.5} /></button>
@@ -60,7 +61,7 @@ import { clearChat } from '../shared/api/client';
   </div>
   {#if rightDocked && rightExpanded}<div class="right-panel" id="right-sidebar"><ContextPanel {sessions} onclose={() => rightExpanded = false} /></div>{/if}
 </div>
-{#if drawer === 'left'}<Modal label="Workspace navigation" kind="left" onclose={() => drawer = null}><div id="left-sidebar" class="drawer-content"><Sidebar {sessions} ontoggle={() => drawer = null} onselect={showSession} onsettings={openSettings} onschedules={showSchedules} onwards={showWards} /></div></Modal>{:else if drawer === 'right'}<Modal label="Session context" kind="right" onclose={() => drawer = null}><div id="right-sidebar" class="drawer-content"><ContextPanel {sessions} onclose={() => drawer = null} /></div></Modal>{/if}
+{#if drawer === 'left'}<Modal label="Workspace navigation" kind="left" onclose={() => drawer = null}><div id="left-sidebar" class="drawer-content"><Sidebar {sessions} ontoggle={() => drawer = null} onselect={showSession} onselectWard={showWard} onsettings={openSettings} onschedules={showSchedules} onwards={showWards} /></div></Modal>{:else if drawer === 'right'}<Modal label="Session context" kind="right" onclose={() => drawer = null}><div id="right-sidebar" class="drawer-content"><ContextPanel {sessions} onclose={() => drawer = null} /></div></Modal>{/if}
 {#if confirmClear}
   <div class="form-backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) confirmClear = false; }}>
     <div class="confirm-card" role="alertdialog" aria-label="Clear conversation">
