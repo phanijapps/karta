@@ -526,3 +526,45 @@ func TestResearchSessionBusyGuard(t *testing.T) {
 		t.Fatalf("after release: %+v (%v)", out.Rows, out.Err)
 	}
 }
+
+// TestChatToolPlaneIsWardAndMCPOnly (operator direction): the lean
+// exchange's offered tools come from the EXTRA plane (ward + MCP
+// wired by the daemon) — the BASE provider (clock/echo/chitta) is
+// empty on quick chat.
+func TestChatToolPlaneIsWardAndMCPOnly(t *testing.T) {
+	fc := &fakeCompleter{responses: []providers.ChatResponse{plainResp("ok")}}
+	// Mirror the daemon wiring: an EMPTY base plane (no clock/echo/
+	// chitta on quick chat) + the extra plane.
+	st, err := store.Open(filepath.Join(t.TempDir(), "plane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	lookup := func(name string) (providers.Provider, error) {
+		return providers.Provider{Name: name, BaseURL: "http://fake.invalid/v1"}, nil
+	}
+	resolve := func(ctx context.Context, p providers.Provider) (string, error) { return "", nil }
+	svc := New(st, lookup, resolve, fc, emptyBase{}, eventbus.New(), nil)
+	mounted := []string{"ward_use", "ward_read", "ward_write", "ward_shell", "mcp_ddg_search"}
+	svc.SetExtraTools(func() []tools.Tool {
+		var out []tools.Tool
+		for _, n := range mounted {
+			out = append(out, stubTool{n})
+		}
+		return out
+	})
+	out := svc.SendIn(context.Background(), DefaultSessionID, "hi", "p", "m")
+	if out.Err != nil {
+		t.Fatalf("send: %v", out.Err)
+	}
+	// The base plane offered nothing: the only tool defs the model saw
+	// are the extra-plane ones (count = len(mounted), not +clock/echo).
+	if len(fc.seenTools) == 0 || fc.seenTools[0] != len(mounted) {
+		t.Fatalf("quick chat must offer exactly the ward+MCP plane (%d), got %v", len(mounted), fc.seenTools)
+	}
+}
+
+// emptyBase offers nothing (the daemon's quick-chat base plane).
+type emptyBase struct{}
+
+func (emptyBase) Tools() []tools.Tool { return nil }

@@ -169,7 +169,11 @@ func run(ctx context.Context, homeFlag string) error {
 		log.Printf("zbotd: chitta embedding producer off (cold cache — run `task setup:chitta`; keyword+graph recall)")
 	}
 
-	chatSvc := chat.NewStoreBacked(db, provStore, providers.NewChatClient(), allTools, bus, nil)
+	// Quick chat's BASE plane is EMPTY (operator direction: no clock,
+	// no echo, no chitta tools on the lean surface) — the ward + MCP
+	// planes mount per exchange in wireChatToolPlane below. Memory
+	// rides the ## Context section, not tools.
+	chatSvc := chat.NewStoreBacked(db, provStore, providers.NewChatClient(), emptyProvider{}, bus, nil)
 
 	// Ward vault: user data OUTSIDE ~/.zbot (default ~/Documents/wards,
 	// config wards.vault_root override). Bootstrap creates it and seeds
@@ -337,6 +341,10 @@ func run(ctx context.Context, homeFlag string) error {
 	// connected; root engine runs mount their tools live (search!).
 	mcpExec := wireRetrievalPlane(ctx, eng, reg.Snapshot)
 
+	// Quick chat's tool plane (operator direction): ward read/write/
+	// shell + the live MCP tools — no clock/echo/chitta tools.
+	wireChatToolPlane(chatSvc, wardVault, mcpExec)
+
 	// The session model (add-chat-modes): research sessions run the
 	// engine pipeline in their own transcript, and ward enters update
 	// the session-row binding.
@@ -442,32 +450,6 @@ func run(ctx context.Context, homeFlag string) error {
 		return srv.Shutdown(shutdownCtx)
 	}
 	return nil
-}
-
-// storeSource adapts the conversation store to the distiller's
-// SessionSource (kernel seam read; newest sessions first).
-type storeSource struct{ db *zbotstore.Store }
-
-func (s storeSource) FinishedSessions(ctx context.Context, limit int) ([]distiller.Session, error) {
-	sessions, err := s.db.ListSessions(limit)
-	if err != nil {
-		return nil, err
-	}
-	var out []distiller.Session
-	for _, sess := range sessions {
-		msgs, err := s.db.Replay(sess.ID, 0, 500)
-		if err != nil || len(msgs) == 0 {
-			continue
-		}
-		last := msgs[len(msgs)-1]
-		finished := time.Since(last.CreatedAt) >= distiller.IdleThreshold()
-		ds := distiller.Session{ID: sess.ID, ExecutionID: last.ExecutionID, Finished: finished}
-		for _, m := range msgs {
-			ds.Messages = append(ds.Messages, distiller.SessionMessage{Role: string(m.Role), Content: m.Content})
-		}
-		out = append(out, ds)
-	}
-	return out, nil
 }
 
 // llmCaller adapts the provider plane to the distiller's LLMCaller.

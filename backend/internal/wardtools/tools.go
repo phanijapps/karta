@@ -296,5 +296,6 @@ func ChatToolSet(host *Host) []tools.Tool {
 		ReadTool{F: files},
 		WriteTool{F: files},
 		ListTool{F: files},
+		ShellTool{Host: host}, // the execution plane rides quick chat too (operator direction)
 	}
 }

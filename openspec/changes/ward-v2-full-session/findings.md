@@ -144,6 +144,17 @@ session; a ward with no sessions ensures its warden. A bound active
 session auto-expands its ward. (Also caught + fixed a Svelte 5
 violation: state written inside $derived — moved to $effect.)
 
+**Post-review addendum (operator direction): quick chat carries the
+ward + MCP planes.** The lean exchange's BASE tool provider is EMPTY
+(no clock, no echo, no chitta tools — memory rides ## Context, not
+tools); the mounted plane is ward_use/ward_create/ward_read/
+ward_write/ward_list/ward_shell + the live MCP tools
+(cmd/zbotd/chatplane.go; ChatToolSet gained ShellTool). Entering a
+ward in quick chat composes ## Active Ward (the sticky host). LIVE:
+ward_use(stock-analysis) → ward_shell echo round-tripped in the
+default session (5.4s); TestChatToolPlaneIsWardAndMCPOnly pins the
+plane count.
+
 **LIVE full-session smoke (5.2's verify)**: warden run in
 stock-analysis — mcp_ddg-search_search executed (DDG bot-blocks
 results; plane proven), ward_shell ran `echo shell-works && date`

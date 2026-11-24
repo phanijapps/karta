@@ -58,6 +58,13 @@
 - [x] 4.2 Context panel: ward card shows .zbot identity
   (name/description/last_used) when present. Verify: Playwright.
 
+## 6. Operator addendum — quick chat tool plane
+
+- [x] 6.1 Quick chat offers the ward plane (use/create/read/write/
+  list/shell) + live MCP tools; the base plane is EMPTY (no clock/
+  echo/chitta — memory rides ## Context). Verify: chat-plane test +
+  live ward_use→ward_shell round-trip in the default session.
+
 ## 5. Review and hardening
 
 - [x] 5.1 Phase gates (gpt-6.1-terra + gpt-6.1-sol); fix P0/P1, P2s
