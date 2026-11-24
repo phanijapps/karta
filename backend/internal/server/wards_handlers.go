@@ -121,13 +121,8 @@ func (s *Server) EnsureWarden(w http.ResponseWriter, r *http.Request, name strin
 		writeError(w, http.StatusNotFound, "not_found", "no such ward: "+name)
 		return
 	}
-	// Idempotence signal: 201 only on the FIRST creation.
-	before, err := s.db.Session("ward-" + name)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-	id, err := s.db.EnsureWardenSession(name)
+	// Atomic idempotence: 201 only for the caller whose insert landed.
+	id, created, err := s.db.EnsureWardenSession(name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -138,7 +133,7 @@ func (s *Server) EnsureWarden(w http.ResponseWriter, r *http.Request, name strin
 		return
 	}
 	status := http.StatusOK
-	if before == nil {
+	if created {
 		status = http.StatusCreated
 	}
 	writeJSON(w, status, sessionView(sess, false, time.Time{}))

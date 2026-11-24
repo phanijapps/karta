@@ -3,11 +3,13 @@ package wardtools
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"zbot/backend/internal/wards"
 )
@@ -342,4 +344,28 @@ func TestShellTool(t *testing.T) {
 			t.Fatalf("cap exceeded: %d", len(res.Output))
 		}
 	})
+}
+
+// TestShellTimeoutKillsGroup (gate fix): a command that backgrounds a
+// descendant cannot outlive the timeout — the process GROUP dies.
+func TestShellTimeoutKillsGroup(t *testing.T) {
+	host, vault := newTestHost(t)
+	use := UseTool{Host: host, Vault: vault}
+	if res := use.Exec(context.Background(), `{"name":"stock-analysis"}`); res.Err != nil {
+		t.Fatalf("enter: %v", res.Err)
+	}
+	sh := ShellTool{Host: host}
+	marker := filepath.Join(host.Active().Dir, "apps", ".group-marker")
+	res := sh.Exec(context.Background(), fmt.Sprintf(
+		`{"command":"rm -f %s && (sleep 3 && touch %s) & wait","timeout_seconds":1}`, marker, marker))
+	if !strings.Contains(res.Output, "[timeout after 1s]") {
+		t.Fatalf("timeout missing: %s", res.Output)
+	}
+	// The backgrounded touch must NOT survive: give it a beat past the
+	// would-be 3s mark is too slow; assert at 1.5s that nothing landed
+	// and again shortly after — a surviving group would land by 3s.
+	time.Sleep(1500 * time.Millisecond)
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("descendant survived the group kill")
+	}
 }

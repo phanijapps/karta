@@ -531,3 +531,53 @@ func TestMigrateV2(t *testing.T) {
 		}
 	}
 }
+
+// TestTouchLastUsedSurgical (gate fix): only the exact last_used key's
+// scalar changes — prefixed keys, inline comments, and formatting
+// survive byte-for-byte; a missing key appends.
+func TestTouchLastUsedSurgical(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, ".zbot", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(cfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := "name: my-ward\nlast_used: 2026-01-01T00:00:00Z # first touch\nlast_used_note: keep me\n"
+	if err := os.WriteFile(cfg, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	TouchLastUsed(dir)
+	raw, _ := os.ReadFile(cfg)
+	got := string(raw)
+	if !strings.Contains(got, "last_used_note: keep me") {
+		t.Fatalf("prefixed key touched: %q", got)
+	}
+	if !strings.Contains(got, "# first touch") {
+		t.Fatalf("inline comment lost: %q", got)
+	}
+	if strings.Contains(got, "last_used: 2026-01-01T00:00:00Z #") {
+		t.Fatalf("scalar not updated: %q", got)
+	}
+	if !strings.HasPrefix(got, "name: my-ward\n") {
+		t.Fatalf("formatting mutated: %q", got)
+	}
+
+	// Missing key appends (no duplicate).
+	TouchLastUsed(dir)
+	raw, _ = os.ReadFile(cfg)
+	if n := strings.Count(string(raw), "last_used:"); n != 1 {
+		t.Fatalf("want exactly 1 last_used key, got %d: %q", n, raw)
+	}
+
+	// Absent file → starter + stamp.
+	dir2 := t.TempDir()
+	TouchLastUsed(dir2)
+	cfg2 := filepath.Join(dir2, ".zbot", "config.yaml")
+	raw2, err := os.ReadFile(cfg2)
+	if err != nil || !strings.Contains(string(raw2), "last_used: 20") {
+		t.Fatalf("starter+stamp: %v %q", err, raw2)
+	}
+	cfg2parsed := ReadZbotConfig(dir2)
+	if cfg2parsed.LastUsed == "" {
+		t.Fatal("stamp not parseable")
+	}
+}

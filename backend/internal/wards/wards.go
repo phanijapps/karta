@@ -169,6 +169,9 @@ func (v *Vault) Detail(ctx context.Context, name string) (WardDetail, error) {
 		return WardDetail{}, fmt.Errorf("wards: detail %q: %w", name, ErrUnknownWard)
 	}
 	detail := WardDetail{Info: WardInfo{Name: name, Archetype: "generic"}, Findings: []Finding{}}
+	// v2 identity rides the detail too (conf-less wards included).
+	zc := ReadZbotConfig(dir)
+	detail.Info.Description, detail.Info.LastUsed = zc.Description, zc.LastUsed
 	raw, err := os.ReadFile(filepath.Join(dir, confFile))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

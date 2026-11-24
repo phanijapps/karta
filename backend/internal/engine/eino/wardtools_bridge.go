@@ -67,6 +67,25 @@ func (a *Adapter) wardHost(sessionID string) *wardtools.Host {
 	return h
 }
 
+// filterWardTools applies an agent's tool allowlist to a mounted
+// plane (ward tools incl. ward_shell, MCP tools); nil allow = all.
+func filterWardTools(set []tools.Tool, allow []string) []tools.Tool {
+	if allow == nil {
+		return set
+	}
+	keep := make(map[string]bool, len(allow))
+	for _, n := range allow {
+		keep[n] = true
+	}
+	out := set[:0:0]
+	for _, t := range set {
+		if keep[t.Def().Name] {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // SetMCPTools wires the retrieval plane: fn returns the live MCP
 // tools (nil/empty = none). Mounted on ROOT runs only.
 func (a *Adapter) SetMCPTools(fn func() []tools.Tool) { a.mcpTools = fn }

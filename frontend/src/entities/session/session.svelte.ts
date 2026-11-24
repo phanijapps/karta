@@ -58,12 +58,16 @@ export function createSessions() {
       // Legacy chat-typed engine sessions (pre-migration goal runs)
       // stay out of the navigator until run-state surfacing lands.
     }
-    // Every ward renders a row: its live session (warden) when one
-    // exists, else the ward itself (select → ensure the warden).
+    // Every ward renders its WARDEN row first: the real warden (id
+    // ward-<name>) when it exists, else the ward itself (select →
+    // ensure). Other ward-BOUND sessions render after it (they are
+    // real conversations in that ward, not its bot).
     for (const w of wards) {
-      if (byWard.has(w.name)) {
-        g.wardBots.push({ kind: 'session', session: byWard.get(w.name)!, ward: w.name });
-        byWard.delete(w.name);
+      const wardenId = `ward-${w.name}`;
+      const warden = byWard.get(wardenId);
+      byWard.delete(wardenId);
+      if (warden) {
+        g.wardBots.push({ kind: 'session', session: warden, ward: w.name });
       } else {
         g.wardBots.push({ kind: 'ward', ward: w.name, title: w.title ?? w.name });
       }
@@ -183,10 +187,11 @@ export function createSessions() {
     void loadAnalysis(sessionId);
   }
 
-  /** Select a ward's bot: its live session, or ensure the warden. */
+  /** Select a ward's bot: its WARDEN session (id ward-<name>), or
+   * ensure it. Ordinary bound sessions are selected by their own row. */
   async function selectWard(ward: string) {
     const row = groups.wardBots.find((r) => r.ward === ward);
-    if (row && row.kind === 'session') {
+    if (row && row.kind === 'session' && row.session.id === `ward-${ward}`) {
       await select(row.session.id);
       return;
     }

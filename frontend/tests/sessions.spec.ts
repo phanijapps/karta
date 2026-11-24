@@ -303,3 +303,55 @@ test('the draft clears the instant a send starts (not on completion)', async ({ 
   await expect(page.getByLabel('Assistant is working')).toBeVisible();
   await expect(input).toHaveValue('');
 });
+
+test('ward rows select wardens: ensure on first select, reuse after, one row per ward', async ({ page }) => {
+  await mockBase(page);
+  // A ward WITHOUT a warden in the roster + an ordinary bound session
+  // (NOT the warden) that must not be picked as the ward's bot.
+  // Stateful roster: the warden joins the list once ensured.
+  let ensured = 0;
+  await page.route((url) => url.pathname === '/api/sessions', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const sessions: unknown[] = [
+      { id: 'default', type: 'chat', status: 'completed', updated_at: NOW },
+      { id: 'r-stock', type: 'research', status: 'completed', ward: 'stock-analysis', updated_at: NOW },
+    ];
+    if (ensured > 0) {
+      sessions.push({ id: 'ward-stock-analysis', type: 'research', status: 'created', ward: 'stock-analysis', updated_at: NOW });
+    }
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ sessions, truncated: false }),
+    });
+  });
+  await page.route('**/api/wards', (route) =>
+    route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ vault_root: '/v', wards: [
+        { name: 'stock-analysis', archetype: 'research', lint_status: 'clean', finding_count: 0 },
+      ] }),
+    }),
+  );
+  await page.route((url) => url.pathname === '/api/wards/stock-analysis/warden', (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    ensured++;
+    return route.fulfill({
+      status: 201, contentType: 'application/json',
+      body: JSON.stringify({ id: 'ward-stock-analysis', type: 'research', status: 'created', ward: 'stock-analysis', created_at: NOW, updated_at: NOW }),
+    });
+  });
+  await mockTranscripts(page);
+  await mockStates(page);
+  await page.goto('/');
+
+  const nav = page.getByRole('navigation', { name: 'Workspace navigation' });
+  const group = nav.getByRole('list', { name: 'Sessions' }).locator('li', { hasText: 'Ward Bots' }).first();
+  // The ordinary bound session renders; the ward itself renders a row
+  // too (its warden doesn't exist yet).
+  await expect(group.getByRole('button', { name: /r-stock|stock-analysis/ })).toHaveCount(2);
+
+  // Selecting the WARD row ensures the warden (not r-stock).
+  await group.getByRole('button', { name: /warden · tap to open/ }).click();
+  await expect.poll(() => ensured).toBe(1);
+  await expect(page.getByLabel('Research question')).toBeVisible();
+});

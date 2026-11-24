@@ -341,19 +341,29 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 		var offered []tools.Tool
 		if step < steps-1 && step < hardBudget-1 { // suppress tools only near the absolute ceiling
 			if in.toolAllow != nil && len(in.toolAllow) == 0 {
-				offered = nil // tools: [] is an EXPLICIT no-tools inventory
+				offered = nil // tools: [] is an EXPLICIT no-tools inventory (the WHOLE plane: ward, MCP)
+				// Delegation is governed by the DEPTH grant, not the tool
+				// allowlist: an orchestrator with tools:[] still delegates.
+				if in.depth < in.grant && in.depth < a.depthCap && a.snapFn != nil {
+					offered = append(offered, a.delegateTool(ctx, events, in))
+				}
 			} else {
 				offered = engine.FilterTools(a.toolProv, in.toolAllow)
-			}
-			if in.depth < in.grant && in.depth < a.depthCap && a.snapFn != nil {
-				offered = append(offered, a.delegateTool(ctx, events, in))
-			}
-			offered = append(offered, wardToolSet(in)...)
-			// The retrieval plane (ward-v2): live MCP tools on ROOT
-			// runs — research sessions search/fetch; quick chat (the
-			// chat service's lean plane) never mounts them.
-			if !in.isChild && a.mcpTools != nil {
-				offered = append(offered, a.mcpTools()...)
+				// The agent allowlist governs the COMPLETE inventory:
+				// ward tools (incl. ward_shell) and the MCP plane pass
+				// through it too — a restrictive agent gets only what
+				// it declared.
+				ward := filterWardTools(wardToolSet(in), in.toolAllow)
+				offered = append(offered, ward...)
+				if in.depth < in.grant && in.depth < a.depthCap && a.snapFn != nil {
+					offered = append(offered, a.delegateTool(ctx, events, in))
+				}
+				// The retrieval plane (ward-v2): live MCP tools on ROOT
+				// runs — research sessions search/fetch; quick chat (the
+				// chat service's lean plane) never mounts them.
+				if !in.isChild && a.mcpTools != nil {
+					offered = append(offered, filterWardTools(a.mcpTools(), in.toolAllow)...)
+				}
 			}
 			// Inject progress nudges (advisory user messages, not system
 			// prompts — the model sees them as steering, not overrides).

@@ -345,6 +345,9 @@ export async function getSessionState(
  * /api/wards/{name}/warden) — every ward's selectable bot. */
 export const WARDEN_ROUTE = "/api/wards/{name}/warden" as const satisfies keyof paths;
 
+type EnsureWardenResponse =
+  operations["ensureWarden"]["responses"][200]["content"]["application/json"];
+
 export async function ensureWarden(
   ward: string,
 ): Promise<{ ok: true; sessionId: string } | { ok: false; error: string }> {
@@ -357,7 +360,7 @@ export async function ensureWarden(
       const body = (await res.json().catch(() => null)) as { message?: string } | null;
       return { ok: false, error: body?.message ?? `daemon answered ${res.status}` };
     }
-    const session = (await res.json()) as { id: string };
+    const session = (await res.json()) as EnsureWardenResponse;
     return { ok: true, sessionId: session.id };
   } catch (err) {
     return { ok: false, error: `daemon unreachable (${String(err)})` };

@@ -50,6 +50,7 @@ type Executor struct {
 // managedServer is one live stdio session.
 type managedServer struct {
 	name    string
+	spec    ServerSpec
 	session *mcp.ClientSession
 	tools   []*mcp.Tool
 }
@@ -61,9 +62,10 @@ func (e *Executor) logf(format string, args ...any) {
 }
 
 // Refresh reconciles the live roster with the desired specs: starts
-// missing servers (best-effort, fail-soft), drops servers that are no
-// longer configured. Safe to call repeatedly (daemon boot + registry
-// changes).
+// missing servers, RESTARTS servers whose spec changed, drops
+// deconfigured ones, and re-dials configured-but-dead servers (a dead
+// server recovers for the NEXT run — no stale tool object needed).
+// Safe to call repeatedly (daemon boot, registry changes, Tools()).
 func (e *Executor) Refresh(ctx context.Context) {
 	if e.Specs == nil {
 		return
@@ -73,14 +75,30 @@ func (e *Executor) Refresh(ctx context.Context) {
 	if e.servers == nil {
 		e.servers = map[string]*managedServer{}
 	}
-	current := make(map[string]bool, len(e.servers))
-	for name := range e.servers {
-		current[name] = true
+	type liveEntry struct {
+		spec ServerSpec
+		dead bool // session dropped by a failed call
+	}
+	specKey := func(s ServerSpec) string {
+		return strings.Join(append([]string{s.Spec.Command, s.Spec.URL}, append(s.Spec.Args, envPairs(s.Spec.Env)...)...), "|")
+	}
+	live := make(map[string]liveEntry, len(e.servers))
+	for name, s := range e.servers {
+		live[name] = liveEntry{spec: s.spec, dead: s.session == nil}
 	}
 	e.mu.Unlock()
 	for _, want := range desired {
-		if current[want.Name] {
-			continue
+		cur, ok := live[want.Name]
+		if ok && !cur.dead && specKey(cur.spec) == specKey(want) {
+			continue // healthy + unchanged
+		}
+		if ok { // changed spec (or dead): drop, restart below
+			e.mu.Lock()
+			if s := e.servers[want.Name]; s != nil && s.session != nil {
+				_ = s.session.Close()
+			}
+			delete(e.servers, want.Name)
+			e.mu.Unlock()
 		}
 		if err := e.start(ctx, want); err != nil {
 			e.logf("server %q failed to start: %v (tools absent)", want.Name, err)
@@ -89,14 +107,14 @@ func (e *Executor) Refresh(ctx context.Context) {
 	// Drop deconfigured servers.
 	e.mu.Lock()
 	for name := range e.servers {
-		live := false
+		found := false
 		for _, want := range desired {
 			if want.Name == name {
-				live = true
+				found = true
 				break
 			}
 		}
-		if !live {
+		if !found {
 			if s := e.servers[name]; s != nil && s.session != nil {
 				_ = s.session.Close()
 			}
@@ -105,6 +123,10 @@ func (e *Executor) Refresh(ctx context.Context) {
 	}
 	e.mu.Unlock()
 }
+
+// Tools returns the live roster adapted to Karta's tool plane —
+// reconciling first so a server that died mid-run recovers for THIS
+// run's next model round (bounded by Refresh's fail-soft start).
 
 // start dials one server and lists its tools (bounded by the probe
 // deadline discipline).
@@ -133,7 +155,7 @@ func (e *Executor) start(ctx context.Context, want ServerSpec) error {
 		cursor = res.NextCursor
 	}
 	e.mu.Lock()
-	e.servers[want.Name] = &managedServer{name: want.Name, session: sess, tools: live}
+	e.servers[want.Name] = &managedServer{name: want.Name, spec: want, session: sess, tools: live}
 	e.mu.Unlock()
 	e.logf("server %q live (%d tools)", want.Name, len(live))
 	return nil
@@ -271,6 +293,7 @@ func contentText(res *mcp.CallToolResult) string {
 // (mcp_<server>_<tool>, sanitized; collisions impossible by hash
 // suffix).
 func (e *Executor) Tools() []tools.Tool {
+	e.Refresh(context.Background())
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	var out []tools.Tool
@@ -279,13 +302,22 @@ func (e *Executor) Tools() []tools.Tool {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	seen := map[string]string{} // extName → "server/tool" owner
 	for _, name := range names {
 		srv := e.servers[name]
 		for _, tl := range srv.tools {
-			out = append(out, &mcpTool{
-				exec: e, server: name, tool: tl,
-				extName: sanitizeName("mcp", name, tl.Name),
-			})
+			ext := sanitizeName("mcp", name, tl.Name)
+			if owner, clash := seen[ext]; clash {
+				// Normalization collision (e.g. "a b" vs "a_b"): suffix
+				// a stable hash of the ORIGINAL pair.
+				ext = ext[:55] + "_" + fmt.Sprintf("%08x", fnv32(name+"/"+tl.Name))
+				if _, again := seen[ext]; again {
+					continue // pathological: drop rather than alias
+				}
+				e.logf("tool name collision resolved: %s (%s vs %s)", ext, owner, name+"/"+tl.Name)
+			}
+			seen[ext] = name + "/" + tl.Name
+			out = append(out, &mcpTool{exec: e, server: name, tool: tl, extName: ext})
 		}
 	}
 	return out

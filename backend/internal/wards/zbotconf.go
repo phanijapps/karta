@@ -6,8 +6,10 @@ package wards
 // belongs to the user.
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -48,57 +50,63 @@ func ReadZbotConfig(wardDir string) ZbotConfig {
 	return cfg
 }
 
-// TouchLastUsed stamps .zbot/config.yaml's last_used (best-effort:
-// parse, update the one field, rewrite; absent file → starter +
-// stamp). Never fails the caller.
+// TouchLastUsed stamps .zbot/config.yaml's last_used (best-effort).
+// SURGICAL: only the exact top-level `last_used:` key's scalar is
+// replaced — similarly prefixed keys (`last_used_note:`) are untouched
+// and any trailing inline comment on the line is preserved. An absent
+// file gets the starter + stamp; any other read error leaves the file
+// alone. Never fails the caller.
 func TouchLastUsed(wardDir string) {
 	path := filepath.Join(wardDir, ".zbot", "config.yaml")
 	raw, err := os.ReadFile(path)
-	text := zbotConfigStarter
-	if err == nil && len(raw) > 0 {
-		text = string(raw)
-	}
-	stamp := "last_used: " + time.Now().UTC().Format(time.RFC3339)
-	// Replace the last_used line in place (comment-preserving); append
-	// when absent.
-	lines := splitLines(text)
-	found := false
-	for i, l := range lines {
-		if len(l) >= 9 && l[:9] == "last_used" {
-			lines[i] = stamp
-			found = true
-			break
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return // unreadable for a non-absence reason: leave it alone
 		}
-	}
-	if !found {
-		lines = append(lines, stamp)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return
+		}
+		if werr := os.WriteFile(path, []byte(stampLine(zbotConfigStarter, time.Now())), 0o644); werr != nil {
+			return // best-effort by contract
+		}
 		return
 	}
-	if err := os.WriteFile(path, joinLines(lines), 0o644); err != nil {
+	stamped := stampLine(string(raw), time.Now())
+	if stamped == string(raw) && !strings.Contains(string(raw), "last_used:") {
+		stamped += lastUsedLine(time.Now())
+		if !strings.HasSuffix(stamped, "\n") {
+			stamped += "\n"
+		}
+	}
+	if werr := os.WriteFile(path, []byte(stamped), 0o644); werr != nil {
 		return // best-effort by contract
 	}
 }
 
-func splitLines(s string) []string {
-	var out []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			out = append(out, s[start:i])
-			start = i + 1
-		}
-	}
-	out = append(out, s[start:])
-	return out
+func lastUsedLine(t time.Time) string {
+	return "last_used: " + t.UTC().Format(time.RFC3339)
 }
 
-func joinLines(lines []string) []byte {
-	out := make([]byte, 0, 256)
-	for _, l := range lines {
-		out = append(out, l...)
-		out = append(out, '\n')
+// stampLine replaces the exact `last_used:` scalar in the YAML text,
+// preserving the rest byte-for-byte (inline comment kept).
+func stampLine(text string, t time.Time) string {
+	var b strings.Builder
+	for _, line := range strings.SplitAfter(text, "\n") {
+		trimmed := strings.TrimLeft(line, " \t")
+		rest := line[:len(line)-len(trimmed)]
+		if trimmed == line {
+			rest = ""
+		}
+		if key, after, ok := strings.Cut(trimmed, ":"); ok && key == "last_used" && strings.HasPrefix(strings.TrimLeft(after, " "), "") {
+			// Preserve an inline comment after the scalar.
+			comment := ""
+			if ci := strings.Index(after, "#"); ci >= 0 {
+				comment = " " + strings.TrimRight(after[ci:], " \t\r\n")
+			}
+			b.WriteString(rest + lastUsedLine(t) + comment + "\n")
+			continue
+		}
+		b.WriteString(line)
 	}
-	return out
+	return strings.TrimSuffix(b.String(), "")
 }

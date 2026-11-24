@@ -41,13 +41,15 @@ func seedExamples(ctx context.Context, paths Paths) error {
 	// the earlier roster change still receive the persona once (upgrade
 	// path); after this marker, deletions stick like everywhere else.
 	if markerExists(paths.Home, personaSeedMarker) {
-		// v2 (ward-v2-full-session): the operator's agentzero persona
-		// set (SOUL/OS/INSTRUCTIONS) seeds once more on pre-v2 homes —
-		// write-once, so user edits since the first seeding win.
+		// v2 (ward-v2-full-session): UPGRADE pre-v2 homes to the
+		// operator's agentzero persona set — but only files that are
+		// ABSENT (never shipped) or still EXACTLY the old neutral seed
+		// (unmodified): user edits and deletions of PERSONALIZED files
+		// are never clobbered or resurrected.
 		if markerExists(paths.Home, personaSeedV2Marker) {
 			return nil
 		}
-		if err := seedWalk(ctx, "seedassets/prompts", paths.ConfigDir("prompts")); err != nil {
+		if err := upgradePersonaSeeds(ctx, paths); err != nil {
 			return err
 		}
 		return dropMarker(filepath.Join(paths.Home, personaSeedV2Marker))
@@ -63,12 +65,73 @@ func seedExamples(ctx context.Context, paths Paths) error {
 	return dropMarker(filepath.Join(paths.Home, personaSeedMarker))
 }
 
+// upgradePersonaSeeds carries the three persona files to the operator
+// set: absent → seed (write-once); present-but-UNMODIFIED neutral v1
+// seed → replace (content migration); present-and-user-modified →
+// untouched. Nothing else in prompts/ is touched.
+func upgradePersonaSeeds(ctx context.Context, paths Paths) error {
+	for name, oldBody := range personaV1Bodies {
+		dst := filepath.Join(paths.ConfigDir("prompts"), name)
+		raw, err := os.ReadFile(dst)
+		if err == nil {
+			if string(raw) == oldBody {
+				// Unmodified neutral seed: replace with the operator's.
+				newBody, rerr := seedAssetFSRead(ctx, "seedassets/prompts/"+name)
+				if rerr != nil {
+					return rerr
+				}
+				if werr := os.WriteFile(dst, []byte(newBody), 0o644); werr != nil {
+					return werr
+				}
+			}
+			continue // user-modified: untouched
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			continue // unreadable: leave alone
+		}
+		// Absent (never shipped to this home): seed it now.
+		if err := seedWalk(ctx, "seedassets/prompts", paths.ConfigDir("prompts")); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // personaSeedMarker gates the one-time persona seeding (a later addition
 // than the example roster; separate so pre-persona installs upgrade).
 const personaSeedMarker = ".persona-seeded"
 
 // personaSeedV2Marker gates the operator-persona re-seed (ward-v2).
 const personaSeedV2Marker = ".persona-seeded-v2"
+
+// personaV1Seeds embeds the ORIGINAL neutral persona bodies (pre-v2):
+// the upgrade replaces them only when byte-identical (unmodified).
+//
+//go:embed seedassets/persona_v1/role.md seedassets/persona_v1/soul.md seedassets/persona_v1/os-linux.md
+var personaV1FS embed.FS
+
+var personaV1Bodies = map[string]string{
+	"role.md":     mustReadSeed("seedassets/persona_v1/role.md"),
+	"soul.md":     mustReadSeed("seedassets/persona_v1/soul.md"),
+	"os-linux.md": mustReadSeed("seedassets/persona_v1/os-linux.md"),
+}
+
+func mustReadSeed(path string) string {
+	raw, err := personaV1FS.ReadFile(path)
+	if err != nil {
+		panic("config: embedded v1 persona missing: " + err.Error())
+	}
+	return string(raw)
+}
+
+// seedAssetFSRead reads one embedded seed file's body.
+func seedAssetFSRead(_ context.Context, path string) (string, error) {
+	raw, err := seedFS.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("config: seed %s: %w", path, err)
+	}
+	return string(raw), nil
+}
 
 func markerExists(home, name string) bool {
 	_, err := os.Stat(filepath.Join(home, name))

@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -114,8 +115,16 @@ func (t ShellTool) Exec(ctx context.Context, args string) Result {
 		}
 	}
 	cmd.Env = env
-	// Context cancellation kills only the direct child; WaitDelay
-	// reaps the process group tail so stragglers cannot hold the run.
+	// Process-group discipline: the command runs as its own group
+	// leader; on timeout/cancel the WHOLE group is signaled — a
+	// background descendant cannot outlive the bound and keep writing.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) //nolint:errcheck // best-effort group kill
+		}
+		return cmd.Process.Kill()
+	}
 	cmd.WaitDelay = 2 * time.Second
 
 	lw := &limitWriter{remaining: shellOutputCap}

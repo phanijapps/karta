@@ -342,16 +342,23 @@ func (s *Store) SessionUpdated(sessionID string) (string, error) {
 
 // EnsureWardenSession ensures the ward's persistent home session
 // exists (id ward-<name>, type research, ward-bound) and returns its
-// id — the warden: every ward's selectable bot (ward-v2).
-func (s *Store) EnsureWardenSession(ward string) (string, error) {
-	id := "ward-" + ward
-	if _, err := s.EnsureSession(id, "research"); err != nil {
-		return "", err
+// id plus whether THIS call created it (atomic under the single
+// writer — concurrent first callers see exactly one created=true) —
+// the warden: every ward's selectable bot (ward-v2).
+func (s *Store) EnsureWardenSession(ward string) (id string, created bool, err error) {
+	id = "ward-" + ward
+	res, err := s.db.Exec(`INSERT INTO sessions (id, type, created_at) VALUES (?, 'research', ?)
+		ON CONFLICT(id) DO NOTHING`, id, now())
+	if err != nil {
+		return "", false, fmt.Errorf("store: ensure warden: %w", err)
+	}
+	if n, rerr := res.RowsAffected(); rerr == nil && n > 0 {
+		created = true
 	}
 	if err := s.SetSessionWard(id, ward); err != nil {
-		return "", err
+		return "", false, err
 	}
-	return id, nil
+	return id, created, nil
 }
 
 // SetSessionWard rebinds a session's sticky ward ("" unbinds). The

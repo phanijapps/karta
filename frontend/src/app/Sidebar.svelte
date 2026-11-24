@@ -66,7 +66,7 @@
          or the ward itself (select → ensure the warden) -->
     <li aria-labelledby="ward-group"><p class="group-label" id="ward-group">Ward Bots</p>
     <ul class="group">
-      {#each groups.wardBots as row (row.ward)}
+      {#each groups.wardBots as row (row.kind + ":" + (row.kind === "session" ? row.session.id : row.ward))}
         <li>
           {#if row.kind === 'session'}
             <button class="session" class:active={sessions.activeId === row.session.id} aria-current={sessions.activeId === row.session.id ? 'true' : undefined} onclick={() => onselect(row.session.id)} title={row.ward}>
