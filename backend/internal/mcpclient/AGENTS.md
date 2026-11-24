@@ -35,3 +35,14 @@ and executes their tools live: Refresh reconciles the roster (registry
 snapshot), Tools() adapts them to the tool plane (mcp_<server>_<tool>,
 sanitized), Call routes with re-dial after a dead session. Fail-soft:
 a server that cannot start just has absent tools + a log line.
+
+## Hardening (harden-mcp-and-ux)
+
+`resolve.go`: `resolveBinary` (PATH → HOME tool dirs; versioned node
+dirs discovered newest-first; verbatim fallback) and `backoffFor`
+(2s·2^n, cap 2min). `ExecFailure` is the typed execution failure
+(timeout / unavailable / protocol / server_error / bad_arguments) the
+engine maps to Timeline text. A dead server entry is KEPT across
+retries so the backoff grows; a spec change resets it; Exec-side
+redials honor the window; stale tools on deconfigured servers return
+typed unavailable (never a nil-session panic).
