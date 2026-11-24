@@ -7,6 +7,7 @@
 
   let wardDetail = $state<Ward | null>(null);
   let wardLoadError = $state('');
+  let wardGeneration = 0;
 
   // The active session's ward binding drives the ward card.
   const ward = $derived(sessions.activeWard);
@@ -15,12 +16,17 @@
     wardDetail = null;
     wardLoadError = '';
     if (!name) return;
+    // Generation guard: only the LATEST ward's response may land — a
+    // slow earlier fetch must not overwrite the active card.
+    const mine = ++wardGeneration;
     getWard(name)
       .then((w) => {
+        if (mine !== wardGeneration) return;
         if (w) wardDetail = w;
         else wardLoadError = `Ward ${name} is no longer in the vault.`;
       })
       .catch(() => {
+        if (mine !== wardGeneration) return;
         wardLoadError = 'Ward detail unavailable.';
       });
   });

@@ -34,6 +34,11 @@ const DefaultSessionID = "default"
 // exist (and is not the default, which is created on first use).
 var ErrUnknownSession = errors.New("chat: unknown session")
 
+// ErrSessionBusy names a send into a research session whose engine run
+// is still live (serialize per session: extend it with continue
+// instead). The server maps this to 409 session_busy.
+var ErrSessionBusy = errors.New("chat: session busy — a research run is live")
+
 // MaxToolRounds bounds tool execution per send.
 const MaxToolRounds = 2
 
@@ -89,6 +94,9 @@ type Service struct {
 	bus       *eventbus.Bus
 
 	sendMu sync.Mutex // serializes whole exchanges (never holds a db tx over a provider call)
+	// busyMu/busy guard research sessions: one live engine run each.
+	busyMu sync.Mutex
+	busy   map[string]bool
 
 	idGen func() string
 }
@@ -371,11 +379,14 @@ func (c *deltaCoalescer) close() {
 }
 
 // SyncIn pages one session's transcript for clients (empty session id
-// = the default quick chat).
+// = the default quick chat). Unknown ids fail typed (ErrUnknownSession
+// → 404) — sync is session-scoped like every other chat operation.
 func (s *Service) SyncIn(sessionID string, afterSeq int64, limit int) ([]store.Message, int64, bool, error) {
-	if sessionID == "" {
-		sessionID = DefaultSessionID
+	sess, err := s.resolveSession(sessionID)
+	if err != nil {
+		return nil, 0, false, err
 	}
+	sessionID = sess.ID
 	rows, err := s.store.Replay(sessionID, afterSeq, limit)
 	if err != nil {
 		return nil, 0, false, err

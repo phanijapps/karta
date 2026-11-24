@@ -56,7 +56,7 @@ func (s *Service) SendIn(ctx context.Context, sessionID, text, providerName, mod
 		return SendOutcome{Err: err}
 	}
 	if s.isResearch(sess) {
-		return s.researchPath(ctx, sess.ID, text, providerName, model)
+		return s.researchLocked(ctx, sess.ID, text, providerName, model)
 	}
 	return s.runExchange(ctx, sess, text, providerName, model, nil, nil)
 }
@@ -74,7 +74,7 @@ func (s *Service) SendStreamIn(ctx context.Context, sessionID, text, providerNam
 		return SendOutcome{Err: err}
 	}
 	if s.isResearch(sess) {
-		return s.researchPath(ctx, sess.ID, text, providerName, model)
+		return s.researchLocked(ctx, sess.ID, text, providerName, model)
 	}
 	sc, ok := s.completer.(StreamingCompleter)
 	if !ok {
@@ -89,6 +89,40 @@ func (s *Service) SendStreamIn(ctx context.Context, sessionID, text, providerNam
 		})
 	}
 	return s.runExchange(ctx, sess, text, providerName, model, complete, coal.flush)
+}
+
+// SessionBusy reports whether a research run is live in the session
+// (the SSE handler probes this before opening a stream, so the typed
+// 409 can fire pre-stream; a race window remains — a send that loses
+// it surfaces the same error in the terminal exchange).
+func (s *Service) SessionBusy(sessionID string) bool {
+	s.busyMu.Lock()
+	defer s.busyMu.Unlock()
+	return s.busy[sessionID]
+}
+
+// researchLocked runs the research path under the session's busy
+// guard: ONE live engine run per research session (overlapping sends
+// would interleave transcripts and orphan cancellation ownership — the
+// engine's documented overlap behavior). Overlaps fail typed
+// ErrSessionBusy; the guard releases when the run drains.
+func (s *Service) researchLocked(ctx context.Context, sessionID, text, providerName, model string) SendOutcome {
+	s.busyMu.Lock()
+	if s.busy == nil {
+		s.busy = map[string]bool{}
+	}
+	if s.busy[sessionID] {
+		s.busyMu.Unlock()
+		return SendOutcome{Err: fmt.Errorf("%w: %s", ErrSessionBusy, sessionID)}
+	}
+	s.busy[sessionID] = true
+	s.busyMu.Unlock()
+	defer func() {
+		s.busyMu.Lock()
+		delete(s.busy, sessionID)
+		s.busyMu.Unlock()
+	}()
+	return s.researchPath(ctx, sessionID, text, providerName, model)
 }
 
 // isResearch reports whether the exchange should run the research

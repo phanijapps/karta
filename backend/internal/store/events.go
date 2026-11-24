@@ -82,3 +82,21 @@ func (s *Store) FinishExecution(execID, status, errMsg string, tokensIn, tokensO
 }
 
 var _ = sql.ErrNoRows
+
+// ExecutionResult reads one execution's terminal status and error (the
+// research send path consumes the root execution's outcome after a run
+// drains — failures surface as typed exchange errors, not silent
+// non-answers).
+func (s *Store) ExecutionResult(execID string) (status, errMsg string, err error) {
+	var e sql.NullString
+	if err := s.db.QueryRow(`SELECT status, error FROM executions WHERE id = ?`, execID).Scan(&status, &e); err != nil {
+		if err == sql.ErrNoRows {
+			return "", "", nil
+		}
+		return "", "", fmt.Errorf("store: execution result: %w", err)
+	}
+	if e.Valid {
+		errMsg = e.String
+	}
+	return status, errMsg, nil
+}

@@ -41,6 +41,10 @@ func (s *Server) SyncChatMessages(w http.ResponseWriter, r *http.Request, params
 	}
 	rows, next, truncated, err := s.chat.SyncIn(sessionIDOf(params.SessionId), afterSeq, limit)
 	if err != nil {
+		if errors.Is(err, chat.ErrUnknownSession) {
+			writeError(w, http.StatusNotFound, "not_found", err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
@@ -73,6 +77,10 @@ func (s *Server) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	outcome := s.chat.SendIn(r.Context(), sessionIDOf(req.SessionId), req.Text, providerName, modelID)
 	if errors.Is(outcome.Err, chat.ErrUnknownSession) {
 		writeError(w, http.StatusNotFound, "not_found", outcome.Err.Error())
+		return
+	}
+	if errors.Is(outcome.Err, chat.ErrSessionBusy) {
+		writeError(w, http.StatusConflict, "session_busy", outcome.Err.Error())
 		return
 	}
 	// Persist the model as the default (last-used wins).
@@ -128,6 +136,10 @@ func (s *Server) StreamChatMessage(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not_found", "no such session: "+sessionID)
 			return
 		}
+	}
+	if s.chat.SessionBusy(sessionID) {
+		writeError(w, http.StatusConflict, "session_busy", "a research run is already live in this session — extend it with continue instead")
+		return
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {

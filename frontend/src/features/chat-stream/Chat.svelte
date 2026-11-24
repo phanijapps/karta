@@ -16,6 +16,10 @@
   let announced = $state('');
   // Continue bar (research sessions near budget).
   let budgetRemaining = $state<number | null>(null);
+  // The session a send originated in: volatile output and the pending
+  // bubble render ONLY while that session is active (switching away
+  // mid-send must not leak the live exchange into another transcript).
+  let sendSessionId = $state('');
   // One-shot load (cursor changes inside load() must not retrigger).
   let loaded = $state(false);
   $effect(() => {
@@ -87,6 +91,7 @@
     budgetRemaining = null;
     sessions.sendError = '';
     const sessionId = sessions.activeId;
+    sendSessionId = sessionId;
     try {
       let result: Awaited<ReturnType<typeof sendChatMessage>>;
       if (isResearch) {
@@ -107,7 +112,7 @@
           result = await sendChatMessage(text, sessions.model, sessionId);
         }
       }
-      await sessions.reconcile();
+      await sessions.reconcile(sessionId);
       if (!result.ok) {
         sessions.sendError = result.errorMessage ?? 'send failed';
         announced = 'Reply failed.';
@@ -234,7 +239,7 @@
         {/if}
       {/each}
     {/if}
-      {#if streaming && (reasoning !== '' || content !== '')}
+      {#if streaming && sessions.activeId === sendSessionId && (reasoning !== '' || content !== '')}
         <article class="bubble assistant streaming" aria-label="Assistant is responding" aria-busy="true">
           {#if reasoning !== ''}
             <details class="thinking" bind:open={thinkingOpen}>
@@ -248,7 +253,7 @@
             <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
           {/if}
         </article>
-      {:else if sending}
+      {:else if sending && sessions.activeId === sendSessionId}
         <article class="bubble assistant pending" aria-label="Assistant is working" aria-busy="true">
           {#if isResearch}
             <div class="research-progress">

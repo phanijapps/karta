@@ -30,7 +30,11 @@
     if (creating) return;
     creating = true;
     try {
-      await sessions.newResearch();
+      if (await sessions.newResearch()) {
+        // Navigate to the fresh shell: the callback closes drawers,
+        // switches the main view to the chat surface, and focuses it.
+        onselect(sessions.activeId);
+      }
     } finally {
       creating = false;
     }
@@ -91,7 +95,7 @@
     </ul></li>
   </ul>
 
-  <button class="new-research" onclick={() => void newResearch()} disabled={creating}>
+  <button class="new-research" onclick={() => void newResearch()} disabled={creating} aria-label="New Research" title="New Research">
     <FolderPlus size={14} aria-hidden="true" /><span class="brand-text">New Research</span>
   </button>
 

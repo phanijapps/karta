@@ -68,7 +68,7 @@ import { clearChat } from '../shared/api/client';
       <p class="muted">All messages in this session will be permanently deleted from your local database. This cannot be undone.</p>
       <div class="confirm-actions">
         <button class="cancel" onclick={() => (confirmClear = false)}>Cancel</button>
-        <button class="danger" onclick={async () => { await clearChat(sessions.activeId); confirmClear = false; sessions.clearedLocally(sessions.activeId); }}>Clear everything</button>
+        <button class="danger" onclick={async () => { const sid = sessions.activeId; if (await clearChat(sid)) { confirmClear = false; sessions.clearedLocally(sid); } else { sessions.sendError = 'clear failed — the transcript is intact'; } }}>Clear everything</button>
       </div>
     </div>
   </div>

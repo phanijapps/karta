@@ -210,3 +210,5 @@ func (s *stubChatService) SendStreamIn(ctx context.Context, sessionID, text, pro
 func (s *stubChatService) SyncIn(sessionID string, afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error) {
 	return nil, afterSeq, false, nil
 }
+func (s *stubChatService) SessionBusy(string) bool { return false }
+

@@ -2584,6 +2584,7 @@ export interface operations {
                     "application/json": components["schemas"]["ChatSync"];
                 };
             };
+            404: components["responses"]["NotFound"];
         };
     };
     sendChatMessage: {
@@ -2609,6 +2610,16 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            /** @description A research run is already live in this session (session_busy) — extend it with continue instead. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             502: components["responses"]["ProviderFailure"];
         };
     };
@@ -2657,6 +2668,16 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            /** @description A research run is already live in this session (session_busy) — extend it with continue instead. Typed JSON before any stream opens. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             502: components["responses"]["ProviderFailure"];
         };
     };

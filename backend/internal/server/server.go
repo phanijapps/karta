@@ -69,6 +69,7 @@ type ChatService interface {
 	SendIn(ctx context.Context, sessionID, text, providerName, model string) chat.SendOutcome
 	SendStreamIn(ctx context.Context, sessionID, text, providerName, model string, onDelta func(chat.Delta)) chat.SendOutcome
 	SyncIn(sessionID string, afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error)
+	SessionBusy(sessionID string) bool
 }
 
 // New builds a server over the provider store, model catalog, and the

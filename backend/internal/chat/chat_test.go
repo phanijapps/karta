@@ -467,3 +467,60 @@ func TestLeanContextRecall(t *testing.T) {
 		}
 	}
 }
+
+// TestResearchSessionBusyGuard (gate fix): one live engine run per
+// research session — an overlapping send fails typed ErrSessionBusy
+// instead of interleaving transcripts; the guard releases when the
+// run drains.
+func TestResearchSessionBusyGuard(t *testing.T) {
+	fc := &fakeCompleter{}
+	svc, st := newService(t, fc)
+	if _, err := st.EnsureSession("research-busy", "research"); err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	started := make(chan struct{})
+	done := make(chan struct{})
+	svc.SetResearchPath(func(ctx context.Context, sessionID, text, providerName, model string) SendOutcome {
+		close(started)
+		<-release
+		return SendOutcome{Rows: []store.Message{{ID: "x", SessionID: sessionID, Seq: 1, Role: "assistant", Content: "done"}}}
+	})
+	go func() {
+		defer close(done)
+		out := svc.SendIn(context.Background(), "research-busy", "first", "p", "m")
+		if out.Err != nil {
+			t.Errorf("first send: %v", out.Err)
+		}
+	}()
+	<-started
+	// Overlapping sends (sync and streaming) fail typed while the run is live.
+	for _, send := range []func() SendOutcome{
+		func() SendOutcome { return svc.SendIn(context.Background(), "research-busy", "second", "p", "m") },
+		func() SendOutcome { return svc.SendStreamIn(context.Background(), "research-busy", "second", "p", "m", nil) },
+	} {
+		out := send()
+		if !errors.Is(out.Err, ErrSessionBusy) {
+			t.Fatalf("want ErrSessionBusy, got %v", out.Err)
+		}
+	}
+	// A different session is unaffected (swap to an immediate path so
+	// the probe does not block on the first run's release).
+	svc.SetResearchPath(func(ctx context.Context, sessionID, text, providerName, model string) SendOutcome {
+		return SendOutcome{Rows: []store.Message{{ID: "z", SessionID: sessionID, Seq: 1, Role: "assistant", Content: "other"}}}
+	})
+	if _, err := st.EnsureSession("research-other", "research"); err != nil {
+		t.Fatal(err)
+	}
+	out := svc.SendIn(context.Background(), "research-other", "q", "p", "m")
+	if errors.Is(out.Err, ErrSessionBusy) || out.Err != nil {
+		t.Fatalf("busy leaked across sessions: %v", out.Err)
+	}
+	close(release)
+	<-done // the first run drained and released the guard
+	// The guard released: a new send in the first session routes again.
+	out = svc.SendIn(context.Background(), "research-busy", "third", "p", "m")
+	if out.Err != nil || len(out.Rows) != 1 || out.Rows[0].Content != "other" {
+		t.Fatalf("after release: %+v (%v)", out.Rows, out.Err)
+	}
+}

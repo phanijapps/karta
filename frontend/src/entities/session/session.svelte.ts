@@ -47,9 +47,17 @@ export function createSessions() {
   const activeWard = $derived.by(() => active?.ward ?? '');
 
   async function loadRoster() {
-    const res = await listSessions(100);
-    if (res.ok) {
-      sessions = res.sessions;
+    let all: SessionView[] | null = null;
+    // Page the roster until complete (bounded: 5 pages x 100 — beyond
+    // that the cap holds and a "show all" control lands later).
+    for (let page = 0; page < 5; page++) {
+      const res = await listSessions(100, page > 0 ? String(page * 100) : undefined);
+      if (!res.ok) break;
+      all = page === 0 ? res.sessions : [...(all ?? []), ...res.sessions];
+      if (!res.truncated) break;
+    }
+    if (all !== null) {
+      sessions = all;
       rosterError = '';
     } else {
       rosterError = 'daemon';
@@ -71,8 +79,10 @@ export function createSessions() {
   }
 
   async function loadTranscript(sessionId: string) {
-    // Catch-up loop: page until not truncated.
-    let cursor = cursors[sessionId] ?? 0;
+    // FULL reload from seq 0: mounting replaces the cache with the
+    // complete history (an incremental read from the saved cursor
+    // would blank a remounted Chat when no new rows exist).
+    let cursor = 0;
     const rows: ChatMessage[] = [];
     for (;;) {
       const page = await syncChatMessages(cursor, 200, sessionId);
@@ -133,9 +143,8 @@ export function createSessions() {
   /** Reconcile after every send outcome, failures included: the
    * transcript re-syncs and the roster re-lists (a ward binding may
    * have changed — the sidebar re-groups). */
-  async function reconcile() {
+  async function reconcile(sessionId = activeId) {
     try {
-      const sessionId = activeId;
       const seen = new Set(transcripts[sessionId] ?? []);
       let cursor = cursors[sessionId] ?? 0;
       for (;;) {

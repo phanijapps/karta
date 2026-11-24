@@ -41,6 +41,8 @@ func (s *scriptedStreamChat) SendStreamIn(ctx context.Context, sessionID, text, 
 func (s *scriptedStreamChat) SyncIn(sessionID string, afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error) {
 	return nil, afterSeq, false, nil
 }
+func (s *scriptedStreamChat) SessionBusy(string) bool { return false }
+
 
 func newStreamDaemon(t *testing.T, svc ChatService) *httptest.Server {
 	t.Helper()
@@ -186,6 +188,8 @@ func (i *instrumentedStreamChat) SendStreamIn(ctx context.Context, sessionID, te
 func (i *instrumentedStreamChat) SyncIn(sessionID string, afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error) {
 	return nil, afterSeq, false, nil
 }
+func (i *instrumentedStreamChat) SessionBusy(string) bool { return false }
+
 
 // TestStreamWriterDropsInsteadOfBlocking (gate finding #2): a full buffer
 // drops frames — send NEVER blocks the exchange on a stalled reader.
@@ -288,3 +292,5 @@ func (g *gappedStreamChat) SendStreamIn(ctx context.Context, sessionID, text, pr
 func (g *gappedStreamChat) SyncIn(sessionID string, afterSeq int64, limit int) ([]zbotstore.Message, int64, bool, error) {
 	return nil, afterSeq, false, nil
 }
+func (g *gappedStreamChat) SessionBusy(string) bool { return false }
+

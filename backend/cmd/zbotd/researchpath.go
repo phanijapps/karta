@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"zbot/backend/chitta"
@@ -61,6 +62,16 @@ func wireResearchPath(chatSvc *chat.Service, eng *einoengine.Adapter, runEngine 
 		}
 		for range events { // drain to completion — the transcript is the truth
 		}
+		// A FAILED run must not surface as a successful exchange with no
+		// answer: the root execution carries the terminal status, so a
+		// failure propagates as the outcome's typed error (the rows it
+		// managed to append still ride along, like the lean path's
+		// persisted-user-row semantics). Cancelled runs are deliberate
+		// stops — the transcript stands, no error.
+		status, errMsg, serr := db.ExecutionResult("exec-root-" + sessionID)
+		if serr != nil {
+			return chat.SendOutcome{Err: serr}
+		}
 		rows, err := db.Replay(sessionID, before, 500)
 		if err != nil {
 			return chat.SendOutcome{Err: err}
@@ -70,6 +81,13 @@ func wireResearchPath(chatSvc *chat.Service, eng *einoengine.Adapter, runEngine 
 			if r.Seq > end {
 				end = r.Seq
 			}
+		}
+		if status == "failed" {
+			msg := errMsg
+			if msg == "" {
+				msg = "research run failed"
+			}
+			return chat.SendOutcome{Rows: rows, EndCursor: end, Err: fmt.Errorf("research: %s", msg)}
 		}
 		return chat.SendOutcome{Rows: rows, EndCursor: end}
 	})

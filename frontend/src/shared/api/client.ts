@@ -298,12 +298,22 @@ export type SessionView = components["schemas"]["SessionSummary"];
 /** List sessions (GET /api/sessions), most recently active first. */
 export async function listSessions(
   limit = 50,
-): Promise<{ ok: true; sessions: SessionView[] } | { ok: false; error: string }> {
+  cursor?: string,
+): Promise<
+  | { ok: true; sessions: SessionView[]; truncated: boolean; nextCursor?: string }
+  | { ok: false; error: string }
+> {
   try {
+    const qs = `limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
     const body = (await getJSON(
-      `/api/sessions?limit=${limit}`,
+      `/api/sessions?${qs}`,
     )) as components["schemas"]["SessionList"];
-    return { ok: true, sessions: body.sessions ?? [] };
+    return {
+      ok: true,
+      sessions: body.sessions ?? [],
+      truncated: body.truncated ?? false,
+      nextCursor: body.next_cursor,
+    };
   } catch (err) {
     return { ok: false, error: `daemon unreachable (${String(err)})` };
   }
@@ -314,11 +324,12 @@ export async function listSessions(
 export async function createSession(
   title?: string,
 ): Promise<{ ok: true; session: components["schemas"]["Session"] } | { ok: false; error: string }> {
+  const reqBody: CreateSessionRequestBody = title ? { title } : {};
   try {
-    const res = await fetch(`${BASE}/api/sessions`, {
+    const res = await fetch(`${BASE}${SESSION_ROUTES.create}`, {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify(title ? { title } : {}),
+      body: JSON.stringify(reqBody),
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as { message?: string } | null;
@@ -346,6 +357,7 @@ export async function sendChatMessage(
   model: string,
   sessionId = "default",
 ): Promise<ChatExchange> {
+  const sendBody: ChatSendRequest = { text, model, session_id: sessionId };
   let res: Response;
   try {
     res = await fetch(`${BASE}/api/chat/messages`, {
@@ -354,7 +366,7 @@ export async function sendChatMessage(
         Accept: "application/json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text, model, session_id: sessionId }),
+      body: JSON.stringify(sendBody),
     });
   } catch (err) {
     return {
@@ -392,6 +404,21 @@ export async function sendChatMessage(
     errorMessage: body.error?.message,
   };
 }
+
+// ---- Session model routes (pinned to the generated contract) -------------
+//
+// Same discipline as the MCP section below: route constants satisfy
+// keyof paths, and request bodies derive from the generated operations
+// entries — contract shape changes break this module at compile time.
+const SESSION_ROUTES = {
+  list: "/api/sessions",
+  create: "/api/sessions",
+} satisfies Record<string, keyof paths>;
+export type ChatSendRequest =
+  operations["sendChatMessage"]["requestBody"]["content"]["application/json"];
+export type CreateSessionRequestBody = NonNullable<
+  operations["createSession"]["requestBody"]
+>["content"]["application/json"];
 
 // ---- MCP servers & skills (Settings management plane) --------------------
 //
@@ -878,13 +905,14 @@ export async function streamChatMessage(
   onDelta: (d: ChatStreamDelta) => void,
   sessionId = "default",
 ): Promise<ChatExchange> {
+  const reqBody: ChatSendRequest = { text, model, session_id: sessionId };
   const res = await fetch(`${BASE}/api/chat/send`, {
     method: "POST",
     headers: {
       Accept: "text/event-stream",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ text, model, session_id: sessionId }),
+    body: JSON.stringify(reqBody),
   });
   if (!res.ok || !res.body) {
     // Pre-stream typed 4xx/5xx JSON — mirror sendChatMessage's contract.

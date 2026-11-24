@@ -958,6 +958,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ChatSync'
+        '404':
+          $ref: '#/components/responses/NotFound'
     post:
       operationId: sendChatMessage
       summary: Send a message and get the assistant's reply
@@ -982,6 +984,15 @@ paths:
                 $ref: '#/components/schemas/ChatExchange'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: A research run is already live in this session
+            (session_busy) — extend it with continue instead.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '502':
           $ref: '#/components/responses/ProviderFailure'
     delete:
@@ -1035,6 +1046,16 @@ paths:
                   - $ref: '#/components/schemas/ChatExchange'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: A research run is already live in this session
+            (session_busy) — extend it with continue instead. Typed JSON
+            before any stream opens.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '502':
           $ref: '#/components/responses/ProviderFailure'
 
