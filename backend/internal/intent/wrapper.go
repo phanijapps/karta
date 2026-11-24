@@ -45,6 +45,22 @@ type Config struct {
 	RecallResources func(ctx context.Context, goal string) Resources
 	// KnownMCPs validates recommended MCP tool names (nil = all drop).
 	KnownMCPs func(string) bool
+	// OrchestratorModel returns the session's bound ward's model
+	// override ("provider/model"), or "" when none/inheriting. Applied
+	// BEFORE analysis and the run — the ward's own model orchestrates
+	// hosted sessions (the per-ward orchestrator).
+	OrchestratorModel func(sessionID string) string
+}
+
+// applyOrchestrator lets the session's ward override the run's model
+// (explicit config AnalysisModel still wins for the analysis call).
+func (w *Wrapper) applyOrchestrator(req *domain.GoalRequest) {
+	if w.Cfg.OrchestratorModel == nil || req.SessionID == "" {
+		return
+	}
+	if m := w.Cfg.OrchestratorModel(req.SessionID); m != "" {
+		req.Model = m
+	}
 }
 
 // Wrapper decorates a domain.AgentEngine with the pre-execution intent
@@ -67,6 +83,9 @@ type Wrapper struct {
 // RunGoal runs the middleware then the engine, prepending the
 // intent_analysis event to the run's stream.
 func (w *Wrapper) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan domain.TimelineEvent, error) {
+	// 0) The ward orchestrates: a bound ward's model override becomes
+	// the run's model (analysis target follows unless configured).
+	w.applyOrchestrator(&req)
 	// 1) Static persona (load-critical: a broken composed prompt fails
 	// the run loudly — the spec's no-empty-prompt rule).
 	var persona string

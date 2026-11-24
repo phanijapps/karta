@@ -2016,6 +2016,9 @@ type Ward struct {
 	Layout     *WardNode      `json:"layout,omitempty"`
 	LintStatus WardLintStatus `json:"lint_status"`
 	Name       string         `json:"name"`
+
+	// Orchestrator The ward's orchestrator override ("provider/model" from .zbot/config.yaml) — the model that runs hosted sessions in this ward; absent when the ward inherits the daemon default.
+	Orchestrator *string `json:"orchestrator,omitempty"`
 }
 
 // WardLintStatus defines model for Ward.LintStatus.
@@ -2091,6 +2094,9 @@ type WardSummary struct {
 
 	// Name The ward's directory name in the vault.
 	Name string `json:"name"`
+
+	// Orchestrator The ward's orchestrator override ("provider/model" from .zbot/config.yaml) — the model that runs hosted sessions in this ward; absent when the ward inherits the daemon default.
+	Orchestrator *string `json:"orchestrator,omitempty"`
 }
 
 // WardSummaryLintStatus defines model for WardSummary.LintStatus.

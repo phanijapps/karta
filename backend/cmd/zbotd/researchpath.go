@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
 
 	"zbot/backend/chitta"
 	einoengine "zbot/backend/internal/engine/eino"
@@ -14,6 +15,7 @@ import (
 	"zbot/backend/internal/registry"
 	zbotstore "zbot/backend/internal/store"
 	"zbot/backend/internal/sysprompt"
+	"zbot/backend/internal/wards"
 )
 
 // wireSessionModel wires the add-chat-modes session plumbing: the
@@ -28,6 +30,20 @@ func wireSessionModel(chatSvc *chat.Service, eng *einoengine.Adapter, runEngine 
 		}
 	})
 	wireResearchPath(chatSvc, eng, runEngine, db)
+}
+
+// wardOrchestratorModel is the wrapper's per-ward orchestrator lookup:
+// the session's bound ward's .zbot/config.yaml provider/model, or ""
+// (inherit the picker default).
+func wardOrchestratorModel(vault *wards.Vault, db *zbotstore.Store) func(sessionID string) string {
+	return func(sessionID string) string {
+		sess, err := db.Session(sessionID)
+		if err != nil || sess == nil || sess.Ward == "" {
+			return ""
+		}
+		dir := filepath.Join(vault.Root(), sess.Ward)
+		return wards.ReadZbotConfig(dir).OrchestratorModel()
+	}
 }
 
 // wireResearchPath routes research-SESSION sends through the engine's

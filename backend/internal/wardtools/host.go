@@ -43,6 +43,8 @@ type Host struct {
 	// enter: the engine adapter binds it to the session-row ward
 	// binding (the sidebar re-groups; the next run pre-loads).
 	onEnter func(ward string)
+	// orchModel is the ward's orchestrator override ("" = inherit).
+	orchModel string
 }
 
 // SetOnEnter wires the post-enter observer (see Host.onEnter). Called
@@ -63,6 +65,7 @@ func (h *Host) Active() *WardView {
 	return &WardView{
 		Name: h.wardName, Dir: h.wardDir, Conf: h.conf,
 		Constitution: h.constitution, Digest: h.digest,
+		OrchestratorModel: h.orchModel,
 	}
 }
 
@@ -73,6 +76,9 @@ type WardView struct {
 	Conf         *wards.Conf
 	Constitution string
 	Digest       string
+	// OrchestratorModel is the ward's "provider/model" override (the
+	// ward's own model runs hosted orchestration); "" = inherit.
+	OrchestratorModel string
 }
 
 // enter sets the active ward (switching replaces; the previous ward's
@@ -93,12 +99,14 @@ func (h *Host) enter(ctx context.Context, name string) (*WardView, error) {
 			conf = &parsed
 		}
 	}
+	zc := wards.ReadZbotConfig(dir)
 	h.mu.Lock()
 	h.wardName = name
 	h.wardDir = dir
 	h.conf = conf
 	h.constitution = constitution
 	h.digest = digestOf(conf, constitution)
+	h.orchModel = zc.OrchestratorModel()
 	onEnter := h.onEnter
 	h.mu.Unlock()
 	if onEnter != nil {

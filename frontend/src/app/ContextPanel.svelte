@@ -91,6 +91,13 @@
             {#if wardDetail.last_used}
               <p class="type">last used {new Date(wardDetail.last_used).toLocaleString()}</p>
             {/if}
+            <p class="type orchestrator">
+              {#if wardDetail.orchestrator}
+                orchestrates on <strong>{wardDetail.orchestrator}</strong>
+              {:else}
+                orchestrates on the daemon default
+              {/if}
+            </p>
             {#if wardDetail.canonical_title}
               <p class="canonical">{wardDetail.canonical_title}</p>
             {/if}
@@ -151,6 +158,8 @@
   .ward-card .name { margin: 0; font-weight: 600; color: var(--ds-color-success, #22c55e); }
   .ward-card .type { margin: 0; font-size: 0.72rem; color: var(--ds-color-muted); }
   .ward-card .desc { margin: 0; font-size: 0.76rem; color: var(--ds-color-text); }
+  .ward-card .orchestrator { color: var(--ds-color-text); }
+  .ward-card .orchestrator strong { font-weight: 500; color: var(--ds-color-primary, #6366f1); }
   .ward-card .canonical { margin: 0; font-size: 0.78rem; padding: var(--ds-space-2); border-left: 2px solid var(--ds-color-success, #22c55e); border-radius: 4px; background: var(--ds-color-field, #1a1a1a); color: var(--ds-color-text); }
   .ward-files { display: grid; gap: 2px; font-size: 0.7rem; }
   .ward-files code { font-family: ui-monospace, monospace; white-space: pre; color: var(--ds-color-muted); }

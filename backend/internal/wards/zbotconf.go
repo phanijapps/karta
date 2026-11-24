@@ -22,6 +22,19 @@ type ZbotConfig struct {
 	LastUsed    string   `yaml:"last_used"`
 	Agents      []string `yaml:"agents"`
 	Skills      []string `yaml:"skills"`
+	// Provider/Model are the ward's ORCHESTRATOR override ("provider"
+	// / "model-id"); empty inherits the daemon default (the picker).
+	Provider string `yaml:"provider"`
+	Model    string `yaml:"model"`
+}
+
+// OrchestratorModel returns the ward's model override as a qualified
+// "provider/model" reference, or "" when the ward inherits.
+func (z ZbotConfig) OrchestratorModel() string {
+	if z.Provider == "" || z.Model == "" {
+		return ""
+	}
+	return z.Provider + "/" + z.Model
 }
 
 // zbotConfigStarter is the write-once starter seeded by MigrateV2 and
@@ -33,6 +46,8 @@ description: ""     # one line: what this ward is for
 last_used: ""       # RFC3339, touched by Karta on ward entry
 agents: []          # ward-scoped agent seeds (future surface)
 skills: []          # ward-scoped skill seeds (future surface)
+provider: ""        # orchestrator override ("zai"); empty = inherit
+model: ""           # orchestrator override ("glm-5.3"); empty = inherit
 `
 
 // ReadZbotConfig reads the ward's .zbot/config.yaml (zero-value

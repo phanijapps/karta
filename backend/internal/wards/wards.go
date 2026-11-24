@@ -42,6 +42,9 @@ type WardInfo struct {
 	// v2 identity (from .zbot/config.yaml; defaults when absent).
 	Description string
 	LastUsed    string
+	// Orchestrator is the ward's "provider/model" override ("" =
+	// inherit the daemon default).
+	Orchestrator string
 }
 
 // LintStatus classifies a ward for the API surface.
@@ -111,6 +114,7 @@ func (v *Vault) indexWard(ctx context.Context, name string) (WardInfo, error) {
 	// v2 identity rides every index (absent .zbot = zero defaults).
 	zc := ReadZbotConfig(dir)
 	info.Description, info.LastUsed = zc.Description, zc.LastUsed
+	info.Orchestrator = zc.OrchestratorModel()
 	raw, err := os.ReadFile(filepath.Join(dir, confFile))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -172,6 +176,7 @@ func (v *Vault) Detail(ctx context.Context, name string) (WardDetail, error) {
 	// v2 identity rides the detail too (conf-less wards included).
 	zc := ReadZbotConfig(dir)
 	detail.Info.Description, detail.Info.LastUsed = zc.Description, zc.LastUsed
+	detail.Info.Orchestrator = zc.OrchestratorModel()
 	raw, err := os.ReadFile(filepath.Join(dir, confFile))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

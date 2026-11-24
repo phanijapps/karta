@@ -71,6 +71,10 @@ func (s *Server) GetWard(w http.ResponseWriter, r *http.Request, name string) {
 	if t, err := time.Parse(time.RFC3339, detail.Info.LastUsed); err == nil {
 		view.LastUsed = &t
 	}
+	if detail.Info.Orchestrator != "" {
+		o := detail.Info.Orchestrator
+		view.Orchestrator = &o
+	}
 	if detail.Info.CanonicalTitle != "" {
 		title := detail.Info.CanonicalTitle
 		view.CanonicalTitle = &title
@@ -100,6 +104,10 @@ func wardSummaryView(info wards.WardInfo) apigen.WardSummary {
 	}
 	if t, err := time.Parse(time.RFC3339, info.LastUsed); err == nil {
 		view.LastUsed = &t
+	}
+	if info.Orchestrator != "" {
+		o := info.Orchestrator
+		view.Orchestrator = &o
 	}
 	return view
 }

@@ -61,6 +61,15 @@
   (engine goal-run wiring unchanged). Verify: build + suite + live
   smoke (below).
 
+## 3.6 Per-ward orchestrator (operator direction, 2026-11-24)
+
+- [x] 3.6.1 `.zbot/config.yaml` provider/model → the ward orchestrates
+  its hosted sessions (analysis + root run) via the wrapper's
+  OrchestratorModel seam; partial/empty inherits. Ward detail exposes
+  `orchestrator`; the context panel shows it. Verify: TestOrchestrator
+  Model, TestWrapperOrchestratorOverride; LIVE — india-analysis on
+  ollama/glm-5.3-flash:cloud while the picker said zai.
+
 ## 4. Review and hardening
 
 - [ ] 4.1 Phase gates (gpt-6.1-terra + gpt-6.1-sol) after each task

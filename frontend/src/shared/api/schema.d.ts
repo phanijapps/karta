@@ -1466,6 +1466,8 @@ export interface components {
              * @description Last ward entry (v2 state, best-effort).
              */
             last_used?: string;
+            /** @description The ward's orchestrator override ("provider/model" from .zbot/config.yaml) — the model that runs hosted sessions in this ward; absent when the ward inherits the daemon default. */
+            orchestrator?: string;
             /** @description Lint findings against the ward's conf (0 = clean). */
             finding_count: number;
             /** @description The canonical page's title (first level-1 heading, else the file name); absent when the ward has no canonical page yet. */
@@ -1483,6 +1485,8 @@ export interface components {
              * @description Last ward entry (v2 state, best-effort).
              */
             last_used?: string;
+            /** @description The ward's orchestrator override ("provider/model" from .zbot/config.yaml) — the model that runs hosted sessions in this ward; absent when the ward inherits the daemon default. */
+            orchestrator?: string;
             finding_count: number;
             canonical_title?: string;
             findings: components["schemas"]["WardFinding"][];

@@ -581,3 +581,35 @@ func TestTouchLastUsedSurgical(t *testing.T) {
 		t.Fatal("stamp not parseable")
 	}
 }
+
+// TestOrchestratorModel (per-ward orchestrator): the .zbot provider/
+// model override reads as a qualified reference; partial or empty
+// config inherits ("").
+func TestOrchestratorModel(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".zbot"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, ".zbot", "config.yaml")
+	write := func(s string) {
+		if err := os.WriteFile(cfg, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("provider: zai\nmodel: glm-5.3\n")
+	if got := ReadZbotConfig(dir).OrchestratorModel(); got != "zai/glm-5.3" {
+		t.Fatalf("override: %q", got)
+	}
+	write("provider: zai\nmodel: \"\"\n")
+	if got := ReadZbotConfig(dir).OrchestratorModel(); got != "" {
+		t.Fatalf("partial must inherit: %q", got)
+	}
+	write("provider: \"\"\nmodel: glm-5.3\n")
+	if got := ReadZbotConfig(dir).OrchestratorModel(); got != "" {
+		t.Fatalf("partial must inherit: %q", got)
+	}
+	write("name: x\n")
+	if got := ReadZbotConfig(dir).OrchestratorModel(); got != "" {
+		t.Fatalf("absent must inherit: %q", got)
+	}
+}

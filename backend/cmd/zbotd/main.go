@@ -295,9 +295,12 @@ func run(ctx context.Context, homeFlag string) error {
 				return memOnly, knowledge
 			},
 			Cfg: intent.Config{
-				Enabled:        cfg.Intent.On(),
-				AnalysisModel:  cfg.Intent.Model,
-				ComposePersona: composePersona,
+				Enabled: cfg.Intent.On(),
+				// Per-ward orchestrator: a bound ward's model override
+				// runs the hosted session (analysis + root run).
+				OrchestratorModel: wardOrchestratorModel(wardVault, db),
+				AnalysisModel:     cfg.Intent.Model,
+				ComposePersona:    composePersona,
 				Persist: func(ev domain.TimelineEvent) {
 					// Attempted-durable-first, the engine's own posture.
 					// The stored payload carries text AND the typed

@@ -2736,6 +2736,13 @@ components:
           type: string
           format: date-time
           description: Last ward entry (v2 state, best-effort).
+        orchestrator:
+          type: string
+          maxLength: 384
+          description: The ward's orchestrator override ("provider/model"
+            from .zbot/config.yaml) — the model that runs hosted
+            sessions in this ward; absent when the ward inherits the
+            daemon default.
         finding_count:
           type: integer
           minimum: 0
@@ -2770,6 +2777,13 @@ components:
           type: string
           format: date-time
           description: Last ward entry (v2 state, best-effort).
+        orchestrator:
+          type: string
+          maxLength: 384
+          description: The ward's orchestrator override ("provider/model"
+            from .zbot/config.yaml) — the model that runs hosted
+            sessions in this ward; absent when the ward inherits the
+            daemon default.
         finding_count:
           type: integer
           minimum: 0

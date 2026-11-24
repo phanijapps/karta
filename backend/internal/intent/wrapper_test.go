@@ -273,3 +273,57 @@ func TestWrapperOrderPersistenceConcurrency(t *testing.T) {
 		}
 	})
 }
+
+// TestWrapperOrchestratorOverride (per-ward orchestrator): a bound
+// ward's model override becomes the run's model before analysis and
+// execution; no override keeps the picker default.
+func TestWrapperOrchestratorOverride(t *testing.T) {
+	fc := &fakeCompleter{responses: []string{wrapperContract}}
+	w := newWrapper(fc, wrapSnap(), nil)
+	var analysisModel string
+	w.Analyzer = &Analyzer{Completer: &recordingCompleter{inner: fc, onCall: func(_, model string) { analysisModel = model }}}
+	w.Cfg.OrchestratorModel = func(sessionID string) string {
+		if sessionID == "s-ward" {
+			return "ollama/qwen3"
+		}
+		return ""
+	}
+	eng := w.Engine.(*fakeEngine)
+	_, err := w.RunGoal(context.Background(), domain.GoalRequest{SessionID: "s-ward", Goal: "g", Model: "zai/glm-5.3-flash"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng.mu.Lock()
+	got := eng.lastReq.Model
+	eng.mu.Unlock()
+	if got != "ollama/qwen3" {
+		t.Fatalf("ward override must win: %q", got)
+	}
+	if analysisModel != "qwen3" {
+		t.Fatalf("analysis must follow the ward's model: %q", analysisModel)
+	}
+	// No override: the picker default stands.
+	eng.mu.Lock()
+	eng.lastReq.Model = ""
+	eng.mu.Unlock()
+	if _, err := w.RunGoal(context.Background(), domain.GoalRequest{SessionID: "s-plain", Goal: "g", Model: "zai/glm-5.3-flash"}); err != nil {
+		t.Fatal(err)
+	}
+	eng.mu.Lock()
+	got = eng.lastReq.Model
+	eng.mu.Unlock()
+	if got != "zai/glm-5.3-flash" {
+		t.Fatalf("no override must inherit: %q", got)
+	}
+}
+
+// recordingCompleter captures the analysis model target.
+type recordingCompleter struct {
+	inner  Completer
+	onCall func(provider, model string)
+}
+
+func (r *recordingCompleter) Complete(ctx context.Context, provider, model, system, user string) (string, error) {
+	r.onCall(provider, model)
+	return r.inner.Complete(ctx, provider, model, system, user)
+}
