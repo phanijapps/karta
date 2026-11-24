@@ -111,10 +111,30 @@ func NewChatClient() *ChatClient { return &ChatClient{HTTP: &http.Client{Timeout
 // caller-resolved credential (empty sends none). A nil tools slice
 // offers none (the final round).
 func (c *ChatClient) ChatCompletion(ctx context.Context, p Provider, model, token string, messages []ChatMessage, tools []ChatToolDef) (ChatResponse, error) {
+	return c.ChatCompletionWithBody(ctx, p, model, token, messages, tools, nil)
+}
+
+// ChatCompletionWithBody is ChatCompletion with extra top-level
+// request-body parameters merged in (provider knobs such as z.ai's
+// reasoning_effort). nil extra behaves exactly like ChatCompletion.
+func (c *ChatClient) ChatCompletionWithBody(ctx context.Context, p Provider, model, token string, messages []ChatMessage, tools []ChatToolDef, extra map[string]any) (ChatResponse, error) {
 	url := strings.TrimRight(p.BaseURL, "/") + "/chat/completions"
-	body, err := json.Marshal(chatRequest{Model: model, Messages: messages, Tools: tools})
+	base, err := json.Marshal(chatRequest{Model: model, Messages: messages, Tools: tools})
 	if err != nil {
 		return ChatResponse{}, &Failure{Reason: ReasonMalformed, Err: err}
+	}
+	body := base
+	if len(extra) > 0 {
+		var payload map[string]any
+		if err := json.Unmarshal(base, &payload); err != nil {
+			return ChatResponse{}, &Failure{Reason: ReasonMalformed, Err: err}
+		}
+		for k, v := range extra {
+			payload[k] = v
+		}
+		if body, err = json.Marshal(payload); err != nil {
+			return ChatResponse{}, &Failure{Reason: ReasonMalformed, Err: err}
+		}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {

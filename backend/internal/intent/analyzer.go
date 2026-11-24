@@ -3,8 +3,10 @@ package intent
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"strings"
 	"text/template"
+	"time"
 
 	"zbot/backend/internal/domain"
 	"zbot/backend/internal/registry"
@@ -22,6 +24,28 @@ var defaultPrompt string
 // tests). One call, plain text in and out.
 type Completer interface {
 	Complete(ctx context.Context, provider, model, system, user string) (string, error)
+}
+
+// ParamCompleter is the optional extended seam: completions carrying
+// extra request-body parameters (provider knobs such as z.ai's
+// reasoning_effort). Implementations that do not need it keep the
+// plain Completer.
+type ParamCompleter interface {
+	Completer
+	CompleteWith(ctx context.Context, provider, model, system, user string, extraBody map[string]any) (string, error)
+}
+
+// analysisDeadline bounds the whole decision (all attempts) —
+// agentzero's 45s budget: analysis is a classification, never worth an
+// unbounded wait. A var, not a const, solely so the deadline test can
+// prove the bound without sleeping 45s.
+var analysisDeadline = 45 * time.Second
+
+// lowEffortReasoning reports whether the target wants the cheap path:
+// z.ai glm-5.3* models accept reasoning_effort=low and analysis is not
+// a reasoning task.
+func lowEffortReasoning(provider, model string) bool {
+	return strings.EqualFold(provider, "zai") && strings.HasPrefix(model, "glm-5.3")
 }
 
 // Resources is the resource context injected into the prompt's slots:
@@ -56,28 +80,68 @@ func (e *AnalysisUnavailable) Error() string {
 	return "intent: analysis unavailable: " + e.Reason
 }
 
-// Analyze runs the intent call for a goal. It returns the parsed
-// contract (unsanitized — the wrapper validates against the live
-// index). The system prompt is empty: the analysis prompt IS the
-// instruction.
-func (a *Analyzer) Analyze(ctx context.Context, goal string, res Resources, provider, model string) (domain.IntentAnalysis, error) {
-	prompt, err := a.renderPrompt(res)
+// Analyze runs the packet-driven intent decision for a goal: the
+// user-owned prompt (slots filled from the RANKED, CAPPED packet) is
+// the system rubric; the user message embeds the request as escaped
+// advisory data. Failures re-ask with CORRECTION FEEDBACK (the code +
+// the fix — never a blind retry), at most three attempts inside the
+// 45s deadline. Validation runs against the packet's ID sets; the
+// wrapper's Sanitize remains the belt-and-braces guard.
+func (a *Analyzer) Analyze(ctx context.Context, goal string, pkt Packet, provider, model string) (domain.IntentAnalysis, error) {
+	prompt, err := a.renderPacketPrompt(pkt)
 	if err != nil {
 		return domain.IntentAnalysis{}, err // prompt unusable: degrade (embedded fallback already tried)
 	}
+	ctx, cancel := context.WithTimeout(ctx, analysisDeadline)
+	defer cancel()
+	complete := func(ctx context.Context, provider, model, system, user string, extra map[string]any) (string, error) {
+		if pc, ok := a.Completer.(ParamCompleter); ok && len(extra) > 0 {
+			return pc.CompleteWith(ctx, provider, model, system, user, extra)
+		}
+		return a.Completer.Complete(ctx, provider, model, system, user)
+	}
+	var extraBody map[string]any
+	if _, ok := a.Completer.(ParamCompleter); ok && lowEffortReasoning(provider, model) {
+		extraBody = map[string]any{"reasoning_effort": "low"}
+	}
+	var lastCodes []string
 	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ { // one retry on parse failure
-		raw, err := a.Completer.Complete(ctx, provider, model, "", prompt+"\n\n## User Request\n"+goal)
+	var lastParsed domain.IntentAnalysis
+	parsedOnce := false
+	for attempt := 0; attempt < 3; attempt++ {
+		user := RequestBlock(goal)
+		if attempt > 0 {
+			user = CorrectionBlock(lastCodes) + "\n\n" + RequestBlock(goal)
+		}
+		raw, err := complete(ctx, provider, model, prompt, user, extraBody)
 		if err != nil {
+			if ctx.Err() != nil {
+				return domain.IntentAnalysis{}, &AnalysisUnavailable{Reason: "deadline exceeded (45s)"}
+			}
 			return domain.IntentAnalysis{}, &AnalysisUnavailable{Reason: "model call failed: " + err.Error()}
 		}
 		analysis, perr := domain.ParseIntentAnalysis(extractJSON(raw))
-		if perr == nil {
-			return analysis, nil
+		if perr != nil {
+			lastCodes = []string{"invalid_json"}
+			lastErr = perr
+			continue
 		}
-		lastErr = perr
+		if codes := pkt.Validate(analysis); len(codes) > 0 {
+			// Correction retry; remember the parse — if every retry
+			// still names unknowns, the LAST PARSED decision returns
+			// (the wrapper's Sanitize drops the residue — a good
+			// analysis is not wasted on one phantom ID).
+			lastParsed, parsedOnce = analysis, true
+			lastCodes = codes
+			lastErr = fmt.Errorf("unknown recommendations: %s", strings.Join(codes, ", "))
+			continue
+		}
+		return analysis, nil
 	}
-	return domain.IntentAnalysis{}, &AnalysisUnavailable{Reason: "contract parse failed twice: " + lastErr.Error()}
+	if parsedOnce {
+		return lastParsed, nil
+	}
+	return domain.IntentAnalysis{}, &AnalysisUnavailable{Reason: fmt.Sprintf("decision failed validation 3x: %v", lastErr)}
 }
 
 // requiredSlots are the resource-slot markers a user-owned intent
@@ -88,18 +152,20 @@ var requiredSlots = []string{"{{.Skills}}", "{{.Agents}}", "{{.MCPs}}", "{{.Ward
 // promptData is the template data for the intent prompt.
 type promptData struct{ Skills, Agents, MCPs, Wards string }
 
+// renderPacketPrompt renders the prompt with the packet's slot bodies
+// (ranked, capped, description-carrying — the host-authoritative
+// catalog agentzero's catalog.rs builds).
+func (a *Analyzer) renderPacketPrompt(pkt Packet) (string, error) {
+	sk, ag, mc, wd := pkt.Render()
+	return a.render(promptData{Skills: sk, Agents: ag, MCPs: mc, Wards: wd})
+}
+
 // renderPrompt renders the user-owned template with the resource
 // slots. A candidate is selected only when it parses, carries every
 // required slot, and renders successfully; ANY failure falls back to
 // the embedded default (a broken user file degrades analysis to the
 // shipped behavior — it never blocks the run).
-func (a *Analyzer) renderPrompt(res Resources) (string, error) {
-	data := promptData{
-		Skills: renderListBody(res.Skills),
-		Agents: renderListBody(res.Agents),
-		MCPs:   renderListBody(res.MCPs),
-		Wards:  renderListBody(res.Wards),
-	}
+func (a *Analyzer) render(data promptData) (string, error) {
 	render := func(text string) (string, error) {
 		tmpl, err := template.New("intent").Parse(text)
 		if err != nil {
@@ -135,19 +201,6 @@ func hasAllSlots(text string) bool {
 		}
 	}
 	return true
-}
-
-// renderListBody renders one slot's list body (without the section
-// header, which lives in the template).
-func renderListBody(items []string) string {
-	if len(items) == 0 {
-		return "(none listed)"
-	}
-	lines := make([]string, len(items))
-	for i, it := range items {
-		lines[i] = "- " + it
-	}
-	return strings.Join(lines, "\n")
 }
 
 // extractJSON pulls the first complete top-level JSON object out of a

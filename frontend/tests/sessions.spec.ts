@@ -50,6 +50,33 @@ const TRANSCRIPTS: Record<string, unknown[]> = {
   ],
 };
 
+/** Session-state mock: research sessions carry an analysis; the quick
+ * chat carries none (lean — analysis never runs). */
+async function mockStates(page: Page) {
+  await page.route((url) => /^\/api\/sessions\/[^/]+\/state$/.test(url.pathname), (route) => {
+    const sid = new URL(route.request().url()).pathname.split('/')[3];
+    const session = sid === 'default'
+      ? { id: 'default', type: 'chat', status: 'completed', updated_at: NOW }
+      : { id: sid, type: 'research', status: 'completed', ward: 'stock-analysis', updated_at: NOW };
+    const body: Record<string, unknown> = { session };
+    if (sid !== 'default') {
+      body.intent_analysis = {
+        status: 'analyzed',
+        primary_intent: 'comparative-research',
+        complexity: 'M',
+        step_budget: 8,
+        approach: 'graph',
+        ward_action: 'use_existing',
+        ward_name: 'stock-analysis',
+        recommended_skills: ['pdf', 'clean-code'],
+        recommended_agents: ['research-agent'],
+        dropped: ['duckduckgo'],
+      };
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  });
+}
+
 /** Cursor-aware transcript mock: honors after_seq per session (a mock
  * that ignores the cursor masks remount/incremental-sync regressions). */
 async function mockTranscripts(page: Page) {
@@ -84,6 +111,7 @@ test('sidebar groups sessions and switching swaps the transcript', async ({ page
   await mockBase(page);
   await mockSessions(page);
   await mockTranscripts(page);
+  await mockStates(page);
   await page.goto('/');
 
   // Groups: Chat / Ward Bots / Research — membership proven per group
@@ -109,15 +137,19 @@ test('sidebar groups sessions and switching swaps the transcript', async ({ page
   await expect(chatGroup.getByRole('button', { name: /Quick Chat/ })).not.toHaveAttribute('aria-current', 'true');
   await expect(page.getByLabel('Your message')).toContainText('AMD vs NVIDIA?');
   await expect(page.getByLabel('Active ward')).toContainText('stock-analysis');
-  // The research exchange renders its Task Analysis card + delegation.
+  // The research exchange renders its Task Analysis card (from session
+  // state: intent, budget, skills, dropped) + the delegation tree.
   await expect(page.getByLabel('Task Analysis')).toContainText('comparative-research');
+  await expect(page.getByLabel('Task Analysis')).toContainText('8 steps');
   await expect(page.getByLabel('Task Analysis')).toContainText('pdf');
+  await expect(page.getByLabel('Task Analysis').getByText('duckduckgo ✕ dropped')).toBeVisible();
   await expect(page.getByLabel('Delegation')).toContainText('research-agent');
 
-  // Back to quick chat: lean again, no ward bar.
+  // Back to quick chat: lean again, no ward bar, no analysis card.
   await nav.getByRole('button', { name: /Quick Chat/ }).click();
   await expect(page.getByLabel('Your message')).toContainText('quick hello');
   await expect(page.getByLabel('Active ward')).toHaveCount(0);
+  await expect(page.getByLabel('Task Analysis')).toHaveCount(0);
 });
 
 test('new research creates a shell and activates it', async ({ page }) => {
@@ -164,6 +196,7 @@ test('context panel: ward card + skills + agents for a ward-bound session; none 
   await mockBase(page);
   await mockSessions(page);
   await mockTranscripts(page);
+  await mockStates(page);
   await page.route((url) => url.pathname === '/api/wards/stock-analysis', (route) =>
     route.fulfill({
       status: 200, contentType: 'application/json',
@@ -247,4 +280,23 @@ test('switching sessions mid-send does not leak live output; returning reconcile
   await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: /stock-analysis/ }).click();
   await expect(page.getByLabel('Your message')).toContainText('AMD vs NVIDIA?');
   await expect(page.getByLabel('Assistant message').last()).toContainText('NVIDIA holds 90-98%');
+});
+
+test('the draft clears the instant a send starts (not on completion)', async ({ page }) => {
+  await mockBase(page);
+  await mockSessions(page);
+  await mockTranscripts(page);
+  await mockStates(page);
+  // A send that never completes: if the draft waited for it, the text
+  // would sit in the composer for the whole run.
+  await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
+    if (route.request().method() === 'GET') return route.fallback();
+    return new Promise(() => {});
+  });
+  await page.goto('/');
+  const input = page.getByRole('textbox', { name: 'Message Karta' });
+  await input.fill('long research question');
+  await input.press('Enter');
+  await expect(page.getByLabel('Assistant is working')).toBeVisible();
+  await expect(input).toHaveValue('');
 });

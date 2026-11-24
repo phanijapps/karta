@@ -48,7 +48,14 @@ type Server struct {
 	// indexMCPTools feeds successful probe results to the daemon's
 	// resource index (nil = indexing off, e.g. tests).
 	indexMCPTools func(server string, tools []mcpclient.Tool)
+	// apiToken guards the OpenAI-compatible /v1 channel (empty = the
+	// loopback posture applies unchanged).
+	apiToken string
 }
+
+// SetV1Token arms the /v1 bearer check (server.api_token; empty keeps
+// the channel open on loopback).
+func (s *Server) SetV1Token(token string) { s.apiToken = token }
 
 // SetEngineExtender wires the Continue protocol's session-extender
 // seam (the adapter's per-session closure).

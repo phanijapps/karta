@@ -63,6 +63,16 @@ mcpclient; never imports clients, engine, or UI code.
   from zbotd): Host enforcement is then skipped — an explicit trust
   decision putting an unauthenticated API on the network — while the
   Origin rule keeps comparing hosts.
+- OpenAI-compatible channel (openai_handlers.go, intent-context-packet
+  change): `GET /v1/models` + `POST /v1/chat/completions` map OpenAI
+  client conversations (OpenWebUI first) onto sessions — model selects
+  the type (karta-research/karta-chat), first-user-message hash is the
+  stable id, reply = final assistant row, typed failures carry the
+  OpenAI error shape (busy → 409). Optional bearer (`SetV1Token`,
+  server.api_token); unset keeps loopback.
+- Session state (`GetSessionState`): the session row + LATEST
+  intent_analysis (read from persisted events) — the UI's analysis
+  card and context panel render from this, never transcript parsing.
 - Session CRUD (add-chat-modes): `GET /api/sessions` lists the roster
   (type + ward binding, recency-ordered — the sidebar's grouping data;
   cursor = offset), `POST /api/sessions` creates research shells, and

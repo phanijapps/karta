@@ -36,18 +36,14 @@
     void scrollToLatest();
   });
   const canSend = $derived(draft.trim() !== '' && !sending);
+  const analysisCard = $derived.by<Record<string, any> | null>(() => {
+    const a = sessions.analysis as Record<string, any> | null;
+    if (!a || !sessions.isResearch) return null;
+    if (a.status === 'bypassed') return null; // trivial goal: no card
+    return a;
+  });
   const isResearch = $derived(sessions.isResearch);
   const ward = $derived(sessions.activeWard);
-
-  /** Parse the Task Analysis from an intent_analysis tool row. */
-  function analysisOf(m: ChatMessage): Record<string, any> | null {
-    try {
-      const c = JSON.parse(m.content ?? '');
-      return c.intent_analysis ?? c;
-    } catch {
-      return null;
-    }
-  }
 
   /** Delegations from assistant tool-call intents: agent + task pairs
    * (the delegation roster; results close them). */
@@ -92,6 +88,7 @@
     sessions.sendError = '';
     const sessionId = sessions.activeId;
     sendSessionId = sessionId;
+    draft = ''; // clear at send start — a multi-minute run never holds the text
     try {
       let result: Awaited<ReturnType<typeof sendChatMessage>>;
       if (isResearch) {
@@ -119,7 +116,6 @@
       } else {
         announced = 'Reply complete.';
       }
-      draft = '';
     } finally {
       sending = false;
       streaming = false;
@@ -169,37 +165,48 @@
         {/if}
       </div>
     {:else}
-      {#each sessions.messages as m (m.id)}
-        {#if m.role === 'tool' && m.tool_name === 'intent_analysis'}
-          <!-- Task Analysis card: the research exchange header -->
-          {@const parsed = analysisOf(m)}
-          {#if parsed}
-          <article class="analysis-card" aria-label="Task Analysis">
-              <header class="analysis-head">
-                <Microscope size={16} aria-hidden="true" />
-                <strong>Research</strong>
-                <span class="badge approach">{parsed.approach}</span>
-                <span class="badge complexity" data-complexity={parsed.complexity}>{parsed.complexity}</span>
-                {#if parsed.ward_name}
-                  <span class="badge ward"><FolderOpen size={11} aria-hidden="true" /> {parsed.ward_name}</span>
-                {/if}
-              </header>
-              <dl class="analysis-meta">
-                <div><dt>Intent</dt><dd>{parsed.primary_intent}</dd></div>
-              </dl>
-              {#if parsed.recommended_skills?.length || parsed.dropped?.length}
-                <div class="skills-row" aria-label="Provisioned skills">
-                  {#each parsed.recommended_skills ?? [] as s}
-                    <span class="skill-chip">{s}</span>
-                  {/each}
-                  {#each parsed.dropped ?? [] as s}
-                    <span class="skill-chip dropped" title="Recommended but not in the index — dropped">{s} ✕ dropped</span>
-                  {/each}
-                </div>
+      {#if analysisCard}
+        <!-- Task Analysis card: the research exchange header, rendered
+             from SESSION STATE (never transcript parsing). -->
+        <article class="analysis-card" aria-label="Task Analysis">
+          <header class="analysis-head">
+            <Microscope size={16} aria-hidden="true" />
+            <strong>Research</strong>
+            {#if analysisCard.approach}
+              <span class="badge approach">{analysisCard.approach}</span>
+            {/if}
+            {#if analysisCard.complexity}
+              <span class="badge complexity" data-complexity={analysisCard.complexity}>{analysisCard.complexity}</span>
+            {/if}
+            {#if analysisCard.ward_name}
+              <span class="badge ward"><FolderOpen size={11} aria-hidden="true" /> {analysisCard.ward_name}</span>
+            {/if}
+          </header>
+          {#if analysisCard.primary_intent}
+            <dl class="analysis-meta">
+              <div><dt>Intent</dt><dd>{analysisCard.primary_intent}</dd></div>
+              {#if analysisCard.step_budget}
+                <div><dt>Budget</dt><dd>{analysisCard.step_budget} steps</dd></div>
               {/if}
-          </article>
+            </dl>
           {/if}
-        {:else if m.role === 'tool'}
+          {#if analysisCard.recommended_skills?.length || analysisCard.dropped?.length}
+            <div class="skills-row" aria-label="Provisioned skills">
+              {#each analysisCard.recommended_skills ?? [] as s}
+                <span class="skill-chip">{s}</span>
+              {/each}
+              {#each analysisCard.dropped ?? [] as s}
+                <span class="skill-chip dropped" title="Recommended but not in the index — dropped">{s} ✕ dropped</span>
+              {/each}
+            </div>
+          {/if}
+          {#if analysisCard.status === 'failed' && analysisCard.reason}
+            <p class="muted analysis-note">Analysis degraded: {analysisCard.reason}</p>
+          {/if}
+        </article>
+      {/if}
+      {#each sessions.messages as m (m.id)}
+        {#if m.role === 'tool'}
           <article class="tool-row" aria-label={`Tool ${m.tool_name ?? 'call'}`}>
             <Wrench size={14} />
             <span class="tool-name">{m.tool_name ?? 'tool'}</span>

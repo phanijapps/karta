@@ -38,17 +38,33 @@ func TestRouterBypass(t *testing.T) {
 
 // fakeCompleter scripts the model call.
 type fakeCompleter struct {
-	mu        sync.Mutex
-	responses []string // consumed per call
-	errs      []error
-	calls     int
-	lastInput string
+	mu          sync.Mutex
+	responses   []string // consumed per call
+	errs        []error
+	calls       int
+	lastSystem  string
+	lastUser    string
+	extraBodies []map[string]any
 }
 
-func (f *fakeCompleter) Complete(_ context.Context, _, _, _, user string) (string, error) {
+func (f *fakeCompleter) record(system, user string, extra map[string]any) {
+	f.lastSystem, f.lastUser = system, user
+	f.extraBodies = append(f.extraBodies, extra)
+}
+
+func (f *fakeCompleter) Complete(_ context.Context, _, _, system, user string) (string, error) {
+	return f.complete(system, user, nil)
+}
+
+// CompleteWith satisfies ParamCompleter (provider-param coverage).
+func (f *fakeCompleter) CompleteWith(_ context.Context, _, _, system, user string, extra map[string]any) (string, error) {
+	return f.complete(system, user, extra)
+}
+
+func (f *fakeCompleter) complete(system, user string, extra map[string]any) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.lastInput = user
+	f.record(system, user, extra)
 	i := f.calls
 	f.calls++
 	if i < len(f.errs) && f.errs[i] != nil {
@@ -67,7 +83,9 @@ const validContract = `{"primary_intent":"x","hidden_intents":[],"solution_path"
 
 func TestAnalyzer(t *testing.T) {
 	noopSnap := func() registry.Snapshot { return registry.Snapshot{} }
-	res := Resources{Skills: []string{"clean-code — coding standards"}, Wards: []string{"stock-analysis — equity research"}}
+	// The packet mirrors the old Resources content: entries with
+	// descriptions, host-authoritative.
+	res := Packet{Skills: []CatalogEntry{{ID: "clean-code", Description: "coding standards"}}, Wards: []CatalogEntry{{ID: "stock-analysis", Description: "equity research"}}}
 
 	t.Run("valid contract parses", func(t *testing.T) {
 		fc := &fakeCompleter{responses: []string{validContract}}
@@ -79,24 +97,24 @@ func TestAnalyzer(t *testing.T) {
 		if got.Complexity != domain.ComplexityS || got.WardRecommendation.WardName != "test-ward" {
 			t.Fatalf("contract: %+v", got)
 		}
-		if !strings.Contains(fc.lastInput, "- clean-code — coding standards") || !strings.Contains(fc.lastInput, "- stock-analysis — equity research") {
-			t.Fatalf("resource slots not injected:\n%s", fc.lastInput)
+		if !strings.Contains(fc.lastSystem, "- clean-code — coding standards") || !strings.Contains(fc.lastSystem, "- stock-analysis — equity research") {
+			t.Fatalf("packet slots not injected:\n%s", fc.lastSystem)
 		}
-		if !strings.Contains(fc.lastInput, "do the thing") {
-			t.Fatal("goal not appended")
+		if !strings.Contains(fc.lastUser, "do the thing") {
+			t.Fatal("goal not embedded in the user request block")
 		}
 	})
 
 	t.Run("parse failure retries once then degrades typed", func(t *testing.T) {
-		fc := &fakeCompleter{responses: []string{"not json", "still not json"}}
+		fc := &fakeCompleter{responses: []string{"not json", "still not json", "nope"}}
 		a := Analyzer{Completer: fc, Snapshot: noopSnap}
 		_, err := a.Analyze(context.Background(), "goal", res, "p", "m")
 		var du *AnalysisUnavailable
 		if !errors.As(err, &du) {
 			t.Fatalf("want typed degradation, got %v", err)
 		}
-		if fc.calls != 2 {
-			t.Fatalf("want one retry, got %d calls", fc.calls)
+		if fc.calls != 3 {
+			t.Fatalf("want correction feedback up to 3 attempts, got %d calls", fc.calls)
 		}
 	})
 
@@ -149,8 +167,8 @@ func TestAnalyzer(t *testing.T) {
 		if _, err := a.Analyze(context.Background(), "goal", res, "p", "m"); err != nil {
 			t.Fatalf("custom prompt must render: %v", err)
 		}
-		if !strings.Contains(fc.lastInput, "CUSTOM MARKER") || !strings.Contains(fc.lastInput, "clean-code") {
-			t.Fatalf("custom prompt not used:\n%s", fc.lastInput)
+		if !strings.Contains(fc.lastSystem, "CUSTOM MARKER") || !strings.Contains(fc.lastSystem, "clean-code") {
+			t.Fatalf("custom prompt not used:\n%s", fc.lastSystem)
 		}
 	})
 
@@ -173,8 +191,8 @@ func TestAnalyzer(t *testing.T) {
 				if _, err := a.Analyze(context.Background(), "goal", res, "p", "m"); err != nil {
 					t.Fatalf("unusable prompt must fall back, not fail: %v", err)
 				}
-				if !strings.Contains(fc.lastInput, "You are an intent analyzer") {
-					t.Fatalf("embedded default not used for %s:\n%s", name, fc.lastInput)
+				if !strings.Contains(fc.lastSystem, "You are an intent analyzer") {
+					t.Fatalf("embedded default not used for %s:\n%s", name, fc.lastSystem)
 				}
 			})
 		}

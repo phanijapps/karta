@@ -57,6 +57,9 @@ func (c IntentConfig) On() bool { return c.Enabled == nil || *c.Enabled }
 // ServerConfig is the daemon's HTTP listen address.
 type ServerConfig struct {
 	Address string `yaml:"address"`
+	// ApiToken optionally guards the OpenAI-compatible /v1 channel
+	// (bearer). Empty (default) keeps the loopback-only posture.
+	ApiToken string `yaml:"api_token"`
 }
 
 // ChittaConfig selects the memory/knowledge provider (design D7 of the

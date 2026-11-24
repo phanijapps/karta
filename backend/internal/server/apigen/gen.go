@@ -458,6 +458,138 @@ func (e MessageRole) Valid() bool {
 	}
 }
 
+// Defines values for OpenAiCompletionRequestMessagesRole.
+const (
+	OpenAiCompletionRequestMessagesRoleAssistant OpenAiCompletionRequestMessagesRole = "assistant"
+	OpenAiCompletionRequestMessagesRoleSystem    OpenAiCompletionRequestMessagesRole = "system"
+	OpenAiCompletionRequestMessagesRoleUser      OpenAiCompletionRequestMessagesRole = "user"
+)
+
+// Valid indicates whether the value is a known member of the OpenAiCompletionRequestMessagesRole enum.
+func (e OpenAiCompletionRequestMessagesRole) Valid() bool {
+	switch e {
+	case OpenAiCompletionRequestMessagesRoleAssistant:
+		return true
+	case OpenAiCompletionRequestMessagesRoleSystem:
+		return true
+	case OpenAiCompletionRequestMessagesRoleUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OpenAiCompletionRequestModel.
+const (
+	OpenAiCompletionRequestModelKartaChat     OpenAiCompletionRequestModel = "karta-chat"
+	OpenAiCompletionRequestModelKartaResearch OpenAiCompletionRequestModel = "karta-research"
+)
+
+// Valid indicates whether the value is a known member of the OpenAiCompletionRequestModel enum.
+func (e OpenAiCompletionRequestModel) Valid() bool {
+	switch e {
+	case OpenAiCompletionRequestModelKartaChat:
+		return true
+	case OpenAiCompletionRequestModelKartaResearch:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OpenAiCompletionResponseChoicesFinishReason.
+const (
+	Stop OpenAiCompletionResponseChoicesFinishReason = "stop"
+)
+
+// Valid indicates whether the value is a known member of the OpenAiCompletionResponseChoicesFinishReason enum.
+func (e OpenAiCompletionResponseChoicesFinishReason) Valid() bool {
+	switch e {
+	case Stop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OpenAiCompletionResponseChoicesMessageRole.
+const (
+	OpenAiCompletionResponseChoicesMessageRoleAssistant OpenAiCompletionResponseChoicesMessageRole = "assistant"
+)
+
+// Valid indicates whether the value is a known member of the OpenAiCompletionResponseChoicesMessageRole enum.
+func (e OpenAiCompletionResponseChoicesMessageRole) Valid() bool {
+	switch e {
+	case OpenAiCompletionResponseChoicesMessageRoleAssistant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OpenAiCompletionResponseObject.
+const (
+	ChatCompletion OpenAiCompletionResponseObject = "chat.completion"
+)
+
+// Valid indicates whether the value is a known member of the OpenAiCompletionResponseObject enum.
+func (e OpenAiCompletionResponseObject) Valid() bool {
+	switch e {
+	case ChatCompletion:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OpenAiModelId.
+const (
+	OpenAiModelIdKartaChat     OpenAiModelId = "karta-chat"
+	OpenAiModelIdKartaResearch OpenAiModelId = "karta-research"
+)
+
+// Valid indicates whether the value is a known member of the OpenAiModelId enum.
+func (e OpenAiModelId) Valid() bool {
+	switch e {
+	case OpenAiModelIdKartaChat:
+		return true
+	case OpenAiModelIdKartaResearch:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OpenAiModelObject.
+const (
+	OpenAiModelObjectModel OpenAiModelObject = "model"
+)
+
+// Valid indicates whether the value is a known member of the OpenAiModelObject enum.
+func (e OpenAiModelObject) Valid() bool {
+	switch e {
+	case OpenAiModelObjectModel:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OpenAiModelListObject.
+const (
+	List OpenAiModelListObject = "list"
+)
+
+// Valid indicates whether the value is a known member of the OpenAiModelListObject enum.
+func (e OpenAiModelListObject) Valid() bool {
+	switch e {
+	case List:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProviderCredential.
 const (
 	ProviderCredentialEnv     ProviderCredential = "env"
@@ -481,22 +613,22 @@ func (e ProviderCredential) Valid() bool {
 
 // Defines values for ProviderFailureReason.
 const (
-	CredentialUnavailable ProviderFailureReason = "credential_unavailable"
-	Malformed             ProviderFailureReason = "malformed"
-	Unauthorized          ProviderFailureReason = "unauthorized"
-	Unreachable           ProviderFailureReason = "unreachable"
+	ProviderFailureReasonCredentialUnavailable ProviderFailureReason = "credential_unavailable"
+	ProviderFailureReasonMalformed             ProviderFailureReason = "malformed"
+	ProviderFailureReasonUnauthorized          ProviderFailureReason = "unauthorized"
+	ProviderFailureReasonUnreachable           ProviderFailureReason = "unreachable"
 )
 
 // Valid indicates whether the value is a known member of the ProviderFailureReason enum.
 func (e ProviderFailureReason) Valid() bool {
 	switch e {
-	case CredentialUnavailable:
+	case ProviderFailureReasonCredentialUnavailable:
 		return true
-	case Malformed:
+	case ProviderFailureReasonMalformed:
 		return true
-	case Unauthorized:
+	case ProviderFailureReasonUnauthorized:
 		return true
-	case Unreachable:
+	case ProviderFailureReasonUnreachable:
 		return true
 	default:
 		return false
@@ -1353,6 +1485,79 @@ type ModelList struct {
 	Models []Model `json:"models"`
 }
 
+// OpenAiCompletionRequest defines model for OpenAiCompletionRequest.
+type OpenAiCompletionRequest struct {
+	Messages []struct {
+		Content string                              `json:"content"`
+		Role    OpenAiCompletionRequestMessagesRole `json:"role"`
+	} `json:"messages"`
+	Model OpenAiCompletionRequestModel `json:"model"`
+
+	// Stream Accepted and ignored (non-streaming v1).
+	Stream *bool `json:"stream,omitempty"`
+}
+
+// OpenAiCompletionRequestMessagesRole defines model for OpenAiCompletionRequest.Messages.Role.
+type OpenAiCompletionRequestMessagesRole string
+
+// OpenAiCompletionRequestModel defines model for OpenAiCompletionRequest.Model.
+type OpenAiCompletionRequestModel string
+
+// OpenAiCompletionResponse defines model for OpenAiCompletionResponse.
+type OpenAiCompletionResponse struct {
+	Choices []struct {
+		FinishReason OpenAiCompletionResponseChoicesFinishReason `json:"finish_reason"`
+		Index        int                                         `json:"index"`
+		Message      struct {
+			Content string                                     `json:"content"`
+			Role    OpenAiCompletionResponseChoicesMessageRole `json:"role"`
+		} `json:"message"`
+	} `json:"choices"`
+	Created int                            `json:"created"`
+	Id      string                         `json:"id"`
+	Model   string                         `json:"model"`
+	Object  OpenAiCompletionResponseObject `json:"object"`
+}
+
+// OpenAiCompletionResponseChoicesFinishReason defines model for OpenAiCompletionResponse.Choices.FinishReason.
+type OpenAiCompletionResponseChoicesFinishReason string
+
+// OpenAiCompletionResponseChoicesMessageRole defines model for OpenAiCompletionResponse.Choices.Message.Role.
+type OpenAiCompletionResponseChoicesMessageRole string
+
+// OpenAiCompletionResponseObject defines model for OpenAiCompletionResponse.Object.
+type OpenAiCompletionResponseObject string
+
+// OpenAiError defines model for OpenAiError.
+type OpenAiError struct {
+	Error struct {
+		Code    *string `json:"code,omitempty"`
+		Message string  `json:"message"`
+		Type    string  `json:"type"`
+	} `json:"error"`
+}
+
+// OpenAiModel defines model for OpenAiModel.
+type OpenAiModel struct {
+	Id     OpenAiModelId     `json:"id"`
+	Object OpenAiModelObject `json:"object"`
+}
+
+// OpenAiModelId defines model for OpenAiModel.Id.
+type OpenAiModelId string
+
+// OpenAiModelObject defines model for OpenAiModel.Object.
+type OpenAiModelObject string
+
+// OpenAiModelList defines model for OpenAiModelList.
+type OpenAiModelList struct {
+	Data   []OpenAiModel         `json:"data"`
+	Object OpenAiModelListObject `json:"object"`
+}
+
+// OpenAiModelListObject defines model for OpenAiModelList.Object.
+type OpenAiModelListObject string
+
 // Provider defines model for Provider.
 type Provider struct {
 	// ApiKeyEnv Environment variable NAME the daemon reads the credential from at request time. Absent when the provider needs no credential or uses the keyring.
@@ -1516,6 +1721,13 @@ type SessionList struct {
 
 	// Truncated True when more results exist beyond this page.
 	Truncated bool `json:"truncated"`
+}
+
+// SessionState defines model for SessionState.
+type SessionState struct {
+	// IntentAnalysis One pre-execution intent analysis outcome for a root goal run — analyzed (with the contract summary), bypassed (trivial goal), or failed (non-fatal; the run proceeds).
+	IntentAnalysis *IntentAnalysisPayload `json:"intent_analysis,omitempty"`
+	Session        Session                `json:"session"`
 }
 
 // SessionStatus defines model for SessionStatus.
@@ -1849,6 +2061,9 @@ type NotFound = Error
 // ProviderFailure defines model for ProviderFailure.
 type ProviderFailure = ProviderError
 
+// Unauthorized defines model for Unauthorized.
+type Unauthorized = Error
+
 // ClearChatParams defines parameters for ClearChat.
 type ClearChatParams struct {
 	// SessionId The session to clear (default `default`).
@@ -1953,6 +2168,9 @@ type PreviewSkillSourceJSONRequestBody = SkillSourceInput
 // UpdateSkillJSONRequestBody defines body for UpdateSkill for application/json ContentType.
 type UpdateSkillJSONRequestBody = SkillUpdate
 
+// OpenAiChatCompletionJSONRequestBody defines body for OpenAiChatCompletion for application/json ContentType.
+type OpenAiChatCompletionJSONRequestBody = OpenAiCompletionRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// ListAgents List configured agents
@@ -2054,6 +2272,9 @@ type ServerInterface interface {
 	// ResumeSession Resume a waiting session with user input
 	// (POST /api/sessions/{sessionId}/resume)
 	ResumeSession(w http.ResponseWriter, r *http.Request, sessionId SessionId)
+	// GetSessionState Read the session's state (row + latest intent analysis)
+	// (GET /api/sessions/{sessionId}/state)
+	GetSessionState(w http.ResponseWriter, r *http.Request, sessionId SessionId)
 	// ListSkills List registered skills
 	// (GET /api/skills)
 	ListSkills(w http.ResponseWriter, r *http.Request)
@@ -2093,6 +2314,12 @@ type ServerInterface interface {
 	// GetHealth Liveness probe
 	// (GET /healthz)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+	// OpenAiChatCompletion OpenAI-compatible chat completion over Karta sessions
+	// (POST /v1/chat/completions)
+	OpenAiChatCompletion(w http.ResponseWriter, r *http.Request)
+	// ListOpenAiModels OpenAI-compatible model list (the Karta session types)
+	// (GET /v1/models)
+	ListOpenAiModels(w http.ResponseWriter, r *http.Request)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -2297,6 +2524,12 @@ func (_ Unimplemented) ResumeSession(w http.ResponseWriter, r *http.Request, ses
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// GetSessionState Read the session's state (row + latest intent analysis)
+// (GET /api/sessions/{sessionId}/state)
+func (_ Unimplemented) GetSessionState(w http.ResponseWriter, r *http.Request, sessionId SessionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ListSkills List registered skills
 // (GET /api/skills)
 func (_ Unimplemented) ListSkills(w http.ResponseWriter, r *http.Request) {
@@ -2372,6 +2605,18 @@ func (_ Unimplemented) GetWard(w http.ResponseWriter, r *http.Request, name stri
 // GetHealth Liveness probe
 // (GET /healthz)
 func (_ Unimplemented) GetHealth(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// OpenAiChatCompletion OpenAI-compatible chat completion over Karta sessions
+// (POST /v1/chat/completions)
+func (_ Unimplemented) OpenAiChatCompletion(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListOpenAiModels OpenAI-compatible model list (the Karta session types)
+// (GET /v1/models)
+func (_ Unimplemented) ListOpenAiModels(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3122,6 +3367,32 @@ func (siw *ServerInterfaceWrapper) ResumeSession(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// GetSessionState operation middleware
+func (siw *ServerInterfaceWrapper) GetSessionState(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "sessionId" -------------
+	var sessionId SessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sessionId", chi.URLParam(r, "sessionId"), &sessionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sessionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSessionState(w, r, sessionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListSkills operation middleware
 func (siw *ServerInterfaceWrapper) ListSkills(w http.ResponseWriter, r *http.Request) {
 
@@ -3371,6 +3642,34 @@ func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// OpenAiChatCompletion operation middleware
+func (siw *ServerInterfaceWrapper) OpenAiChatCompletion(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.OpenAiChatCompletion(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListOpenAiModels operation middleware
+func (siw *ServerInterfaceWrapper) ListOpenAiModels(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListOpenAiModels(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -3593,6 +3892,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/chat/send", wrapper.StreamChatMessage)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/models", wrapper.ListOpenAiModels)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/chat/completions", wrapper.OpenAiChatCompletion)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/goals", wrapper.CreateGoal)
 	})
 	r.Group(func(r chi.Router) {
@@ -3603,6 +3908,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/sessions/{sessionId}", wrapper.GetSession)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/sessions/{sessionId}/state", wrapper.GetSessionState)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/sessions/{sessionId}/cancel", wrapper.CancelSession)

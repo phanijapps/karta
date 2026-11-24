@@ -73,7 +73,12 @@ type IntentAnalysisPayload struct {
 	Approach      ExecutionApproach    `json:"approach,omitempty"`
 	WardAction    WardAction           `json:"ward_action,omitempty"`
 	WardName      string               `json:"ward_name,omitempty"`
-	Dropped       []string             `json:"dropped,omitempty"`
+	// RecommendedSkills/Agents carry the SANITIZED (provisioned)
+	// rosters — the session-state surface renders them (the analysis
+	// card's skill chips and the context panel's roster).
+	RecommendedSkills []string `json:"recommended_skills,omitempty"`
+	RecommendedAgents []string `json:"recommended_agents,omitempty"`
+	Dropped           []string `json:"dropped,omitempty"`
 }
 
 // IntentAnalysisStatus is the analysis outcome.

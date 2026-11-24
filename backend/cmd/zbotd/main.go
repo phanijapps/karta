@@ -333,28 +333,8 @@ func run(ctx context.Context, homeFlag string) error {
 	// the session-row binding.
 	wireSessionModel(chatSvc, eng, runEngine, db)
 
-	// Model catalog: load persisted entries (no provider requests), then
-	// persist every future refresh so restarts keep the catalog warm.
-	catalog := providers.NewCatalog()
-	if entries, err := db.LoadCatalog(); err == nil {
-		for _, e := range entries {
-			models := make([]providers.Model, 0, len(e.ModelIDs))
-			for _, id := range e.ModelIDs {
-				models = append(models, providers.Model{ID: id})
-			}
-			catalog.LoadEntry(e.Provider, models, e.RefreshedAt)
-		}
-		log.Printf("zbotd: model catalog restored (%d provider(s) from last refresh)", len(entries))
-	}
-	catalog.OnSet(func(provider string, models []providers.Model, refreshedAt time.Time) {
-		ids := make([]string, 0, len(models))
-		for _, m := range models {
-			ids = append(ids, m.ID)
-		}
-		if err := db.SaveCatalogEntry(provider, ids, refreshedAt); err != nil {
-			log.Printf("zbotd: catalog persist for %q failed: %v", provider, err)
-		}
-	})
+	// Model catalog: warm from the store, persist every refresh.
+	catalog := restoreCatalog(db)
 
 	// An operator-selected non-loopback bind adapts the request guard
 	// (Host enforcement is a loopback-posture defense; see guard.go).
@@ -369,6 +349,9 @@ func run(ctx context.Context, homeFlag string) error {
 	// like every other goal run.
 	sched := scheduler.New(reg, runEngine, bus, func() string { return fmt.Sprintf("evt-sched-%d", time.Now().UnixNano()) }, nil, filepath.Join(paths.DataDir, "scheduler-state.json"))
 	daemonSrv := server.New(provStore, providers.NewClient(), catalog, chatSvc, runEngine, bus, db, reg, mcpclient.GoSDKProber{}, sched, wardVault, version)
+	// The OpenAI-compatible channel's optional bearer guard
+	// (server.api_token; empty = loopback posture).
+	daemonSrv.SetV1Token(cfg.Server.ApiToken)
 	daemonSrv.SetSkillHub(skillhub.NewHTTPIndexClient(), skillhub.NewGitHubRepoFetcher(), skillStore)
 	// Probed MCP tools flow into the resource index (bounded context:
 	// indexing is best-effort, never blocks the probe response).
@@ -484,6 +467,12 @@ type llmCaller struct {
 }
 
 func (l llmCaller) Complete(ctx context.Context, provider, model, system, user string) (string, error) {
+	return l.CompleteWith(ctx, provider, model, system, user, nil)
+}
+
+// CompleteWith carries extra request-body parameters (the intent
+// analyzer's provider knobs, e.g. z.ai reasoning_effort=low).
+func (l llmCaller) CompleteWith(ctx context.Context, provider, model, system, user string, extra map[string]any) (string, error) {
 	p, token, err := l.store.ResolvedLookup(ctx, provider)
 	if err != nil {
 		return "", fmt.Errorf("resolve provider %s: %w", provider, err)
@@ -492,7 +481,7 @@ func (l llmCaller) Complete(ctx context.Context, provider, model, system, user s
 		{Role: "system", Content: system},
 		{Role: "user", Content: user},
 	}
-	resp, err := l.client.ChatCompletion(ctx, p, model, token, messages, nil)
+	resp, err := l.client.ChatCompletionWithBody(ctx, p, model, token, messages, nil, extra)
 	if err != nil {
 		return "", err
 	}

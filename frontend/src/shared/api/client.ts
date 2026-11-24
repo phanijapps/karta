@@ -319,6 +319,28 @@ export async function listSessions(
   }
 }
 
+/** The session-state surface: session row + LATEST intent analysis
+ * (the analysis card and context panel render from this). */
+export type SessionAnalysis =
+  components["schemas"]["IntentAnalysisPayload"];
+export type SessionStateResponse =
+  operations["getSessionState"]["responses"][200]["content"]["application/json"];
+export const SESSION_STATE_ROUTE = "/api/sessions/{sessionId}/state" as const satisfies keyof paths;
+
+export async function getSessionState(
+  sessionId: string,
+): Promise<SessionStateResponse | null> {
+  try {
+    const route = SESSION_STATE_ROUTE.replace(
+      "{sessionId}",
+      encodeURIComponent(sessionId),
+    );
+    return (await getJSON(route)) as SessionStateResponse;
+  } catch {
+    return null; // state is best-effort surface; the transcript stands alone
+  }
+}
+
 /** Create a research session (POST /api/sessions) — a shell ready for
  * its first exchange. Optional title. */
 export async function createSession(

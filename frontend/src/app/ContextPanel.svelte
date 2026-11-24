@@ -31,23 +31,12 @@
       });
   });
 
-  // Provisioned skills + the delegation roster derive from the
-  // transcript: the latest intent_analysis names the skills; delegate
-  // tool-call intents name the agents.
-  const analysis = $derived.by(() => {
-    for (let i = sessions.messages.length - 1; i >= 0; i--) {
-      const m = sessions.messages[i];
-      if (m.role === 'tool' && m.tool_name === 'intent_analysis') {
-        try {
-          const c = JSON.parse(m.content ?? '') as Record<string, any>;
-          return c.intent_analysis ?? c;
-        } catch {
-          return null;
-        }
-      }
-    }
-    return null;
-  });
+  // Provisioned skills come from the SESSION STATE surface (the latest
+  // intent analysis); the delegation roster derives from the transcript
+  // (delegate tool-call intents name the agents that actually ran).
+  const analysis = $derived<Record<string, any> | null>(
+    sessions.analysis as Record<string, any> | null,
+  );
   const skills = $derived<string[]>((analysis?.recommended_skills as string[]) ?? []);
   const agents = $derived.by<{ agent: string; task: string }[]>(() => {
     const out: { agent: string; task: string }[] = [];
@@ -127,7 +116,7 @@
           <p class="ctx-row"><span class="dot skill" aria-hidden="true"></span> {s}</p>
         {/each}
       {:else}
-        <p class="muted small">{sessions.isResearch ? 'Skills provision on the next exchange (intent analysis selects them).' : 'Quick chat provisions no skills — it runs lean.'}</p>
+        <p class="muted small">{sessions.isResearch ? 'Skills provision on the first exchange (intent analysis selects them from the packet).' : 'Quick chat provisions no skills — it runs lean.'}</p>
       {/if}
     </section>
 

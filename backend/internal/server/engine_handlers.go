@@ -379,3 +379,41 @@ func (s *Server) dbSessionEvents(sessionID, afterID string, limit int) ([]sseEve
 	}
 	return out, nil
 }
+
+// GetSessionState reads the session row plus its LATEST intent
+// analysis (the state surface: the UI's Task Analysis card and the
+// context panel render from this — never transcript parsing).
+func (s *Server) GetSessionState(w http.ResponseWriter, r *http.Request, sessionId apigen.SessionId) {
+	if s.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "session store not wired")
+		return
+	}
+	sid := string(sessionId)
+	sess, err := s.db.Session(sid)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if sess == nil {
+		writeError(w, http.StatusNotFound, "not_found", "no such session")
+		return
+	}
+	latest, err := s.db.LatestSeq(sid)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	state := apigen.SessionState{Session: sessionView(sess, latest > 0, time.Time{})}
+	if ev, err := s.db.LatestEventOfKind(sid, "intent_analysis"); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	} else if ev != nil {
+		var persisted struct {
+			IntentAnalysis *apigen.IntentAnalysisPayload `json:"intent_analysis"`
+		}
+		if err := json.Unmarshal([]byte(ev.Payload), &persisted); err == nil && persisted.IntentAnalysis != nil {
+			state.IntentAnalysis = persisted.IntentAnalysis
+		}
+	}
+	writeJSON(w, http.StatusOK, state)
+}

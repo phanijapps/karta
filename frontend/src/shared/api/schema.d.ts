@@ -684,6 +684,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * OpenAI-compatible model list (the Karta session types)
+         * @description The OpenAI-compatible channel (OpenWebUI first): advertises the
+         *     Karta "models" — each maps to a session TYPE. `karta-research`
+         *     runs the full pipeline (intent analysis, wards, delegation);
+         *     `karta-chat` runs the lean exchange.
+         */
+        get: operations["listOpenAiModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat/completions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * OpenAI-compatible chat completion over Karta sessions
+         * @description Maps an OpenAI-client conversation onto a Karta session: the
+         *     model name selects the session type (`karta-research` /
+         *     `karta-chat`), and the conversation's FIRST user message
+         *     derives a stable session id (`owui-<sha1[:16]>`) so follow-up
+         *     turns (which resend the full history) continue the same
+         *     session. The reply is the exchange's final assistant message
+         *     content; typed failures (busy research run, provider errors,
+         *     unknown session state) map to the OpenAI error shape.
+         *     Non-streaming in v1 (`stream` is accepted and ignored as
+         *     false).
+         */
+        post: operations["openAiChatCompletion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/goals": {
         parameters: {
             query?: never;
@@ -738,6 +790,33 @@ export interface paths {
         };
         /** Read one session's identity and status */
         get: operations["getSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{sessionId}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the session's state (row + latest intent analysis)
+         * @description The session-model state surface: the session row plus the
+         *     session's LATEST intent analysis (read from the persisted
+         *     intent_analysis events — status, reason, primary intent,
+         *     complexity, budget, approach, ward recommendation, provisioned
+         *     skills/agents, dropped names). The chat surface's Task Analysis
+         *     card and the context panel render from THIS, never by parsing
+         *     transcript rows. Sessions without an analysis (chat sessions,
+         *     fresh shells) carry no intent_analysis block.
+         */
+        get: operations["getSessionState"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1017,6 +1096,56 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        OpenAiModelList: {
+            /** @enum {string} */
+            object: "list";
+            data: components["schemas"]["OpenAiModel"][];
+        };
+        OpenAiModel: {
+            /** @enum {string} */
+            id: "karta-research" | "karta-chat";
+            /** @enum {string} */
+            object: "model";
+        };
+        OpenAiCompletionRequest: {
+            /** @enum {string} */
+            model: "karta-research" | "karta-chat";
+            messages: {
+                /** @enum {string} */
+                role: "system" | "user" | "assistant";
+                content: string;
+            }[];
+            /** @description Accepted and ignored (non-streaming v1). */
+            stream?: boolean;
+        };
+        OpenAiCompletionResponse: {
+            id: string;
+            /** @enum {string} */
+            object: "chat.completion";
+            created: number;
+            model: string;
+            choices: {
+                index: number;
+                message: {
+                    /** @enum {string} */
+                    role: "assistant";
+                    content: string;
+                };
+                /** @enum {string} */
+                finish_reason: "stop";
+            }[];
+        };
+        OpenAiError: {
+            error: {
+                message: string;
+                type: string;
+                code?: string;
+            };
+        };
+        SessionState: {
+            session: components["schemas"]["Session"];
+            intent_analysis?: components["schemas"]["IntentAnalysisPayload"];
         };
         CreateSessionRequest: {
             /**
@@ -1524,6 +1653,15 @@ export interface components {
             };
             content: {
                 "application/json": components["schemas"]["ProviderError"];
+            };
+        };
+        /** @description Missing or wrong bearer token (server.api_token). */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
             };
         };
         /** @description The session is not in a resumable (waiting) state. */
@@ -2681,6 +2819,62 @@ export interface operations {
             502: components["responses"]["ProviderFailure"];
         };
     };
+    listOpenAiModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The model list (OpenAI list shape). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiModelList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    openAiChatCompletion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenAiCompletionRequest"];
+            };
+        };
+        responses: {
+            /** @description The completion (OpenAI shape). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiCompletionResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description A research run is already live in the target session (session_busy) — the OpenAI error shape carries the message. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiError"];
+                };
+            };
+        };
+    };
     createGoal: {
         parameters: {
             query?: never;
@@ -2780,6 +2974,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Session"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getSessionState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionState"];
                 };
             };
             404: components["responses"]["NotFound"];

@@ -93,9 +93,9 @@ func (w *Wrapper) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 	case w.Router().Bypass(req.Goal):
 		bypassed, failure = true, "trivial goal (router bypass)"
 	default:
-		res := w.resources(ctx, req.Goal)
+		pkt := w.buildPacket(ctx, req.Goal)
 		ap, am := w.analysisTarget(req)
-		a, err := w.Analyzer.Analyze(ctx, req.Goal, res, ap, am)
+		a, err := w.Analyzer.Analyze(ctx, req.Goal, pkt, ap, am)
 		if err != nil {
 			failure = err.Error() // typed degradation; run proceeds
 			break
@@ -272,6 +272,8 @@ func (w *Wrapper) analysisEvent(sessionID string, a domain.IntentAnalysis, drops
 		payload.Approach = a.ExecutionStrategy.Approach
 		payload.WardAction = a.WardRecommendation.Action
 		payload.WardName = a.WardRecommendation.WardName
+		payload.RecommendedSkills = a.RecommendedSkills
+		payload.RecommendedAgents = a.RecommendedAgents
 	}
 	text := "Pre-execution intent analysis: " + string(payload.Status)
 	if payload.Status == domain.IntentStatusAnalyzed {
@@ -338,34 +340,54 @@ func (w *Wrapper) knownMCP() func(string) bool {
 	return func(string) bool { return false }
 }
 
-// resources builds the analyzer's resource context: the semantic
-// resource index when wired, else the registry listing (cold-index
-// fallback).
-func (w *Wrapper) resources(ctx context.Context, goal string) Resources {
-	if w.Cfg.RecallResources != nil {
-		if res := w.Cfg.RecallResources(ctx, goal); len(res.Skills)+len(res.Agents)+len(res.MCPs)+len(res.Wards) > 0 {
-			return res
-		}
-		// empty recall (cold index) → listing fallback below
+// buildPacket assembles the analyzer's context packet: the FULL host
+// roster (registry snapshot: skills/agents/MCPs with descriptions;
+// ward vault: names + canonical scope) ranked by the semantic recall
+// (the recall's per-kind hit order — host metadata is the authority,
+// memory only ORDERS) and capped per kind.
+func (w *Wrapper) buildPacket(ctx context.Context, goal string) Packet {
+	// Recall order per kind: "name — ..." lines, relevance-ordered.
+	rank := map[string]map[string]int{
+		"skill": {}, "agent": {}, "mcp": {}, "ward": {},
 	}
+	if w.Cfg.RecallResources != nil {
+		res := w.Cfg.RecallResources(ctx, goal)
+		for kind, lines := range map[string][]string{
+			"skill": res.Skills, "agent": res.Agents, "mcp": res.MCPs, "ward": res.Wards,
+		} {
+			for i, line := range lines {
+				name, _, _ := strings.Cut(line, " — ")
+				name = strings.TrimSpace(name)
+				if name != "" {
+					if _, dup := rank[kind][name]; !dup {
+						rank[kind][name] = i
+					}
+				}
+			}
+		}
+	}
+	rankFn := func(kind, id string) int {
+		if r, ok := rank[kind][id]; ok {
+			return r
+		}
+		return 1 << 30 // unrecalled: after every recalled entry
+	}
+
 	snap := w.snapshot()
-	res := Resources{}
+	roster := Packet{}
 	for name, s := range snap.Skills {
-		res.Skills = append(res.Skills, name+" — "+s.Description)
+		roster.Skills = append(roster.Skills, CatalogEntry{ID: name, Description: s.Description})
 	}
 	for name, a := range snap.Agents {
-		if a.Description != "" {
-			res.Agents = append(res.Agents, name+" — "+a.Description)
-		}
+		roster.Agents = append(roster.Agents, CatalogEntry{ID: name, Description: a.Description})
+	}
+	for name := range snap.MCPs {
+		roster.MCPs = append(roster.MCPs, CatalogEntry{ID: name})
 	}
 	if w.Wards != nil {
 		for _, ward := range w.Wards() {
-			line := ward.Name
-			if ward.Scope != "" {
-				line += " — " + ward.Scope
-			}
-			res.Wards = append(res.Wards, line)
+			roster.Wards = append(roster.Wards, CatalogEntry{ID: ward.Name, Description: ward.Scope})
 		}
 	}
-	return res
+	return roster.Ranked(rankFn)
 }

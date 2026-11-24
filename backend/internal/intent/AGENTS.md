@@ -6,6 +6,17 @@ one small-model intent call producing `domain.IntentAnalysis`, and the
 engine decorator that injects the Task Analysis context and the
 complexity step budget. Chat and child runs are NEVER analyzed.
 
+## The context packet
+
+`packet.go` builds the analyzer's context: the FULL host roster
+(registry skills/agents/MCPs + ward vault) with descriptions, ranked
+by the semantic recall's per-kind hit order, capped 20/20/20/64. The
+user request embeds as escaped advisory data. Validation runs against
+the packet's ID sets with CORRECTION-FEEDBACK retries (≤3 attempts,
+45s deadline); the last PARSED decision returns on residue (the
+wrapper's Sanitize drops the rest). z.ai glm-5.3* analysis runs with
+reasoning_effort=low (the ParamCompleter seam).
+
 ## Responsibility
 
 - `Router` — conservative bypass for trivial conversational traffic.

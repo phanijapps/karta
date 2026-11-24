@@ -83,6 +83,25 @@ func (s *Store) FinishExecution(execID, status, errMsg string, tokensIn, tokensO
 
 var _ = sql.ErrNoRows
 
+// LatestEventOfKind returns the session's most recent event of one
+// kind (nil when none) — the session-state surface reads the latest
+// intent_analysis this way.
+func (s *Store) LatestEventOfKind(sessionID, kind string) (*Event, error) {
+	var e Event
+	var execID, parentID sql.NullString
+	err := s.db.QueryRow(`SELECT id, session_id, execution_id, parent_id, kind, payload, created_at
+		FROM timeline_events WHERE session_id = ? AND kind = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+		sessionID, kind).Scan(&e.ID, &e.SessionID, &execID, &parentID, &e.Kind, &e.Payload, &e.CreatedAt)
+	e.ExecutionID, e.ParentID = execID.String, parentID.String
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: latest event of kind: %w", err)
+	}
+	return &e, nil
+}
+
 // ExecutionResult reads one execution's terminal status and error (the
 // research send path consumes the root execution's outcome after a run
 // drains — failures surface as typed exchange errors, not silent

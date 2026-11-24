@@ -5,9 +5,11 @@
 import {
   createSession,
   getDefaultModel,
+  getSessionState,
   listSessions,
   syncChatMessages,
   type ChatMessage,
+  type SessionAnalysis,
   type SessionView,
 } from '../../shared/api/client';
 
@@ -25,6 +27,10 @@ export function createSessions() {
   let model = $state(''); // catalog-backed picker sets this
   let loading = $state(true);
   let rosterError = $state('');
+  // The ACTIVE session's latest intent analysis (the state surface —
+  // the analysis card and the context panel render from this, never
+  // from transcript parsing).
+  let analysis = $state<SessionAnalysis | null>(null);
   let sendError = $state('');
 
   const groups = $derived.by<SessionGroups>(() => {
@@ -107,10 +113,19 @@ export function createSessions() {
       }
       await loadRoster();
       await loadTranscript(activeId);
+      await loadAnalysis(activeId);
     } catch {
       sendError = 'daemon';
     } finally {
       loading = false;
+    }
+  }
+
+  /** Refresh the active session's analysis from the state surface. */
+  async function loadAnalysis(sessionId: string) {
+    if (sessionId === activeId) {
+      const state = await getSessionState(sessionId);
+      analysis = state?.intent_analysis ?? null;
     }
   }
 
@@ -119,6 +134,7 @@ export function createSessions() {
     if (sessionId === activeId) return;
     activeId = sessionId;
     sendError = '';
+    analysis = null;
     if (!(sessionId in transcripts)) {
       try {
         await loadTranscript(sessionId);
@@ -126,6 +142,7 @@ export function createSessions() {
         sendError = 'daemon';
       }
     }
+    void loadAnalysis(sessionId);
   }
 
   /** [+ New Research]: create a shell session and activate it. */
@@ -156,6 +173,7 @@ export function createSessions() {
       cursors = { ...cursors, [sessionId]: cursor };
       transcripts = { ...transcripts, [sessionId]: [...seen] };
       await loadRoster();
+      await loadAnalysis(sessionId);
     } catch {
       /* next load() surfaces daemon state */
     }
@@ -186,6 +204,7 @@ export function createSessions() {
     set model(value: string) { model = value; },
     get loading() { return loading; },
     get rosterError() { return rosterError; },
+    get analysis() { return analysis; },
     get sendError() { return sendError; },
     set sendError(value: string) { sendError = value; },
   };
