@@ -30,7 +30,6 @@ overrides. The ward vault is user data outside the home
 - **WHEN** a flag override `/tmp/flag-home` is given and `ZBOT_HOME=/tmp/alt` is set
 - **THEN** the resolved home is `/tmp/flag-home`
 
-
 ### Requirement: First-run bootstrap creates structure, never content
 
 When the resolved home does not exist, bootstrap SHALL create the tree: `config.yaml` with documented defaults, the `config/{prompts,mcps,providers}/` directories, `agents/`, `skills/`, `hooks/`, and `data/`. The ward vault is created separately by the wards package, outside the home. Bootstrap seeds nothing except the example roster (agents, top-level skills, persona prompts) and SHALL run the legacy-location migration (the "Legacy skills and hooks relocate top-level" requirement) before seeding.
@@ -60,7 +59,6 @@ When the resolved home does not exist, bootstrap SHALL create the tree: `config.
 - **WHEN** the top-level `skills/` already holds the user's skills and `config/skills/` is empty
 - **THEN** the migration moves nothing and the registry loads the top-level skills
 
-
 ### Requirement: Bootstrap seeds the example roster
 
 Bootstrap SHALL seed EXAMPLE content in exactly two places, write-once
@@ -72,21 +70,25 @@ pre-marker homes (upgrades) gain their missing examples; a failed
 seeding run leaves no marker so the next bootstrap retries the missing
 files. After the marker exists, bootstrap seeds nothing — user edits
 survive byte-for-byte and a deleted example is NOT recreated. Seeded
-skills SHALL parse under the strict SKILL.md loader.
+skills SHALL parse under the strict SKILL.md loader. The intent-analyst
+system agent (`agents/intent-analyst.md`) is seeded once per home under
+its OWN marker, so already-marked homes receive it on upgrade exactly
+once and a user edit or deletion of it is final.
 
 #### Scenario: User-owned examples survive re-bootstrap
-
 - **WHEN** a user edits or deletes a seeded example agent or skill and
   bootstrap runs again
 - **THEN** the edit is preserved byte-for-byte (edited files) and the
   deleted example is not recreated
 
 #### Scenario: Seeded skills load cleanly
-
 - **WHEN** the registry loads a freshly bootstrapped home
 - **THEN** every seeded skill parses under the strict SKILL.md loader
   (name + description frontmatter) with zero load errors
 
+#### Scenario: The analyst seeds once per home
+- **WHEN** bootstrap runs on a home that already carries the roster marker
+- **THEN** `agents/intent-analyst.md` is published once; a later edit or deletion survives every further bootstrap
 
 ### Requirement: Strict config loading hard-fails on invalid input
 
@@ -107,7 +109,6 @@ Loading `config.yaml` SHALL strictly decode known fields and reject unknown keys
 - **WHEN** `config.yaml` is valid with known keys
 - **THEN** loading succeeds and returns the typed configuration
 
-
 ### Requirement: Directory tree self-heals
 
 Loading with an existing home SHALL recreate any missing subdirectory of the control plane (`config/{prompts,mcps,providers}`, `agents`, `skills`, `hooks`, `data`) without touching any existing file.
@@ -116,7 +117,6 @@ Loading with an existing home SHALL recreate any missing subdirectory of the con
 
 - **WHEN** the home exists but `skills/` and `data/` are missing
 - **THEN** both directories are recreated and no file changes
-
 
 ### Requirement: Provider list in config.yaml
 
@@ -157,7 +157,6 @@ The config schema SHALL accept a `providers` list whose entries carry `name`, `t
 - **WHEN** a `config.yaml` entry carries `api_key: keyring`
 - **THEN** loading fails naming the entry
 
-
 ### Requirement: Server address is loopback only
 
 The daemon SHALL reject a configured `server.address` whose host is not a loopback address (`127.0.0.0/8`, `::1`, or the `localhost` name) with a startup error naming the file and the address. The daemon is local-first and unauthenticated; binding a non-loopback interface SHALL be a hard error, not a warning.
@@ -171,7 +170,6 @@ The daemon SHALL reject a configured `server.address` whose host is not a loopba
 
 - **WHEN** `server.address` is `127.0.0.1:8787`, `[::1]:8787`, or `localhost:8787`
 - **THEN** loading succeeds
-
 
 ### Requirement: Legacy skills and hooks relocate top-level
 
@@ -197,7 +195,6 @@ directories are left in place.
 
 - **WHEN** a legacy skill name also exists at the top-level root
 - **THEN** the top-level copy stands and the legacy copy stays untouched
-
 
 ### Requirement: Skill frontmatter tolerates packaging keys
 

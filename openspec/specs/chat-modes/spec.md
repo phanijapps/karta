@@ -100,6 +100,7 @@ protocol.
 - **WHEN** the user clicks [+ New Research]
 - **THEN** a research session (type=research, ward=nil) is created
   and becomes the active session with an empty transcript
+
 ### Requirement: Session-scoped chat-send
 
 The chat-send request SHALL carry `session_id` (default `default`).
@@ -180,12 +181,12 @@ Chat sessions render no ward card.
 ### Requirement: Both types share the event stream and Timeline
 
 Both types SHALL emit to the same Timeline (agent steps, tool calls,
-delegations, compactions). Chat exchanges SHALL NOT emit
-intent_analysis events (the pipeline was skipped); research exchanges
-SHALL emit them as today.
+delegations, compactions). Chat exchanges SHALL NOT emit analysis events
+(the pipeline was skipped); research exchanges SHALL emit the
+`analysis_*` event kinds (started plus one terminal completed / bypassed
+/ failed) as today.
 
 #### Scenario: Chat-session events
-
 - **WHEN** a chat-session exchange completes
 - **THEN** the Timeline carries the assistant step and any tool calls,
-  with NO intent_analysis event
+  with NO analysis event
