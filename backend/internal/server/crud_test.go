@@ -391,30 +391,47 @@ func TestSessionState(t *testing.T) {
 		t.Fatalf("session row: %v", body)
 	}
 
-	// Persist two analyses; the LATEST wins.
-	persist := func(intent string) {
+	// Persist analyses; the LATEST TERMINAL one wins (a later started
+	// event never shadows the last completed decision), and a legacy
+	// intent_analysis row still reads as a terminal analysis.
+	persist := func(id, kind, intent string) {
+		t.Helper()
 		payload, _ := json.Marshal(map[string]any{"text": "t", "intent_analysis": map[string]any{
 			"status": "analyzed", "primary_intent": intent, "complexity": "M",
-			"step_budget": 8, "approach": "graph",
+			"step_budget": 8, "approach": "graph", "tokens_in": 900,
 			"recommended_skills": []string{"pdf"}, "recommended_agents": []string{"research-agent"},
 		}})
-		if err := db.AppendEvent(store.Event{ID: "evt-test-" + intent, SessionID: sid, Kind: "intent_analysis", Payload: string(payload)}); err != nil {
+		if err := db.AppendEvent(store.Event{ID: "evt-test-" + id, SessionID: sid, Kind: kind, Payload: string(payload)}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	persist("first-intent")
-	persist("second-intent")
+	persist("first-intent", "analysis_completed", "first-intent")
+	persist("second-intent", "analysis_completed", "second-intent")
+	persist("in-flight", "analysis_started", "in-flight")
 	code, body = mutate(t, "GET", url+"/api/sessions/"+sid+"/state", nil)
 	if code != http.StatusOK {
 		t.Fatalf("state: %d", code)
 	}
 	ia := body["intent_analysis"].(map[string]any)
 	if ia["primary_intent"] != "second-intent" {
-		t.Fatalf("latest analysis must win: %v", ia)
+		t.Fatalf("latest terminal analysis must win: %v", ia)
+	}
+	if ia["tokens_in"] != float64(900) {
+		t.Fatalf("cost fields ride the state block: %v", ia)
 	}
 	skills, _ := ia["recommended_skills"].([]any)
 	if len(skills) != 1 || skills[0] != "pdf" {
 		t.Fatalf("provisioned skills: %v", ia)
+	}
+	// A legacy row appended LAST is still a terminal analysis for the
+	// state surface (an upgraded home's last pre-upgrade decision).
+	persist("legacy", "intent_analysis", "legacy-intent")
+	code, body = mutate(t, "GET", url+"/api/sessions/"+sid+"/state", nil)
+	if code != http.StatusOK {
+		t.Fatalf("state: %d", code)
+	}
+	if ia := body["intent_analysis"].(map[string]any); ia["primary_intent"] != "legacy-intent" {
+		t.Fatalf("legacy rows read as terminal state: %v", ia)
 	}
 
 	// Unknown session: 404.

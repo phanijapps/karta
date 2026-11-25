@@ -1293,13 +1293,15 @@ paths:
       summary: Read the session's state (row + latest intent analysis)
       description: |
         The session-model state surface: the session row plus the
-        session's LATEST intent analysis (read from the persisted
-        intent_analysis events — status, reason, primary intent,
-        complexity, budget, approach, ward recommendation, provisioned
-        skills/agents, dropped names). The chat surface's Task Analysis
-        card and the context panel render from THIS, never by parsing
-        transcript rows. Sessions without an analysis (chat sessions,
-        fresh shells) carry no intent_analysis block.
+        session's LATEST terminal intent analysis (read from the persisted
+        analysis_completed / analysis_bypassed / analysis_failed events —
+        status, reason, primary intent, complexity, budget, approach, ward
+        recommendation, provisioned skills/agents, dropped names, and the
+        decision's model, tokens, duration and attempts). The chat
+        surface's Task Analysis card and the context panel render from
+        THIS, never by parsing transcript rows. Sessions without an
+        analysis (chat sessions, fresh shells) carry no intent_analysis
+        block.
       parameters:
         - $ref: '#/components/parameters/SessionId'
       responses:
@@ -1473,6 +1475,67 @@ paths:
                 $ref: '#/components/schemas/DistillationSettings'
         "400":
           description: Unknown provider or empty model
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/intent-analysis:
+    get:
+      operationId: getIntentAnalysis
+      summary: Current intent-analysis settings plus the model-derived effective limits
+      responses:
+        "200":
+          description: Settings and the read-only derivation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentAnalysisStatus'
+    put:
+      operationId: putIntentAnalysis
+      summary: Update the intent-analyst's model selection (applies without restart)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntentAnalysisSettings'
+      responses:
+        "200":
+          description: Updated settings and derivation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentAnalysisStatus'
+        "400":
+          description: Unknown provider or empty model
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/intent-analysis/test:
+    post:
+      operationId: testIntentAnalysis
+      summary: Run one real analysis for a goal and report its decision and cost
+      description: An operator probe — the real packet and decision with the
+        configured model; no session, no execution row, no timeline events.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntentAnalysisTestRequest'
+      responses:
+        "200":
+          description: The decision's outcome and cost (a failed analysis is
+            a 200 with status `failed` and its reason)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentAnalysisTestResult'
+        "503":
+          description: Analysis is not wired (disabled daemon build)
           content:
             application/json:
               schema:
@@ -1732,6 +1795,12 @@ components:
           type: string
           minLength: 1
           maxLength: 256
+        context_window:
+          type: integer
+          minimum: 1
+          description: The model's context window in tokens when the
+            provider reports it (Ollama `/api/show` `*.context_length`);
+            absent when unknown.
 
     ModelList:
       type: object
@@ -1755,6 +1824,12 @@ components:
           type: string
           minLength: 1
           maxLength: 256
+        context_window:
+          type: integer
+          minimum: 1
+          description: The model's context window in tokens when known
+            (discovered from the provider at refresh, or the limits table);
+            absent when unknown — clients fall back to the 32,000 default.
 
     ModelCatalog:
       type: object
@@ -2300,10 +2375,139 @@ components:
           type: string
           maxLength: 65536
 
+    IntentAnalysisSettings:
+      type: object
+      description: The daemon-managed `~/.zbot/config/intent-analysis.json`.
+        The card writes provider + model; the advanced fields are
+        editable in the file. No token knobs — limits derive from the
+        model.
+      additionalProperties: false
+      properties:
+        provider:
+          type: string
+          maxLength: 128
+        model:
+          type: string
+          maxLength: 256
+        reasoning_effort:
+          type: string
+          maxLength: 16
+          description: Default `low` for glm-5.3* models, else `medium`.
+        deadline_seconds:
+          type: integer
+          minimum: 1
+          maximum: 600
+          description: The whole decision's bound (default 45).
+        max_attempts:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Completion attempts including correction retries
+            (default 3).
+
+    IntentAnalysisEffective:
+      type: object
+      description: The read-only derivation from the selected model.
+      additionalProperties: false
+      required: [model, enabled, output_reserve, packet_tokens, trimming]
+      properties:
+        model:
+          type: string
+          maxLength: 384
+          description: The model the next analysis would use
+            (`provider/model`); empty when none resolves.
+        enabled:
+          type: boolean
+          description: Whether analysis is enabled (config.yaml kill-switch).
+        context_window:
+          type: integer
+          minimum: 1
+        window_source:
+          type: string
+          enum: [ollama, table, fallback]
+        output_reserve:
+          type: integer
+          minimum: 0
+          description: The tokens held back from the prompt (4,000).
+        packet_tokens:
+          type: integer
+          minimum: 0
+          description: Estimated tokens of a default packet plus the
+            sample request echo (chars / 4).
+        trimming:
+          type: boolean
+          description: Whether the safety valve would fire for a default
+            packet on this model.
+
+    IntentAnalysisStatus:
+      type: object
+      additionalProperties: false
+      required: [settings, effective]
+      properties:
+        settings:
+          $ref: '#/components/schemas/IntentAnalysisSettings'
+        effective:
+          $ref: '#/components/schemas/IntentAnalysisEffective'
+
+    IntentAnalysisTestRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        goal:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          description: The goal to analyze; absent = a built-in sample.
+
+    IntentAnalysisTestResult:
+      type: object
+      additionalProperties: false
+      required: [status, attempts, tokens_in, tokens_out, duration_ms, trimmed, packet_tokens]
+      properties:
+        status:
+          type: string
+          enum: [analyzed, failed]
+        reason:
+          type: string
+          maxLength: 1024
+        model:
+          type: string
+          maxLength: 384
+        context_window:
+          type: integer
+          minimum: 1
+        window_source:
+          type: string
+          enum: [ollama, table, fallback]
+        attempts:
+          type: integer
+          minimum: 0
+        tokens_in:
+          type: integer
+          minimum: 0
+        tokens_out:
+          type: integer
+          minimum: 0
+        duration_ms:
+          type: integer
+          minimum: 0
+        trimmed:
+          type: boolean
+        packet_tokens:
+          type: integer
+          minimum: 0
+        analysis:
+          $ref: '#/components/schemas/IntentAnalysisPayload'
+          description: The validated contract summary when analyzed.
+
     TimelineEventKind:
       type: string
-      description: Mirrors the domain TimelineEventKind set.
-      enum: [session, agent_step, delegation, tool_call, hook_decision, compaction_triggered, chitta_tool_invoked, chat_delta, intent_analysis, ward_entered, ward_created]
+      description: Mirrors the domain TimelineEventKind set. The analysis
+        trail is `analysis_started` followed by exactly one terminal kind
+        (`analysis_completed`, `analysis_bypassed`, `analysis_failed`);
+        the pre-existing `intent_analysis` kind is gone (durable replay
+        translates legacy rows to the terminal kind by status).
+      enum: [session, agent_step, delegation, tool_call, hook_decision, compaction_triggered, chitta_tool_invoked, chat_delta, analysis_started, analysis_completed, analysis_bypassed, analysis_failed, ward_entered, ward_created]
 
     TimelineEvent:
       type: object
@@ -2339,25 +2543,65 @@ components:
           $ref: '#/components/schemas/ChittaToolInvokedPayload'
         intent_analysis:
           $ref: '#/components/schemas/IntentAnalysisPayload'
+          description: Carries the analysis payload for the four
+            `analysis_*` kinds (the property keeps its name for the
+            session-state and card consumers).
         ward:
           $ref: '#/components/schemas/WardEventPayload'
 
     IntentAnalysisPayload:
       type: object
       description: One pre-execution intent analysis outcome for a root
-        goal run — analyzed (with the contract summary), bypassed
-        (trivial goal), or failed (non-fatal; the run proceeds).
+        goal run — started (the call is in flight), analyzed (with the
+        contract summary and its cost), bypassed (trivial goal or
+        disabled), or failed (non-fatal; the run proceeds).
       additionalProperties: false
       required: [status]
       properties:
         status:
           type: string
-          enum: [analyzed, bypassed, failed]
+          enum: [started, analyzed, bypassed, failed]
         reason:
           type: string
           maxLength: 1024
           description: Why the analysis was bypassed or failed; absent
             for a successful analysis.
+        model:
+          type: string
+          maxLength: 384
+          description: The resolved analysis model as `provider/model`.
+        mode:
+          type: string
+          maxLength: 32
+          description: The output mode the analyst used (`text_json`).
+        context_window:
+          type: integer
+          minimum: 1
+          description: The resolved context window in tokens.
+        window_source:
+          type: string
+          enum: [ollama, table, fallback]
+          description: Where the window came from.
+        tokens_in:
+          type: integer
+          minimum: 0
+          description: Prompt tokens summed over every attempt.
+        tokens_out:
+          type: integer
+          minimum: 0
+          description: Completion tokens summed over every attempt.
+        duration_ms:
+          type: integer
+          minimum: 0
+          description: Wall-clock duration of the whole decision.
+        attempts:
+          type: integer
+          minimum: 0
+          description: Completion attempts made (correction retries included).
+        trimmed:
+          type: boolean
+          description: The safety valve fired — packet caps shrank to fit
+            `window - 4000`.
         primary_intent:
           type: string
           maxLength: 256

@@ -830,13 +830,15 @@ export interface paths {
         /**
          * Read the session's state (row + latest intent analysis)
          * @description The session-model state surface: the session row plus the
-         *     session's LATEST intent analysis (read from the persisted
-         *     intent_analysis events — status, reason, primary intent,
-         *     complexity, budget, approach, ward recommendation, provisioned
-         *     skills/agents, dropped names). The chat surface's Task Analysis
-         *     card and the context panel render from THIS, never by parsing
-         *     transcript rows. Sessions without an analysis (chat sessions,
-         *     fresh shells) carry no intent_analysis block.
+         *     session's LATEST terminal intent analysis (read from the persisted
+         *     analysis_completed / analysis_bypassed / analysis_failed events —
+         *     status, reason, primary intent, complexity, budget, approach, ward
+         *     recommendation, provisioned skills/agents, dropped names, and the
+         *     decision's model, tokens, duration and attempts). The chat
+         *     surface's Task Analysis card and the context panel render from
+         *     THIS, never by parsing transcript rows. Sessions without an
+         *     analysis (chat sessions, fresh shells) carry no intent_analysis
+         *     block.
          */
         get: operations["getSessionState"];
         put?: never;
@@ -968,6 +970,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/intent-analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current intent-analysis settings plus the model-derived effective limits */
+        get: operations["getIntentAnalysis"];
+        /** Update the intent-analyst's model selection (applies without restart) */
+        put: operations["putIntentAnalysis"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intent-analysis/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run one real analysis for a goal and report its decision and cost
+         * @description An operator probe — the real packet and decision with the configured model; no session, no execution row, no timeline events.
+         */
+        post: operations["testIntentAnalysis"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1039,6 +1079,8 @@ export interface components {
         };
         Model: {
             id: string;
+            /** @description The model's context window in tokens when the provider reports it (Ollama `/api/show` `*.context_length`); absent when unknown. */
+            context_window?: number;
         };
         ModelList: {
             models: components["schemas"]["Model"][];
@@ -1046,6 +1088,8 @@ export interface components {
         ModelEntry: {
             provider: components["schemas"]["Id"];
             id: string;
+            /** @description The model's context window in tokens when known (discovered from the provider at refresh, or the limits table); absent when unknown — clients fall back to the 32,000 default. */
+            context_window?: number;
         };
         ModelCatalog: {
             /** @description Flat catalog entries; group or namespace client-side. */
@@ -1306,11 +1350,63 @@ export interface components {
             model?: string;
             prompt?: string;
         };
+        /** @description The daemon-managed `~/.zbot/config/intent-analysis.json`. The card writes provider + model; the advanced fields are editable in the file. No token knobs — limits derive from the model. */
+        IntentAnalysisSettings: {
+            provider?: string;
+            model?: string;
+            /** @description Default `low` for glm-5.3* models, else `medium`. */
+            reasoning_effort?: string;
+            /** @description The whole decision's bound (default 45). */
+            deadline_seconds?: number;
+            /** @description Completion attempts including correction retries (default 3). */
+            max_attempts?: number;
+        };
+        /** @description The read-only derivation from the selected model. */
+        IntentAnalysisEffective: {
+            /** @description The model the next analysis would use (`provider/model`); empty when none resolves. */
+            model: string;
+            /** @description Whether analysis is enabled (config.yaml kill-switch). */
+            enabled: boolean;
+            context_window?: number;
+            /** @enum {string} */
+            window_source?: "ollama" | "table" | "fallback";
+            /** @description The tokens held back from the prompt (4,000). */
+            output_reserve: number;
+            /** @description Estimated tokens of a default packet plus the sample request echo (chars / 4). */
+            packet_tokens: number;
+            /** @description Whether the safety valve would fire for a default packet on this model. */
+            trimming: boolean;
+        };
+        IntentAnalysisStatus: {
+            settings: components["schemas"]["IntentAnalysisSettings"];
+            effective: components["schemas"]["IntentAnalysisEffective"];
+        };
+        IntentAnalysisTestRequest: {
+            /** @description The goal to analyze; absent = a built-in sample. */
+            goal?: string;
+        };
+        IntentAnalysisTestResult: {
+            /** @enum {string} */
+            status: "analyzed" | "failed";
+            reason?: string;
+            model?: string;
+            context_window?: number;
+            /** @enum {string} */
+            window_source?: "ollama" | "table" | "fallback";
+            attempts: number;
+            tokens_in: number;
+            tokens_out: number;
+            duration_ms: number;
+            trimmed: boolean;
+            packet_tokens: number;
+            /** @description The validated contract summary when analyzed. */
+            analysis?: components["schemas"]["IntentAnalysisPayload"];
+        };
         /**
-         * @description Mirrors the domain TimelineEventKind set.
+         * @description Mirrors the domain TimelineEventKind set. The analysis trail is `analysis_started` followed by exactly one terminal kind (`analysis_completed`, `analysis_bypassed`, `analysis_failed`); the pre-existing `intent_analysis` kind is gone (durable replay translates legacy rows to the terminal kind by status).
          * @enum {string}
          */
-        TimelineEventKind: "session" | "agent_step" | "delegation" | "tool_call" | "hook_decision" | "compaction_triggered" | "chitta_tool_invoked" | "chat_delta" | "intent_analysis" | "ward_entered" | "ward_created";
+        TimelineEventKind: "session" | "agent_step" | "delegation" | "tool_call" | "hook_decision" | "compaction_triggered" | "chitta_tool_invoked" | "chat_delta" | "analysis_started" | "analysis_completed" | "analysis_bypassed" | "analysis_failed" | "ward_entered" | "ward_created";
         TimelineEvent: {
             id: components["schemas"]["Id"];
             session_id: components["schemas"]["Id"];
@@ -1325,15 +1421,37 @@ export interface components {
             hook?: components["schemas"]["HookDecision"];
             compaction?: components["schemas"]["CompactionStats"];
             chitta_tool_invoked?: components["schemas"]["ChittaToolInvokedPayload"];
+            /** @description Carries the analysis payload for the four `analysis_*` kinds (the property keeps its name for the session-state and card consumers). */
             intent_analysis?: components["schemas"]["IntentAnalysisPayload"];
             ward?: components["schemas"]["WardEventPayload"];
         };
-        /** @description One pre-execution intent analysis outcome for a root goal run — analyzed (with the contract summary), bypassed (trivial goal), or failed (non-fatal; the run proceeds). */
+        /** @description One pre-execution intent analysis outcome for a root goal run — started (the call is in flight), analyzed (with the contract summary and its cost), bypassed (trivial goal or disabled), or failed (non-fatal; the run proceeds). */
         IntentAnalysisPayload: {
             /** @enum {string} */
-            status: "analyzed" | "bypassed" | "failed";
+            status: "started" | "analyzed" | "bypassed" | "failed";
             /** @description Why the analysis was bypassed or failed; absent for a successful analysis. */
             reason?: string;
+            /** @description The resolved analysis model as `provider/model`. */
+            model?: string;
+            /** @description The output mode the analyst used (`text_json`). */
+            mode?: string;
+            /** @description The resolved context window in tokens. */
+            context_window?: number;
+            /**
+             * @description Where the window came from.
+             * @enum {string}
+             */
+            window_source?: "ollama" | "table" | "fallback";
+            /** @description Prompt tokens summed over every attempt. */
+            tokens_in?: number;
+            /** @description Completion tokens summed over every attempt. */
+            tokens_out?: number;
+            /** @description Wall-clock duration of the whole decision. */
+            duration_ms?: number;
+            /** @description Completion attempts made (correction retries included). */
+            attempts?: number;
+            /** @description The safety valve fired — packet caps shrank to fit `window - 4000`. */
+            trimmed?: boolean;
             primary_intent?: string;
             /** @enum {string} */
             complexity?: "S" | "M" | "L" | "XL";
@@ -3405,6 +3523,92 @@ export interface operations {
             };
             /** @description Unknown provider or empty model */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getIntentAnalysis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Settings and the read-only derivation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntentAnalysisStatus"];
+                };
+            };
+        };
+    };
+    putIntentAnalysis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IntentAnalysisSettings"];
+            };
+        };
+        responses: {
+            /** @description Updated settings and derivation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntentAnalysisStatus"];
+                };
+            };
+            /** @description Unknown provider or empty model */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    testIntentAnalysis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["IntentAnalysisTestRequest"];
+            };
+        };
+        responses: {
+            /** @description The decision's outcome and cost (a failed analysis is a 200 with status `failed` and its reason) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntentAnalysisTestResult"];
+                };
+            };
+            /** @description Analysis is not wired (disabled daemon build) */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

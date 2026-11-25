@@ -2,7 +2,7 @@
 
 ## 1. Contract and event kinds
 
-- [ ] 1.1 Contract: `TimelineEventKind` drops `intent_analysis`, adds
+- [x] 1.1 Contract: `TimelineEventKind` drops `intent_analysis`, adds
   `analysis_started/completed/bypassed/failed`; `IntentAnalysisPayload`
   gains `status: started`, `model`, `tokens_in`, `tokens_out`,
   `duration_ms`, `attempts`, `mode`, `context_window`, `window_source`,
@@ -10,7 +10,7 @@
   `/api/intent-analysis` (GET settings+effective / PUT) and
   `/api/intent-analysis/test` (POST). `CONTRACT_CHANGE=1 task codegen`;
   commit. Verify: codegen zero drift.
-- [ ] 1.2 Domain kinds + payload (`EventAnalysisStarted/Completed/
+- [x] 1.2 Domain kinds + payload (`EventAnalysisStarted/Completed/
   Bypassed/Failed`, `IntentStatusStarted`, accounting fields); store
   `LatestEventOfKinds`; server replay translates legacy rows by status;
   `GetSessionState` reads the latest terminal kind. Verify:

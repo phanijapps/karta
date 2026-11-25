@@ -219,6 +219,27 @@ func (e HookAction) Valid() bool {
 	}
 }
 
+// Defines values for IntentAnalysisEffectiveWindowSource.
+const (
+	IntentAnalysisEffectiveWindowSourceFallback IntentAnalysisEffectiveWindowSource = "fallback"
+	IntentAnalysisEffectiveWindowSourceOllama   IntentAnalysisEffectiveWindowSource = "ollama"
+	IntentAnalysisEffectiveWindowSourceTable    IntentAnalysisEffectiveWindowSource = "table"
+)
+
+// Valid indicates whether the value is a known member of the IntentAnalysisEffectiveWindowSource enum.
+func (e IntentAnalysisEffectiveWindowSource) Valid() bool {
+	switch e {
+	case IntentAnalysisEffectiveWindowSourceFallback:
+		return true
+	case IntentAnalysisEffectiveWindowSourceOllama:
+		return true
+	case IntentAnalysisEffectiveWindowSourceTable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IntentAnalysisPayloadApproach.
 const (
 	Graph  IntentAnalysisPayloadApproach = "graph"
@@ -266,6 +287,7 @@ const (
 	IntentAnalysisPayloadStatusAnalyzed IntentAnalysisPayloadStatus = "analyzed"
 	IntentAnalysisPayloadStatusBypassed IntentAnalysisPayloadStatus = "bypassed"
 	IntentAnalysisPayloadStatusFailed   IntentAnalysisPayloadStatus = "failed"
+	IntentAnalysisPayloadStatusStarted  IntentAnalysisPayloadStatus = "started"
 )
 
 // Valid indicates whether the value is a known member of the IntentAnalysisPayloadStatus enum.
@@ -276,6 +298,8 @@ func (e IntentAnalysisPayloadStatus) Valid() bool {
 	case IntentAnalysisPayloadStatusBypassed:
 		return true
 	case IntentAnalysisPayloadStatusFailed:
+		return true
+	case IntentAnalysisPayloadStatusStarted:
 		return true
 	default:
 		return false
@@ -294,6 +318,66 @@ func (e IntentAnalysisPayloadWardAction) Valid() bool {
 	case CreateNew:
 		return true
 	case UseExisting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IntentAnalysisPayloadWindowSource.
+const (
+	IntentAnalysisPayloadWindowSourceFallback IntentAnalysisPayloadWindowSource = "fallback"
+	IntentAnalysisPayloadWindowSourceOllama   IntentAnalysisPayloadWindowSource = "ollama"
+	IntentAnalysisPayloadWindowSourceTable    IntentAnalysisPayloadWindowSource = "table"
+)
+
+// Valid indicates whether the value is a known member of the IntentAnalysisPayloadWindowSource enum.
+func (e IntentAnalysisPayloadWindowSource) Valid() bool {
+	switch e {
+	case IntentAnalysisPayloadWindowSourceFallback:
+		return true
+	case IntentAnalysisPayloadWindowSourceOllama:
+		return true
+	case IntentAnalysisPayloadWindowSourceTable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IntentAnalysisTestResultStatus.
+const (
+	IntentAnalysisTestResultStatusAnalyzed IntentAnalysisTestResultStatus = "analyzed"
+	IntentAnalysisTestResultStatusFailed   IntentAnalysisTestResultStatus = "failed"
+)
+
+// Valid indicates whether the value is a known member of the IntentAnalysisTestResultStatus enum.
+func (e IntentAnalysisTestResultStatus) Valid() bool {
+	switch e {
+	case IntentAnalysisTestResultStatusAnalyzed:
+		return true
+	case IntentAnalysisTestResultStatusFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IntentAnalysisTestResultWindowSource.
+const (
+	IntentAnalysisTestResultWindowSourceFallback IntentAnalysisTestResultWindowSource = "fallback"
+	IntentAnalysisTestResultWindowSourceOllama   IntentAnalysisTestResultWindowSource = "ollama"
+	IntentAnalysisTestResultWindowSourceTable    IntentAnalysisTestResultWindowSource = "table"
+)
+
+// Valid indicates whether the value is a known member of the IntentAnalysisTestResultWindowSource enum.
+func (e IntentAnalysisTestResultWindowSource) Valid() bool {
+	switch e {
+	case IntentAnalysisTestResultWindowSourceFallback:
+		return true
+	case IntentAnalysisTestResultWindowSourceOllama:
+		return true
+	case IntentAnalysisTestResultWindowSourceTable:
 		return true
 	default:
 		return false
@@ -1005,12 +1089,15 @@ func (e SkillInstallStatus) Valid() bool {
 // Defines values for TimelineEventKind.
 const (
 	TimelineEventKindAgentStep           TimelineEventKind = "agent_step"
+	TimelineEventKindAnalysisBypassed    TimelineEventKind = "analysis_bypassed"
+	TimelineEventKindAnalysisCompleted   TimelineEventKind = "analysis_completed"
+	TimelineEventKindAnalysisFailed      TimelineEventKind = "analysis_failed"
+	TimelineEventKindAnalysisStarted     TimelineEventKind = "analysis_started"
 	TimelineEventKindChatDelta           TimelineEventKind = "chat_delta"
 	TimelineEventKindChittaToolInvoked   TimelineEventKind = "chitta_tool_invoked"
 	TimelineEventKindCompactionTriggered TimelineEventKind = "compaction_triggered"
 	TimelineEventKindDelegation          TimelineEventKind = "delegation"
 	TimelineEventKindHookDecision        TimelineEventKind = "hook_decision"
-	TimelineEventKindIntentAnalysis      TimelineEventKind = "intent_analysis"
 	TimelineEventKindSession             TimelineEventKind = "session"
 	TimelineEventKindToolCall            TimelineEventKind = "tool_call"
 	TimelineEventKindWardCreated         TimelineEventKind = "ward_created"
@@ -1022,6 +1109,14 @@ func (e TimelineEventKind) Valid() bool {
 	switch e {
 	case TimelineEventKindAgentStep:
 		return true
+	case TimelineEventKindAnalysisBypassed:
+		return true
+	case TimelineEventKindAnalysisCompleted:
+		return true
+	case TimelineEventKindAnalysisFailed:
+		return true
+	case TimelineEventKindAnalysisStarted:
+		return true
 	case TimelineEventKindChatDelta:
 		return true
 	case TimelineEventKindChittaToolInvoked:
@@ -1031,8 +1126,6 @@ func (e TimelineEventKind) Valid() bool {
 	case TimelineEventKindDelegation:
 		return true
 	case TimelineEventKindHookDecision:
-		return true
-	case TimelineEventKindIntentAnalysis:
 		return true
 	case TimelineEventKindSession:
 		return true
@@ -1356,14 +1449,53 @@ type HookDecision struct {
 // Id defines model for Id.
 type Id = string
 
-// IntentAnalysisPayload One pre-execution intent analysis outcome for a root goal run — analyzed (with the contract summary), bypassed (trivial goal), or failed (non-fatal; the run proceeds).
+// IntentAnalysisEffective The read-only derivation from the selected model.
+type IntentAnalysisEffective struct {
+	ContextWindow *int `json:"context_window,omitempty"`
+
+	// Enabled Whether analysis is enabled (config.yaml kill-switch).
+	Enabled bool `json:"enabled"`
+
+	// Model The model the next analysis would use (`provider/model`); empty when none resolves.
+	Model string `json:"model"`
+
+	// OutputReserve The tokens held back from the prompt (4,000).
+	OutputReserve int `json:"output_reserve"`
+
+	// PacketTokens Estimated tokens of a default packet plus the sample request echo (chars / 4).
+	PacketTokens int `json:"packet_tokens"`
+
+	// Trimming Whether the safety valve would fire for a default packet on this model.
+	Trimming     bool                                 `json:"trimming"`
+	WindowSource *IntentAnalysisEffectiveWindowSource `json:"window_source,omitempty"`
+}
+
+// IntentAnalysisEffectiveWindowSource defines model for IntentAnalysisEffective.WindowSource.
+type IntentAnalysisEffectiveWindowSource string
+
+// IntentAnalysisPayload One pre-execution intent analysis outcome for a root goal run — started (the call is in flight), analyzed (with the contract summary and its cost), bypassed (trivial goal or disabled), or failed (non-fatal; the run proceeds).
 type IntentAnalysisPayload struct {
-	Approach   *IntentAnalysisPayloadApproach   `json:"approach,omitempty"`
+	Approach *IntentAnalysisPayloadApproach `json:"approach,omitempty"`
+
+	// Attempts Completion attempts made (correction retries included).
+	Attempts   *int                             `json:"attempts,omitempty"`
 	Complexity *IntentAnalysisPayloadComplexity `json:"complexity,omitempty"`
 
+	// ContextWindow The resolved context window in tokens.
+	ContextWindow *int `json:"context_window,omitempty"`
+
 	// Dropped Recommended names the runtime dropped because they are not in the index (drop-and-warn).
-	Dropped       *[]string `json:"dropped,omitempty"`
-	PrimaryIntent *string   `json:"primary_intent,omitempty"`
+	Dropped *[]string `json:"dropped,omitempty"`
+
+	// DurationMs Wall-clock duration of the whole decision.
+	DurationMs *int `json:"duration_ms,omitempty"`
+
+	// Mode The output mode the analyst used (`text_json`).
+	Mode *string `json:"mode,omitempty"`
+
+	// Model The resolved analysis model as `provider/model`.
+	Model         *string `json:"model,omitempty"`
+	PrimaryIntent *string `json:"primary_intent,omitempty"`
 
 	// Reason Why the analysis was bypassed or failed; absent for a successful analysis.
 	Reason *string `json:"reason,omitempty"`
@@ -1376,9 +1508,21 @@ type IntentAnalysisPayload struct {
 	Status            IntentAnalysisPayloadStatus `json:"status"`
 
 	// StepBudget The engine step budget derived from complexity.
-	StepBudget *int                             `json:"step_budget,omitempty"`
+	StepBudget *int `json:"step_budget,omitempty"`
+
+	// TokensIn Prompt tokens summed over every attempt.
+	TokensIn *int `json:"tokens_in,omitempty"`
+
+	// TokensOut Completion tokens summed over every attempt.
+	TokensOut *int `json:"tokens_out,omitempty"`
+
+	// Trimmed The safety valve fired — packet caps shrank to fit `window - 4000`.
+	Trimmed    *bool                            `json:"trimmed,omitempty"`
 	WardAction *IntentAnalysisPayloadWardAction `json:"ward_action,omitempty"`
 	WardName   *string                          `json:"ward_name,omitempty"`
+
+	// WindowSource Where the window came from.
+	WindowSource *IntentAnalysisPayloadWindowSource `json:"window_source,omitempty"`
 }
 
 // IntentAnalysisPayloadApproach defines model for IntentAnalysisPayload.Approach.
@@ -1392,6 +1536,61 @@ type IntentAnalysisPayloadStatus string
 
 // IntentAnalysisPayloadWardAction defines model for IntentAnalysisPayload.WardAction.
 type IntentAnalysisPayloadWardAction string
+
+// IntentAnalysisPayloadWindowSource Where the window came from.
+type IntentAnalysisPayloadWindowSource string
+
+// IntentAnalysisSettings The daemon-managed `~/.zbot/config/intent-analysis.json`. The card writes provider + model; the advanced fields are editable in the file. No token knobs — limits derive from the model.
+type IntentAnalysisSettings struct {
+	// DeadlineSeconds The whole decision's bound (default 45).
+	DeadlineSeconds *int `json:"deadline_seconds,omitempty"`
+
+	// MaxAttempts Completion attempts including correction retries (default 3).
+	MaxAttempts *int    `json:"max_attempts,omitempty"`
+	Model       *string `json:"model,omitempty"`
+	Provider    *string `json:"provider,omitempty"`
+
+	// ReasoningEffort Default `low` for glm-5.3* models, else `medium`.
+	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
+}
+
+// IntentAnalysisStatus defines model for IntentAnalysisStatus.
+type IntentAnalysisStatus struct {
+	// Effective The read-only derivation from the selected model.
+	Effective IntentAnalysisEffective `json:"effective"`
+
+	// Settings The daemon-managed `~/.zbot/config/intent-analysis.json`. The card writes provider + model; the advanced fields are editable in the file. No token knobs — limits derive from the model.
+	Settings IntentAnalysisSettings `json:"settings"`
+}
+
+// IntentAnalysisTestRequest defines model for IntentAnalysisTestRequest.
+type IntentAnalysisTestRequest struct {
+	// Goal The goal to analyze; absent = a built-in sample.
+	Goal *string `json:"goal,omitempty"`
+}
+
+// IntentAnalysisTestResult defines model for IntentAnalysisTestResult.
+type IntentAnalysisTestResult struct {
+	// Analysis The validated contract summary when analyzed.
+	Analysis      *IntentAnalysisPayload                `json:"analysis,omitempty"`
+	Attempts      int                                   `json:"attempts"`
+	ContextWindow *int                                  `json:"context_window,omitempty"`
+	DurationMs    int                                   `json:"duration_ms"`
+	Model         *string                               `json:"model,omitempty"`
+	PacketTokens  int                                   `json:"packet_tokens"`
+	Reason        *string                               `json:"reason,omitempty"`
+	Status        IntentAnalysisTestResultStatus        `json:"status"`
+	TokensIn      int                                   `json:"tokens_in"`
+	TokensOut     int                                   `json:"tokens_out"`
+	Trimmed       bool                                  `json:"trimmed"`
+	WindowSource  *IntentAnalysisTestResultWindowSource `json:"window_source,omitempty"`
+}
+
+// IntentAnalysisTestResultStatus defines model for IntentAnalysisTestResult.Status.
+type IntentAnalysisTestResultStatus string
+
+// IntentAnalysisTestResultWindowSource defines model for IntentAnalysisTestResult.WindowSource.
+type IntentAnalysisTestResultWindowSource string
 
 // Mcp defines model for Mcp.
 type Mcp struct {
@@ -1550,7 +1749,9 @@ type MessageRole string
 
 // Model defines model for Model.
 type Model struct {
-	Id string `json:"id"`
+	// ContextWindow The model's context window in tokens when the provider reports it (Ollama `/api/show` `*.context_length`); absent when unknown.
+	ContextWindow *int   `json:"context_window,omitempty"`
+	Id            string `json:"id"`
 }
 
 // ModelCatalog defines model for ModelCatalog.
@@ -1564,8 +1765,10 @@ type ModelCatalog struct {
 
 // ModelEntry defines model for ModelEntry.
 type ModelEntry struct {
-	Id       string `json:"id"`
-	Provider Id     `json:"provider"`
+	// ContextWindow The model's context window in tokens when known (discovered from the provider at refresh, or the limits table); absent when unknown — clients fall back to the 32,000 default.
+	ContextWindow *int   `json:"context_window,omitempty"`
+	Id            string `json:"id"`
+	Provider      Id     `json:"provider"`
 }
 
 // ModelList defines model for ModelList.
@@ -1858,7 +2061,7 @@ type SessionList struct {
 
 // SessionState defines model for SessionState.
 type SessionState struct {
-	// IntentAnalysis One pre-execution intent analysis outcome for a root goal run — analyzed (with the contract summary), bypassed (trivial goal), or failed (non-fatal; the run proceeds).
+	// IntentAnalysis One pre-execution intent analysis outcome for a root goal run — started (the call is in flight), analyzed (with the contract summary and its cost), bypassed (trivial goal or disabled), or failed (non-fatal; the run proceeds).
 	IntentAnalysis *IntentAnalysisPayload `json:"intent_analysis,omitempty"`
 	Session        Session                `json:"session"`
 }
@@ -2059,10 +2262,10 @@ type TimelineEvent struct {
 	Hook              *HookDecision             `json:"hook,omitempty"`
 	Id                Id                        `json:"id"`
 
-	// IntentAnalysis One pre-execution intent analysis outcome for a root goal run — analyzed (with the contract summary), bypassed (trivial goal), or failed (non-fatal; the run proceeds).
+	// IntentAnalysis Carries the analysis payload for the four `analysis_*` kinds (the property keeps its name for the session-state and card consumers).
 	IntentAnalysis *IntentAnalysisPayload `json:"intent_analysis,omitempty"`
 
-	// Kind Mirrors the domain TimelineEventKind set.
+	// Kind Mirrors the domain TimelineEventKind set. The analysis trail is `analysis_started` followed by exactly one terminal kind (`analysis_completed`, `analysis_bypassed`, `analysis_failed`); the pre-existing `intent_analysis` kind is gone (durable replay translates legacy rows to the terminal kind by status).
 	Kind      TimelineEventKind `json:"kind"`
 	ParentId  *Id               `json:"parent_id,omitempty"`
 	SessionId Id                `json:"session_id"`
@@ -2077,7 +2280,7 @@ type TimelineEvent struct {
 	Ward *WardEventPayload `json:"ward,omitempty"`
 }
 
-// TimelineEventKind Mirrors the domain TimelineEventKind set.
+// TimelineEventKind Mirrors the domain TimelineEventKind set. The analysis trail is `analysis_started` followed by exactly one terminal kind (`analysis_completed`, `analysis_bypassed`, `analysis_failed`); the pre-existing `intent_analysis` kind is gone (durable replay translates legacy rows to the terminal kind by status).
 type TimelineEventKind string
 
 // ToolCallPayload defines model for ToolCallPayload.
@@ -2302,6 +2505,12 @@ type PutDistillationJSONRequestBody = DistillationSettings
 // CreateGoalJSONRequestBody defines body for CreateGoal for application/json ContentType.
 type CreateGoalJSONRequestBody = GoalRequest
 
+// PutIntentAnalysisJSONRequestBody defines body for PutIntentAnalysis for application/json ContentType.
+type PutIntentAnalysisJSONRequestBody = IntentAnalysisSettings
+
+// TestIntentAnalysisJSONRequestBody defines body for TestIntentAnalysis for application/json ContentType.
+type TestIntentAnalysisJSONRequestBody = IntentAnalysisTestRequest
+
 // CreateMcpJSONRequestBody defines body for CreateMcp for application/json ContentType.
 type CreateMcpJSONRequestBody = McpCreate
 
@@ -2441,6 +2650,15 @@ type ServerInterface interface {
 	// CreateGoal Start an autonomous goal run
 	// (POST /api/goals)
 	CreateGoal(w http.ResponseWriter, r *http.Request)
+	// GetIntentAnalysis Current intent-analysis settings plus the model-derived effective limits
+	// (GET /api/intent-analysis)
+	GetIntentAnalysis(w http.ResponseWriter, r *http.Request)
+	// PutIntentAnalysis Update the intent-analyst's model selection (applies without restart)
+	// (PUT /api/intent-analysis)
+	PutIntentAnalysis(w http.ResponseWriter, r *http.Request)
+	// TestIntentAnalysis Run one real analysis for a goal and report its decision and cost
+	// (POST /api/intent-analysis/test)
+	TestIntentAnalysis(w http.ResponseWriter, r *http.Request)
 	// ListMcps List registered MCP servers
 	// (GET /api/mcps)
 	ListMcps(w http.ResponseWriter, r *http.Request)
@@ -2621,6 +2839,24 @@ func (_ Unimplemented) PutDistillation(w http.ResponseWriter, r *http.Request) {
 // CreateGoal Start an autonomous goal run
 // (POST /api/goals)
 func (_ Unimplemented) CreateGoal(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetIntentAnalysis Current intent-analysis settings plus the model-derived effective limits
+// (GET /api/intent-analysis)
+func (_ Unimplemented) GetIntentAnalysis(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PutIntentAnalysis Update the intent-analyst's model selection (applies without restart)
+// (PUT /api/intent-analysis)
+func (_ Unimplemented) PutIntentAnalysis(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// TestIntentAnalysis Run one real analysis for a goal and report its decision and cost
+// (POST /api/intent-analysis/test)
+func (_ Unimplemented) TestIntentAnalysis(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3058,6 +3294,48 @@ func (siw *ServerInterfaceWrapper) CreateGoal(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateGoal(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetIntentAnalysis operation middleware
+func (siw *ServerInterfaceWrapper) GetIntentAnalysis(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetIntentAnalysis(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutIntentAnalysis operation middleware
+func (siw *ServerInterfaceWrapper) PutIntentAnalysis(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutIntentAnalysis(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TestIntentAnalysis operation middleware
+func (siw *ServerInterfaceWrapper) TestIntentAnalysis(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestIntentAnalysis(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4249,6 +4527,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/distillation", wrapper.PutDistillation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/intent-analysis", wrapper.GetIntentAnalysis)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/intent-analysis", wrapper.PutIntentAnalysis)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/intent-analysis/test", wrapper.TestIntentAnalysis)
 	})
 
 	return r

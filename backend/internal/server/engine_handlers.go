@@ -375,7 +375,7 @@ func (s *Server) StreamSessionEvents(w http.ResponseWriter, r *http.Request, ses
 			flusher.Flush()
 		case evt := <-busCh:
 			live := sseEvent{ID: evt.ID, SessionID: evt.SessionID, Kind: string(evt.Kind), Text: evt.Text, Ward: evt.Ward}
-			if evt.Kind == domain.EventIntentAnalysis {
+			if isAnalysisKind(evt.Kind) {
 				live.Intent = evt.IntentAnalysis
 			}
 			writeSSE(w, live)
@@ -384,18 +384,38 @@ func (s *Server) StreamSessionEvents(w http.ResponseWriter, r *http.Request, ses
 	}
 }
 
+// sseEvent is one frame of the session stream.
 type sseEvent struct {
 	ID        string
 	SessionID string
 	Kind      string
 	Text      string
-	// Intent carries the intent_analysis payload when Kind is
-	// intent_analysis (both replay and live paths).
+	// Intent carries the analysis payload for the analysis_* kinds (both
+	// replay and live paths).
 	Intent *domain.IntentAnalysisPayload
 	// Ward carries the ward transition payload for ward_entered /
 	// ward_created events.
 	Ward *domain.WardEventPayload
 }
+
+// legacyIntentAnalysisKind is the pre-intent-analyst-agent event kind;
+// durable rows still carry it.
+const legacyIntentAnalysisKind = "intent_analysis"
+
+// isAnalysisKind reports whether a timeline kind belongs to the
+// analysis trail (started + the three terminal kinds).
+func isAnalysisKind(kind domain.TimelineEventKind) bool {
+	switch kind {
+	case domain.EventAnalysisStarted, domain.EventAnalysisCompleted, domain.EventAnalysisBypassed, domain.EventAnalysisFailed:
+		return true
+	}
+	return false
+}
+
+// analysisKindFor maps a persisted event's kind to the streamed kind: a
+// legacy `intent_analysis` row becomes the terminal analysis kind its
+// recorded status names, so pre-upgrade sessions keep rendering their
+// analysis card.
 
 func writeSSE(w http.ResponseWriter, e sseEvent) {
 	body := map[string]any{
@@ -424,19 +444,41 @@ func (s *Server) dbSessionEvents(sessionID, afterID string, limit int) ([]sseEve
 			Ward           *domain.WardEventPayload      `json:"ward"`
 		}
 		_ = json.Unmarshal([]byte(e.Payload), &payload)
-		ev := sseEvent{ID: e.ID, SessionID: e.SessionID, Kind: e.Kind, Text: payload.Text, Ward: payload.Ward}
-		if e.Kind == string(domain.EventIntentAnalysis) && payload.IntentAnalysis == nil {
-			// legacy/flat storage: the payload itself is the analysis JSON
-			var p domain.IntentAnalysisPayload
-			if json.Unmarshal([]byte(e.Payload), &p) == nil {
-				ev.Intent = &p
+		kind := e.Kind
+		if e.Kind == legacyIntentAnalysisKind {
+			// legacy/flat storage: the payload itself may be the analysis JSON
+			if payload.IntentAnalysis == nil {
+				var p domain.IntentAnalysisPayload
+				if json.Unmarshal([]byte(e.Payload), &p) == nil {
+					payload.IntentAnalysis = &p
+				}
 			}
-		} else {
+			kind = legacyAnalysisKind(payload.IntentAnalysis)
+		}
+		ev := sseEvent{ID: e.ID, SessionID: e.SessionID, Kind: kind, Text: payload.Text, Ward: payload.Ward}
+		if isAnalysisKind(domain.TimelineEventKind(kind)) {
 			ev.Intent = payload.IntentAnalysis
 		}
 		out = append(out, ev)
 	}
 	return out, nil
+}
+
+// legacyAnalysisKind picks the terminal analysis kind for a legacy
+// intent_analysis row from its status (a missing status reads as
+// completed — the row existed, so an analysis was recorded).
+func legacyAnalysisKind(p *domain.IntentAnalysisPayload) string {
+	if p == nil {
+		return string(domain.EventAnalysisCompleted)
+	}
+	switch p.Status {
+	case domain.IntentStatusBypassed:
+		return string(domain.EventAnalysisBypassed)
+	case domain.IntentStatusFailed:
+		return string(domain.EventAnalysisFailed)
+	default:
+		return string(domain.EventAnalysisCompleted)
+	}
 }
 
 // GetSessionState reads the session row plus its LATEST intent
@@ -463,7 +505,9 @@ func (s *Server) GetSessionState(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 	state := apigen.SessionState{Session: s.sessionView(sess, latest > 0, time.Time{})}
-	if ev, err := s.db.LatestEventOfKind(sid, "intent_analysis"); err != nil {
+	// The three terminal kinds plus the legacy pre-upgrade kind: an
+	// upgraded home's last pre-upgrade analysis still reads as state.
+	if ev, err := s.db.LatestEventOfKind(sid, string(domain.EventAnalysisCompleted), string(domain.EventAnalysisBypassed), string(domain.EventAnalysisFailed), legacyIntentAnalysisKind); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	} else if ev != nil {

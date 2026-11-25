@@ -25,9 +25,15 @@ const (
 	// success or failure — every chitta operation is observable.
 	EventChittaToolInvoked TimelineEventKind = "chitta_tool_invoked"
 
-	// EventIntentAnalysis carries one pre-execution intent analysis
-	// outcome (analyzed / bypassed / failed) for a root goal run.
-	EventIntentAnalysis TimelineEventKind = "intent_analysis"
+	// The analysis trail: analysis_started when the intent-analyst's call
+	// goes out, then exactly one terminal kind — analysis_completed (the
+	// contract + its cost), analysis_bypassed (router/config, with the
+	// reason), or analysis_failed (non-fatal, with the reason). The
+	// payload rides IntentAnalysis on all four.
+	EventAnalysisStarted   TimelineEventKind = "analysis_started"
+	EventAnalysisCompleted TimelineEventKind = "analysis_completed"
+	EventAnalysisBypassed  TimelineEventKind = "analysis_bypassed"
+	EventAnalysisFailed    TimelineEventKind = "analysis_failed"
 	// EventWardEntered — a session entered or switched into an existing
 	// ward (hosting is observable; constitution rule 4).
 	EventWardEntered TimelineEventKind = "ward_entered"
@@ -70,7 +76,9 @@ type TimelineEvent struct {
 
 // IntentAnalysisPayload details one pre-execution intent analysis. A
 // failed analysis is NON-FATAL: the run proceeds without one and
-// Reason says why.
+// Reason says why. The cost fields (Model, TokensIn/Out, DurationMS,
+// Attempts, Trimmed) are filled on the terminal kinds of an analyzed
+// run; the window fields on every analyzed event.
 type IntentAnalysisPayload struct {
 	Status        IntentAnalysisStatus `json:"status"`
 	Reason        string               `json:"reason,omitempty"`
@@ -86,7 +94,39 @@ type IntentAnalysisPayload struct {
 	RecommendedSkills []string `json:"recommended_skills,omitempty"`
 	RecommendedAgents []string `json:"recommended_agents,omitempty"`
 	Dropped           []string `json:"dropped,omitempty"`
+
+	// Model is the resolved analysis model as "provider/model".
+	Model string `json:"model,omitempty"`
+	// Mode is the output mode the analyst used ("text_json" until the
+	// provider-mode ladder lands).
+	Mode string `json:"mode,omitempty"`
+	// ContextWindow + WindowSource: the model-derived limits the decision
+	// ran under.
+	ContextWindow int                `json:"context_window,omitempty"`
+	WindowSource  IntentWindowSource `json:"window_source,omitempty"`
+	// TokensIn/Out sum over every attempt; DurationMS covers the whole
+	// decision; Attempts counts completions including correction retries.
+	TokensIn   int64 `json:"tokens_in,omitempty"`
+	TokensOut  int64 `json:"tokens_out,omitempty"`
+	DurationMS int64 `json:"duration_ms,omitempty"`
+	Attempts   int   `json:"attempts,omitempty"`
+	// Trimmed: the one safety valve fired (packet caps shrank to fit
+	// window − reserve).
+	Trimmed bool `json:"trimmed,omitempty"`
 }
+
+// IntentWindowSource says where the analysis model's context window came
+// from (the resolution chain: discovered → table → fallback).
+type IntentWindowSource string
+
+const (
+	// WindowOllama — discovered from the provider (Ollama /api/show).
+	WindowOllama IntentWindowSource = "ollama"
+	// WindowTable — the built-in or user-editable limits table.
+	WindowTable IntentWindowSource = "table"
+	// WindowFallback — unknown model, the conservative default.
+	WindowFallback IntentWindowSource = "fallback"
+)
 
 // WardEventPayload details a ward hosting transition (entered /
 // switched / created). Previous names the ward a switch left.
@@ -101,6 +141,8 @@ type WardEventPayload struct {
 type IntentAnalysisStatus string
 
 const (
+	// IntentStatusStarted marks the in-flight call (analysis_started).
+	IntentStatusStarted IntentAnalysisStatus = "started"
 	// IntentStatusAnalyzed marks a successful analysis.
 	IntentStatusAnalyzed IntentAnalysisStatus = "analyzed"
 	// IntentStatusBypassed marks a trivial goal (deterministic router).

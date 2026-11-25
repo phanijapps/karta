@@ -83,18 +83,27 @@ func (s *Store) FinishExecution(execID, status, errMsg string, tokensIn, tokensO
 
 var _ = sql.ErrNoRows
 
-// LatestEventOfKind returns the session's most recent event of one
-// kind (nil when none) — the session-state surface reads the latest
-// intent_analysis this way.
-func (s *Store) LatestEventOfKind(sessionID, kind string) (*Event, error) {
+// LatestEventOfKind returns the session's most recent event of any of
+// the given kinds (nil when none) — the session-state surface reads the
+// latest terminal analysis (completed / bypassed / failed) this way.
+func (s *Store) LatestEventOfKind(sessionID string, kinds ...string) (*Event, error) {
+	if len(kinds) == 0 {
+		return nil, fmt.Errorf("store: latest event of kind: no kinds")
+	}
 	var e Event
 	var execID, parentID sql.NullString
 	// rowid = insertion order (single writer): strictly monotonic,
 	// unlike the lexicographic RFC3339Nano text whose variable-width
 	// fractions (".1Z" vs ".11Z") can misorder.
-	err := s.db.QueryRow(`SELECT id, session_id, execution_id, parent_id, kind, payload, created_at
-		FROM timeline_events WHERE session_id = ? AND kind = ? ORDER BY rowid DESC LIMIT 1`,
-		sessionID, kind).Scan(&e.ID, &e.SessionID, &execID, &parentID, &e.Kind, &e.Payload, &e.CreatedAt)
+	q := `SELECT id, session_id, execution_id, parent_id, kind, payload, created_at
+		FROM timeline_events WHERE session_id = ? AND kind IN (?`
+	args := []any{sessionID, kinds[0]}
+	for _, k := range kinds[1:] {
+		q += `,?`
+		args = append(args, k)
+	}
+	q += `) ORDER BY rowid DESC LIMIT 1`
+	err := s.db.QueryRow(q, args...).Scan(&e.ID, &e.SessionID, &execID, &parentID, &e.Kind, &e.Payload, &e.CreatedAt)
 	e.ExecutionID, e.ParentID = execID.String, parentID.String
 	if err == sql.ErrNoRows {
 		return nil, nil
