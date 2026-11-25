@@ -43,6 +43,9 @@ type Host struct {
 	// enter: the engine adapter binds it to the session-row ward
 	// binding (the sidebar re-groups; the next run pre-loads).
 	onEnter func(ward string)
+	// onTransition reports the TYPED hosting transition (entered with
+	// previous, or created) for the Timeline event. Nil = no events.
+	onTransition func(ev Transition)
 	// orchModel is the ward's orchestrator override ("" = inherit).
 	orchModel string
 }
@@ -50,6 +53,19 @@ type Host struct {
 // SetOnEnter wires the post-enter observer (see Host.onEnter). Called
 // once at wiring time, before any tool can fire.
 func (h *Host) SetOnEnter(fn func(ward string)) { h.onEnter = fn }
+
+// Transition is one hosting change: the ward entered (or created) and
+// the ward it switched from ("" when none).
+type Transition struct {
+	Ward      string
+	Archetype string
+	Previous  string
+	Created   bool
+	Digest    string
+}
+
+// SetOnTransition wires the typed transition observer (Timeline events).
+func (h *Host) SetOnTransition(fn func(Transition)) { h.onTransition = fn }
 
 // NewHost builds an unhosted session host over a vault.
 func NewHost(vault *wards.Vault) *Host { return &Host{vault: vault} }
@@ -84,6 +100,12 @@ type WardView struct {
 // enter sets the active ward (switching replaces; the previous ward's
 // files are untouched) and returns the fresh WardView.
 func (h *Host) enter(ctx context.Context, name string) (*WardView, error) {
+	return h.enterKind(ctx, name, false)
+}
+
+// enterKind is enter with the transition kind: created=true reports a
+// ward_created event (the CreateTool path).
+func (h *Host) enterKind(ctx context.Context, name string, created bool) (*WardView, error) {
 	// Detail validates membership (typed unknown-ward error listing
 	// nothing — the TOOL layer adds the roster to the message).
 	if _, err := h.vault.Detail(ctx, name); err != nil {
@@ -101,16 +123,24 @@ func (h *Host) enter(ctx context.Context, name string) (*WardView, error) {
 	}
 	zc := wards.ReadZbotConfig(dir)
 	h.mu.Lock()
+	previous := h.wardName
 	h.wardName = name
 	h.wardDir = dir
 	h.conf = conf
 	h.constitution = constitution
 	h.digest = digestOf(conf, constitution)
 	h.orchModel = zc.OrchestratorModel()
-	onEnter := h.onEnter
+	onEnter, onTransition, digest := h.onEnter, h.onTransition, h.digest
+	archetype := ""
+	if conf != nil && conf.Archetype != "" {
+		archetype = conf.Archetype
+	}
 	h.mu.Unlock()
 	if onEnter != nil {
 		onEnter(name) // session-ward binding update (best-effort)
+	}
+	if onTransition != nil {
+		onTransition(Transition{Ward: name, Archetype: archetype, Previous: previous, Created: created, Digest: digest})
 	}
 	wards.TouchLastUsed(dir) // .zbot/config.yaml v2 state (best-effort)
 	return &WardView{Name: name, Dir: dir, Conf: conf, Constitution: constitution, Digest: h.digest}, nil
@@ -142,14 +172,30 @@ func (h *Host) RefreshDigest() bool {
 		h.mu.Unlock()
 		return false
 	}
-	conf := h.conf
 	h.mu.Unlock()
-	now := digestOf(conf, readConstitution(dir))
+	// Re-read BOTH the conf and the constitution from disk — an
+	// external edit to either changes the digest (hashing the cached
+	// conf would never notice a ward-conf.yaml edit).
+	now := digestOf(readConf(dir), readConstitution(dir))
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	changed := now != h.digest
 	h.digest = now
 	return changed
+}
+
+// readConf parses the ward's ward-conf.yaml (nil when absent or
+// unparseable — the same tolerance as enter).
+func readConf(wardDir string) *wards.Conf {
+	raw, err := readFileIfExists(filepath.Join(wardDir, "ward-conf.yaml"))
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parsed, perr := wards.ParseConf([]byte(raw), "ward-conf.yaml")
+	if perr != nil {
+		return nil
+	}
+	return &parsed
 }
 
 // readConstitution reads the ward's AGENTS.md body ("" when absent —
@@ -163,14 +209,17 @@ func readConstitution(wardDir string) string {
 }
 
 // digestOf hashes the conf-rendered layout + constitution.
+// digestOf fingerprints the ward by the RAW bytes of its conf and
+// constitution — any external edit (a comment, a nested layout node,
+// whitespace) changes the digest. Hashing the parsed struct missed
+// all of those (the gate caught it); the raw text is the identity.
 func digestOf(conf *wards.Conf, constitution string) string {
 	sum := sha256.New()
-	if conf != nil {
-		fmt.Fprintf(sum, "%s|%v|%s", conf.Archetype, conf.Layout.Kind, constitution)
-		for _, c := range conf.Layout.Children {
-			fmt.Fprintf(sum, ";%s,%s,%s", c.ID, c.Kind, c.Match)
-		}
+	if conf != nil && conf.Raw != "" {
+		sum.Write([]byte(conf.Raw))
 	}
+	sum.Write([]byte{0})
+	sum.Write([]byte(constitution))
 	return hex.EncodeToString(sum.Sum(nil))[:16]
 }
 

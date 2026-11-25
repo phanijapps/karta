@@ -1855,6 +1855,12 @@ type SessionState struct {
 	// IntentAnalysis One pre-execution intent analysis outcome for a root goal run — analyzed (with the contract summary), bypassed (trivial goal), or failed (non-fatal; the run proceeds).
 	IntentAnalysis *IntentAnalysisPayload `json:"intent_analysis,omitempty"`
 	Session        Session                `json:"session"`
+
+	// Ward A ward hosting transition on a session — `ward_entered` (enter
+	// or switch into an existing ward) or `ward_created` (a new ward
+	// instantiated from an archetype). Constitution rule 4: hosting
+	// changes are observable, never silent.
+	Ward *WardEventPayload `json:"ward,omitempty"`
 }
 
 // SessionStatus defines model for SessionStatus.
@@ -2063,6 +2069,12 @@ type TimelineEvent struct {
 	Text      *string           `json:"text,omitempty"`
 	Timestamp time.Time         `json:"timestamp"`
 	ToolCall  *ToolCallPayload  `json:"tool_call,omitempty"`
+
+	// Ward A ward hosting transition on a session — `ward_entered` (enter
+	// or switch into an existing ward) or `ward_created` (a new ward
+	// instantiated from an archetype). Constitution rule 4: hosting
+	// changes are observable, never silent.
+	Ward *WardEventPayload `json:"ward,omitempty"`
 }
 
 // TimelineEventKind Mirrors the domain TimelineEventKind set.
@@ -2106,6 +2118,23 @@ type Ward struct {
 
 // WardLintStatus defines model for Ward.LintStatus.
 type WardLintStatus string
+
+// WardEventPayload A ward hosting transition on a session — `ward_entered` (enter
+// or switch into an existing ward) or `ward_created` (a new ward
+// instantiated from an archetype). Constitution rule 4: hosting
+// changes are observable, never silent.
+type WardEventPayload struct {
+	Archetype string `json:"archetype"`
+
+	// Digest The constitution + layout digest at entry.
+	Digest *string `json:"digest,omitempty"`
+
+	// Previous The ward this session was hosted in before a switch (absent on the first entry or a creation).
+	Previous *string `json:"previous,omitempty"`
+
+	// Ward The ward's directory name.
+	Ward string `json:"ward"`
+}
 
 // WardFinding defines model for WardFinding.
 type WardFinding struct {

@@ -9,10 +9,17 @@ package main
 // ward composes the ## Active Ward section after the persona.
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
+	"time"
 
 	"zbot/backend/internal/chat"
+	"zbot/backend/internal/domain"
+	"zbot/backend/internal/eventbus"
 	"zbot/backend/internal/mcpclient"
+	zbotstore "zbot/backend/internal/store"
 	"zbot/backend/internal/tools"
 	"zbot/backend/internal/wards"
 	"zbot/backend/internal/wardtools"
@@ -25,8 +32,28 @@ type emptyProvider struct{}
 func (emptyProvider) Tools() []tools.Tool { return nil }
 
 // wireChatToolPlane mounts the ward + MCP planes on the lean exchange.
-func wireChatToolPlane(chatSvc *chat.Service, vault *wards.Vault, mcpExec *mcpclient.Executor) {
+func wireChatToolPlane(chatSvc *chat.Service, vault *wards.Vault, mcpExec *mcpclient.Executor, db *zbotstore.Store, bus *eventbus.Bus) {
 	host := wardtools.NewHost(vault)
+	// Hosting transitions are observable on the chat surface too (the
+	// lean exchange emits session/tool rows, not Timeline events — the
+	// host's own emitter covers the ward_entered / ward_created events
+	// for the default session). Persisted durable-first, then published.
+	host.SetOnTransition(func(tr wardtools.Transition) {
+		kind, text := domain.EventWardEntered, "entered ward "+tr.Ward
+		if tr.Previous != "" {
+			text = "switched ward " + tr.Previous + " → " + tr.Ward
+		}
+		if tr.Created {
+			kind, text = domain.EventWardCreated, "created ward "+tr.Ward
+		}
+		payload := &domain.WardEventPayload{Ward: tr.Ward, Archetype: tr.Archetype, Previous: tr.Previous, Digest: tr.Digest}
+		id := fmt.Sprintf("evt-ward-%d", time.Now().UnixNano())
+		raw, _ := json.Marshal(map[string]any{"text": text, "ward": payload})
+		_ = db.AppendEvent(zbotstore.Event{ID: id, SessionID: chat.DefaultSessionID, Kind: string(kind), Payload: string(raw)}) //nolint:errcheck // attempted-durable-first
+		_ = bus.Publish(context.Background(), domain.TimelineEvent{                                                             //nolint:errcheck // fire-and-forget // ctx-ok: F-15
+			ID: id, SessionID: chat.DefaultSessionID, Kind: kind, Text: text, Ward: payload, Timestamp: time.Now().UTC(),
+		})
+	})
 	chatSvc.SetExtraTools(func() []tools.Tool {
 		set := wardtools.ChatToolSet(host)
 		if mcpExec != nil {

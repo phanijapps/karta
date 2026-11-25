@@ -2,8 +2,12 @@ package eino
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
+	"zbot/backend/internal/domain"
+	"zbot/backend/internal/store"
 	"zbot/backend/internal/tools"
 	"zbot/backend/internal/wards"
 	"zbot/backend/internal/wardtools"
@@ -62,9 +66,37 @@ func (a *Adapter) wardHost(sessionID string) *wardtools.Host {
 			binder := a.wardBinder
 			h.SetOnEnter(func(ward string) { binder(sessionID, ward) })
 		}
+		// Hosting transitions are observable (constitution rule 4): the
+		// session's Timeline carries ward_entered / ward_created with
+		// the typed payload — persisted durable-first, then published.
+		h.SetOnTransition(func(tr wardtools.Transition) { a.emitWardEvent(sessionID, tr) })
 		a.wardHosts[sessionID] = h
 	}
 	return h
+}
+
+// emitWardEvent persists + publishes a ward_entered / ward_created
+// Timeline event for the session (attempted-durable-first, the
+// adapter's emit posture).
+func (a *Adapter) emitWardEvent(sessionID string, tr wardtools.Transition) {
+	kind := domain.EventWardEntered
+	text := "entered ward " + tr.Ward
+	if tr.Previous != "" {
+		text = "switched ward " + tr.Previous + " → " + tr.Ward
+	}
+	if tr.Created {
+		kind, text = domain.EventWardCreated, "created ward "+tr.Ward
+	}
+	payload := &domain.WardEventPayload{Ward: tr.Ward, Archetype: tr.Archetype, Previous: tr.Previous, Digest: tr.Digest}
+	evt := domain.TimelineEvent{
+		ID: a.idGen(), SessionID: sessionID, Kind: kind, Text: text, Ward: payload,
+		Timestamp: time.Now().UTC(),
+	}
+	raw, _ := json.Marshal(map[string]any{"text": text, "ward": payload})
+	_ = a.st.AppendEvent(store.Event{ID: evt.ID, SessionID: sessionID, Kind: string(kind), Payload: string(raw)}) //nolint:errcheck // attempted-durable-first (F-15 posture)
+	if a.bus != nil {
+		_ = a.bus.Publish(context.Background(), evt) //nolint:errcheck // fire-and-forget emit (F-15) // ctx-ok: F-15
+	}
 }
 
 // filterWardTools applies an agent's tool allowlist to a mounted

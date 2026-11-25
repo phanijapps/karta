@@ -1234,6 +1234,22 @@ export interface components {
         SessionState: {
             session: components["schemas"]["Session"];
             intent_analysis?: components["schemas"]["IntentAnalysisPayload"];
+            ward?: components["schemas"]["WardEventPayload"];
+        };
+        /**
+         * @description A ward hosting transition on a session — `ward_entered` (enter
+         *     or switch into an existing ward) or `ward_created` (a new ward
+         *     instantiated from an archetype). Constitution rule 4: hosting
+         *     changes are observable, never silent.
+         */
+        WardEventPayload: {
+            /** @description The ward's directory name. */
+            ward: string;
+            archetype: string;
+            /** @description The ward this session was hosted in before a switch (absent on the first entry or a creation). */
+            previous?: string;
+            /** @description The constitution + layout digest at entry. */
+            digest?: string;
         };
         CreateSessionRequest: {
             /**
@@ -1311,6 +1327,7 @@ export interface components {
             compaction?: components["schemas"]["CompactionStats"];
             chitta_tool_invoked?: components["schemas"]["ChittaToolInvokedPayload"];
             intent_analysis?: components["schemas"]["IntentAnalysisPayload"];
+            ward?: components["schemas"]["WardEventPayload"];
         };
         /** @description One pre-execution intent analysis outcome for a root goal run — analyzed (with the contract summary), bypassed (trivial goal), or failed (non-fatal; the run proceeds). */
         IntentAnalysisPayload: {

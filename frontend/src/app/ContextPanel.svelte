@@ -3,6 +3,7 @@
   import { getWard, type Ward } from '../shared/api/client';
   import type { Sessions } from '../entities/session/session.svelte';
   import WorkSteps from '../features/chat-stream/WorkSteps.svelte';
+  import { createTimeline } from '../shared/sse/timeline.svelte';
 
   // FSD note: the app layer composes features — importing the step view
   // here is app → features (allowed), not a cross-feature import.
@@ -17,6 +18,24 @@
     tab = sessions.isResearch ? 'work' : 'context';
   });
   const running = $derived(sessions.isRunning(sessions.activeId));
+  // The session's Timeline (SSE with durable replay): the Work tab
+  // renders ward transitions (📁 entered / created / switched) —
+  // hosting changes are events, not transcript rows, so they live only
+  // here. The stream stays connected after a run completes (the replay
+  // keeps the transitions visible; it only drops on session switch).
+  const live = createTimeline();
+  $effect(() => {
+    const id = sessions.activeId;
+    live.connect(id);
+    return () => live.close();
+  });
+  const wardLines = $derived.by(() => {
+    const out: { id: string; text: string }[] = [];
+    for (const ev of live.events) {
+      if (ev.kind === 'ward_entered' || ev.kind === 'ward_created') out.push({ id: ev.id, text: ev.text });
+    }
+    return out;
+  });
   // The live turn's latest intent row (auto-opens in the step view).
   const liveTurnId = $derived.by<string | undefined>(() => {
     if (!running) return undefined;
@@ -143,6 +162,13 @@
             <WorkSteps messages={turn.rows} liveTurnId={turn.live ? liveTurnId : undefined} />
           </section>
         {/each}
+        {#if wardLines.length}
+          <section class="work-turn" aria-label="Ward transitions">
+            {#each wardLines as w (w.id)}
+              <p class="ward-line"><FolderOpen size={12} aria-hidden="true" /> {w.text}</p>
+            {/each}
+          </section>
+        {/if}
       {/if}
     </div>
   {:else}
@@ -226,6 +252,7 @@
   @keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
   .context-body.work { padding: var(--ds-space-3); gap: var(--ds-space-4); }
   .work-turn { display: grid; gap: .25rem; }
+  .ward-line { display: flex; align-items: center; gap: .35rem; margin: 0; font-size: .76rem; color: var(--ds-color-success, #22c55e); }
   .turn-user { margin: 0 0 .15rem; font-size: .72rem; color: var(--ds-color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 2px solid var(--ds-color-primary, #6366f1); padding-left: .4rem; }
   header { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: var(--ds-space-2) var(--ds-space-3); border-bottom: 1px solid var(--ds-color-border); }
   .context-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--ds-space-4); display: flex; flex-direction: column; gap: var(--ds-space-6); color: var(--ds-color-muted); font-size: var(--ds-font-control); line-height: 1.7; }

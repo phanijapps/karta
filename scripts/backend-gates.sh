@@ -13,7 +13,7 @@ cd "$(dirname "$0")/../backend"
 # Optional mode: --budget runs the suite and enforces rule 4.3's
 # measured warm-run budget (machine-qualified; constants below).
 if [[ "${1:-}" == "--budget" ]]; then
-  TOTAL_BUDGET=28   # seconds, warm run, this dev box (go-rules.md 4.3). Raised 25→28 with the add-chat-modes change: the mode-branch tests added ~2s; observed 21.6s + variance headroom. Still gates regressions hard.
+  TOTAL_BUDGET=30   # seconds, warm run, this dev box (go-rules.md 4.3). Raised 25→28 with add-chat-modes (mode-branch tests ~2s); 28→30 with ward-v2/harden-mcp/add-ward-hosting (REAL-process tests: shell group-kill poll, spawned stdio MCP servers, symlink containment — ~2.5s of wall time that cannot shrink without losing the proofs). Observed 28.2s + variance headroom. Still gates regressions hard.
   PER_PKG=5         # seconds; over this a package is flagged
   start=$(date +%s)
   out=$(CGO_ENABLED=1 go test -count=1 ./... 2>&1)

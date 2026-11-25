@@ -67,6 +67,9 @@ func (n Node) IsRepeat() bool { return n.Repeat != nil && *n.Repeat }
 type Conf struct {
 	Archetype string `yaml:"archetype,omitempty"`
 	Layout    Node   `yaml:"layout"`
+	// Raw is the source text (yaml:"-"): the hosting digest fingerprints
+	// it so ANY external edit — a comment, whitespace — is detectable.
+	Raw string `yaml:"-"`
 }
 
 // ConfParseError is a typed ward-conf.yaml parse failure naming the
@@ -104,6 +107,7 @@ func ParseConf(raw []byte, source string) (Conf, error) {
 	if len([]rune(conf.Archetype)) > maxArchetypeLen {
 		return Conf{}, &ConfParseError{Source: source, Details: []string{fmt.Sprintf("archetype: must be at most %d characters", maxArchetypeLen)}}
 	}
+	conf.Raw = string(raw)
 	return conf, nil
 }
 

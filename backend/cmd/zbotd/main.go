@@ -353,7 +353,7 @@ func run(ctx context.Context, homeFlag string) error {
 
 	// Quick chat's tool plane (operator direction): ward read/write/
 	// shell + the live MCP tools — no clock/echo/chitta tools.
-	wireChatToolPlane(chatSvc, wardVault, mcpExec)
+	wireChatToolPlane(chatSvc, wardVault, mcpExec, db, bus)
 
 	// The session model (add-chat-modes): research sessions run the
 	// engine pipeline in their own transcript, and ward enters update

@@ -24,6 +24,7 @@ import (
 	"zbot/backend/internal/store"
 	"zbot/backend/internal/tools"
 	"zbot/backend/internal/wards"
+	"zbot/backend/internal/wardtools"
 )
 
 // fakeProviderStore satisfies the adapter's ProviderStore seam with a
@@ -1079,5 +1080,103 @@ func TestHostedRootRunComposesActiveWard(t *testing.T) {
 	defer mu.Unlock()
 	if len(binds) != 1 || binds[0] != "s-ward/stock-analysis" {
 		t.Fatalf("binder fired: %v (EnsureWard idempotence must not double-fire)", binds)
+	}
+}
+
+// TestWardHostingEvents (add-ward-hosting 1.2 + 2.1 + 3.1): ward
+// enters/creates emit TYPED ward_entered / ward_created events
+// (persisted + published); a hosted child's prompt carries the
+// ## Active Ward section; the delegate description carries the ward
+// guard once hosted.
+func TestWardHostingEvents(t *testing.T) {
+	vault := newWardVault(t)
+	mf := &modelFactory{}
+	a := newTestAdapter(t, mf)
+	a.snapFn = func() registry.Snapshot { return registry.Snapshot{} }
+	a.SetWardVault(func() *wards.Vault { return vault })
+	sub := a.bus.Subscribe(context.Background(), "s-ev")
+	// Block the root inside its model call so the child wiring is
+	// observable deterministically… simpler: drive the host directly
+	// (the tools' path) and read the events.
+	host := a.wardHost("s-ev")
+	use := wardtools.UseTool{Host: host, Vault: vault}
+	if res := use.Exec(context.Background(), `{"name":"stock-analysis"}`); res.Err != nil {
+		t.Fatalf("use: %v", res.Err)
+	}
+	// Switch: entered → entered with previous.
+	if res := use.Exec(context.Background(), `{"name":"stock-analysis"}`); res.Err != nil {
+		t.Fatalf("re-enter: %v", res.Err)
+	}
+	evs := drain(sub.Events(), 500*time.Millisecond)
+	var entered int
+	for _, ev := range evs {
+		if ev.Kind == domain.EventWardEntered {
+			entered++
+			if ev.Ward == nil || ev.Ward.Ward != "stock-analysis" || ev.Ward.Archetype == "" {
+				t.Fatalf("ward payload: %+v", ev.Ward)
+			}
+		}
+	}
+	if entered != 2 {
+		t.Fatalf("want 2 ward_entered events (enter + switch), got %d of %d", entered, len(evs))
+	}
+	// Persisted too (durable-first).
+	stored, _ := a.st.Events("s-ev", "", 64)
+	var persisted int
+	for _, e := range stored {
+		if e.Kind == string(domain.EventWardEntered) {
+			persisted++
+		}
+	}
+	if persisted != 2 {
+		t.Fatalf("persisted ward events: %d", persisted)
+	}
+	// Created: the CreateTool path emits ward_created.
+	create := wardtools.CreateTool{Host: host, Vault: vault}
+	if res := create.Exec(context.Background(), `{"name":"fresh-ward","archetype":"generic"}`); res.Err != nil {
+		t.Fatalf("create: %v", res.Err)
+	}
+	evs = drain(sub.Events(), 500*time.Millisecond)
+	created := false
+	for _, ev := range evs {
+		if ev.Kind == domain.EventWardCreated && ev.Ward != nil && ev.Ward.Ward == "fresh-ward" && ev.Ward.Previous == "stock-analysis" {
+			created = true
+		}
+	}
+	if !created {
+		t.Fatalf("ward_created missing: %+v", evs)
+	}
+
+	// Child Active Ward section: the delegate tool's child composes it.
+	// (The root run's composition is pinned by
+	// TestHostedRootRunComposesActiveWard.)
+	in := runInput{sessionID: "s-ev", wardHost: host}
+	if activeWardSection(in) == "" {
+		t.Fatal("active ward section empty while hosted")
+	}
+	// Delegate description carries the ward guard while hosted.
+	in.grant, in.depth = 2, 0
+	desc := a.delegateTool(context.Background(), make(chan domain.TimelineEvent, 1), in).Def().Description
+	if !strings.Contains(desc, "cannot enter, switch, or create wards") {
+		t.Fatalf("delegate description lacks the ward guard: %q", desc)
+	}
+}
+
+// drain reads a subscription until quiet (test helper).
+func drain(ch <-chan domain.TimelineEvent, quiet time.Duration) []domain.TimelineEvent {
+	var out []domain.TimelineEvent
+	timer := time.NewTimer(quiet)
+	defer timer.Stop()
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return out
+			}
+			out = append(out, ev)
+			timer.Reset(quiet)
+		case <-timer.C:
+			return out
+		}
 	}
 }

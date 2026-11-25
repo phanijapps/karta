@@ -378,6 +378,8 @@ func workFrame(evt domain.TimelineEvent) string {
 			return ""
 		}
 		return "🧠 " + clamp(evt.Text)
+	case domain.EventWardEntered, domain.EventWardCreated:
+		return "📁 " + clamp(evt.Text)
 	default:
 		return ""
 	}

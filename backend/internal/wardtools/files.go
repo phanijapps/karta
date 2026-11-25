@@ -67,12 +67,15 @@ func (t ReadTool) Exec(ctx context.Context, argsJSON string) Result {
 	if err != nil {
 		return Result{Err: err}
 	}
-	raw, err := os.ReadFile(full)
+	raw, err := readNoFollow(full)
 	if err != nil {
 		return Result{Err: fmt.Errorf("read: %w", err)}
 	}
-	t.F.Host.RefreshDigest() // reading observes the current ward state
-	return Result{Output: string(raw)}
+	out := string(raw)
+	if t.F.Host.RefreshDigest() {
+		out += "\nWARNING: the ward changed outside this session since the last operation (digest mismatch)."
+	}
+	return Result{Output: out}
 }
 
 // WriteTool is the exposed write (ward-scoped).
@@ -100,11 +103,11 @@ func (t WriteTool) Exec(ctx context.Context, argsJSON string) Result {
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return Result{Err: fmt.Errorf("write: %w", err)}
 	}
-	if err := os.WriteFile(full, []byte(args.Content), 0o644); err != nil {
+	if err := writeNoFollow(full, []byte(args.Content)); err != nil {
 		return Result{Err: fmt.Errorf("write: %w", err)}
 	}
 	out := "wrote " + args.Path
-	if t.F.Host.RefreshDigest() {
+	if warn := t.F.Host.RefreshDigest(); warn {
 		out += "\nWARNING: the ward changed outside this session since the last operation (digest mismatch)."
 	}
 	if warn := t.F.lintWarning(ctx, args.Path); warn != "" {
@@ -151,10 +154,16 @@ func (t ListTool) Exec(ctx context.Context, argsJSON string) Result {
 		return Result{Err: fmt.Errorf("ward_list: %w", err)}
 	}
 	sort.Strings(files)
-	if len(files) == 0 {
-		return Result{Output: "(empty)"}
+	out := "(empty)"
+	if len(files) > 0 {
+		out = strings.Join(files, "\n")
 	}
-	return Result{Output: strings.Join(files, "\n")}
+	// Digest discipline: EVERY ward tool call reports a ward that
+	// changed outside the session (the spec's "next call warns").
+	if t.F.Host.RefreshDigest() {
+		out += "\nWARNING: the ward changed outside this session since the last operation (digest mismatch)."
+	}
+	return Result{Output: out}
 }
 
 // resolve maps a ward-relative path to the absolute path INSIDE the

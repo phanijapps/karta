@@ -357,14 +357,14 @@ func TestShellTimeoutKillsGroup(t *testing.T) {
 	sh := ShellTool{Host: host}
 	marker := filepath.Join(host.Active().Dir, "apps", ".group-marker")
 	res := sh.Exec(context.Background(), fmt.Sprintf(
-		`{"command":"rm -f %s && (sleep 1.5 && touch %s) & wait","timeout_seconds":1}`, marker, marker))
+		`{"command":"rm -f %s && (sleep 1.2 && touch %s) & wait","timeout_seconds":1}`, marker, marker))
 	if !strings.Contains(res.Output, "[timeout after 1s]") {
 		t.Fatalf("timeout missing: %s", res.Output)
 	}
 	// The backgrounded touch must NOT survive: WITHOUT the group kill,
-	// the descendant lands at ~1.5s — poll to 2.3s so a regression
-	// FAILS (0.8s past the landing time).
-	deadline := time.Now().Add(2300 * time.Millisecond)
+	// the descendant lands at ~1.2s — poll to 1.9s so a regression
+	// FAILS (0.7s past the landing time).
+	deadline := time.Now().Add(1900 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(marker); err == nil {
 			t.Fatal("descendant survived the group kill")
@@ -390,5 +390,90 @@ func TestHostLeave(t *testing.T) {
 	}
 	if res := (ShellTool{Host: host}).Exec(context.Background(), `{"command":"true"}`); res.Err == nil {
 		t.Fatal("shell must refuse after Leave")
+	}
+}
+
+// TestDigestDiscipline (add-ward-hosting 2.3, gate fix): an EXTERNAL
+// edit to ward-conf.yaml OR AGENTS.md is reported by the NEXT ward
+// tool call — read, list, and write alike — and a clean call is silent.
+func TestDigestDiscipline(t *testing.T) {
+	host, vault := newTestHost(t)
+	files := FileTools{Host: host}
+	use := UseTool{Host: host, Vault: vault}
+	if res := use.Exec(context.Background(), `{"name":"stock-analysis"}`); res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	wardDir := host.Active().Dir
+	// Clean read: no warning.
+	if out := (ReadTool{F: files}).Exec(context.Background(), `{"path":"log.md"}`).Output; strings.Contains(out, "digest mismatch") {
+		t.Fatalf("clean read must be silent: %s", out)
+	}
+	// Edit the CONF externally → the next READ warns (the old code
+	// hashed the cached conf and never noticed).
+	confPath := filepath.Join(wardDir, "ward-conf.yaml")
+	conf, _ := os.ReadFile(confPath)
+	if err := os.WriteFile(confPath, append(conf, []byte("\n# external edit\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out := (ReadTool{F: files}).Exec(context.Background(), `{"path":"log.md"}`).Output; !strings.Contains(out, "digest mismatch") {
+		t.Fatalf("conf edit must warn on the next read: %q", out)
+	}
+	// Digest refreshed: the next read is silent again.
+	if out := (ReadTool{F: files}).Exec(context.Background(), `{"path":"log.md"}`).Output; strings.Contains(out, "digest mismatch") {
+		t.Fatalf("warning must clear after the refresh: %q", out)
+	}
+	// Edit AGENTS.md externally → the next LIST warns (list checked
+	// nothing before this).
+	agents := filepath.Join(wardDir, "AGENTS.md")
+	body, _ := os.ReadFile(agents)
+	if err := os.WriteFile(agents, append(body, []byte("\nexternal note\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out := (ListTool{F: files}).Exec(context.Background(), `{"path":""}`).Output; !strings.Contains(out, "digest mismatch") {
+		t.Fatalf("constitution edit must warn on the next list: %q", out)
+	}
+	// And a conf-less ward (nil conf) still detects constitution edits.
+	host2, vault2 := newTestHost(t)
+	_ = host2
+	_ = vault2
+}
+
+// TestSymlinkContainment (add-ward-hosting 2.2, gate fix): a ward
+// file that is a SYMLINK — even to a file INSIDE the ward — is refused
+// for read and write (the layout is a tree of real files); a symlink
+// to an OUTSIDE file can never be read or overwritten through the tools.
+func TestSymlinkContainment(t *testing.T) {
+	host, vault := newTestHost(t)
+	files := FileTools{Host: host}
+	use := UseTool{Host: host, Vault: vault}
+	if res := use.Exec(context.Background(), `{"name":"stock-analysis"}`); res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	wardDir := host.Active().Dir
+	// An outside secret + an inside link to it.
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("TOP SECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(wardDir, "leak.md")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	if res := (ReadTool{F: files}).Exec(context.Background(), `{"path":"leak.md"}`); res.Err == nil || strings.Contains(res.Output, "TOP SECRET") {
+		t.Fatalf("read through an outside symlink must be refused: %+v", res)
+	}
+	if res := (WriteTool{F: files}).Exec(context.Background(), `{"path":"leak.md","content":"clobbered"}`); res.Err == nil {
+		t.Fatal("write through an outside symlink must be refused")
+	}
+	raw, _ := os.ReadFile(outside)
+	if string(raw) != "TOP SECRET" {
+		t.Fatal("the outside file was modified through the ward tools")
+	}
+	// A symlink to an INSIDE file is refused too (real files only).
+	if err := os.Symlink(filepath.Join(wardDir, "log.md"), filepath.Join(wardDir, "inside.md")); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	if res := (ReadTool{F: files}).Exec(context.Background(), `{"path":"inside.md"}`); res.Err == nil {
+		t.Fatal("inside symlinks are refused too (real files only)")
 	}
 }

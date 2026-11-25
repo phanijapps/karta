@@ -28,6 +28,12 @@ const (
 	// EventIntentAnalysis carries one pre-execution intent analysis
 	// outcome (analyzed / bypassed / failed) for a root goal run.
 	EventIntentAnalysis TimelineEventKind = "intent_analysis"
+	// EventWardEntered — a session entered or switched into an existing
+	// ward (hosting is observable; constitution rule 4).
+	EventWardEntered TimelineEventKind = "ward_entered"
+	// EventWardCreated — a session instantiated a new ward from an
+	// archetype and entered it.
+	EventWardCreated TimelineEventKind = "ward_created"
 	// EventChatDelta — a VOLATILE streamed chat fragment (reasoning or
 	// content) during a send; ephemeral typing notification, never
 	// persisted to the timeline (the persisted rows are the truth).
@@ -59,6 +65,7 @@ type TimelineEvent struct {
 	// IntentAnalysis carries the pre-execution analysis outcome
 	// (exactly one of analyzed/bypassed/failed).
 	IntentAnalysis *IntentAnalysisPayload `json:"intent_analysis,omitempty"`
+	Ward           *WardEventPayload      `json:"ward,omitempty"`
 }
 
 // IntentAnalysisPayload details one pre-execution intent analysis. A
@@ -79,6 +86,15 @@ type IntentAnalysisPayload struct {
 	RecommendedSkills []string `json:"recommended_skills,omitempty"`
 	RecommendedAgents []string `json:"recommended_agents,omitempty"`
 	Dropped           []string `json:"dropped,omitempty"`
+}
+
+// WardEventPayload details a ward hosting transition (entered /
+// switched / created). Previous names the ward a switch left.
+type WardEventPayload struct {
+	Ward      string `json:"ward"`
+	Archetype string `json:"archetype"`
+	Previous  string `json:"previous,omitempty"`
+	Digest    string `json:"digest,omitempty"`
 }
 
 // IntentAnalysisStatus is the analysis outcome.

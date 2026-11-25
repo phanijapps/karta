@@ -374,7 +374,7 @@ func (s *Server) StreamSessionEvents(w http.ResponseWriter, r *http.Request, ses
 			_, _ = fmt.Fprintf(w, ": heartbeat\n\n")
 			flusher.Flush()
 		case evt := <-busCh:
-			live := sseEvent{ID: evt.ID, SessionID: evt.SessionID, Kind: string(evt.Kind), Text: evt.Text}
+			live := sseEvent{ID: evt.ID, SessionID: evt.SessionID, Kind: string(evt.Kind), Text: evt.Text, Ward: evt.Ward}
 			if evt.Kind == domain.EventIntentAnalysis {
 				live.Intent = evt.IntentAnalysis
 			}
@@ -392,6 +392,9 @@ type sseEvent struct {
 	// Intent carries the intent_analysis payload when Kind is
 	// intent_analysis (both replay and live paths).
 	Intent *domain.IntentAnalysisPayload
+	// Ward carries the ward transition payload for ward_entered /
+	// ward_created events.
+	Ward *domain.WardEventPayload
 }
 
 func writeSSE(w http.ResponseWriter, e sseEvent) {
@@ -400,6 +403,9 @@ func writeSSE(w http.ResponseWriter, e sseEvent) {
 	}
 	if e.Intent != nil {
 		body["intent_analysis"] = e.Intent
+	}
+	if e.Ward != nil {
+		body["ward"] = e.Ward
 	}
 	data, _ := json.Marshal(body)
 	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Kind, data)
@@ -415,9 +421,10 @@ func (s *Server) dbSessionEvents(sessionID, afterID string, limit int) ([]sseEve
 		var payload struct {
 			Text           string                        `json:"text"`
 			IntentAnalysis *domain.IntentAnalysisPayload `json:"intent_analysis"`
+			Ward           *domain.WardEventPayload      `json:"ward"`
 		}
 		_ = json.Unmarshal([]byte(e.Payload), &payload)
-		ev := sseEvent{ID: e.ID, SessionID: e.SessionID, Kind: e.Kind, Text: payload.Text}
+		ev := sseEvent{ID: e.ID, SessionID: e.SessionID, Kind: e.Kind, Text: payload.Text, Ward: payload.Ward}
 		if e.Kind == string(domain.EventIntentAnalysis) && payload.IntentAnalysis == nil {
 			// legacy/flat storage: the payload itself is the analysis JSON
 			var p domain.IntentAnalysisPayload

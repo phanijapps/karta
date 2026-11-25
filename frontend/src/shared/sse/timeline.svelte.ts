@@ -13,13 +13,16 @@ export type TimelineEventKind =
   | "hook_decision"
   | "compaction_triggered"
   | "chitta_tool_invoked"
-  | "intent_analysis";
+  | "intent_analysis"
+  | "ward_entered"
+  | "ward_created";
 
 export type TimelineEvent = {
   id: string;
   kind: TimelineEventKind | string;
   text: string;
   intentAnalysis?: IntentAnalysisPayload | Record<string, unknown>;
+  ward?: { ward: string; archetype?: string; previous?: string; digest?: string };
   receivedAt: number;
 };
 
@@ -61,12 +64,14 @@ export function createTimeline() {
           kind?: string;
           text?: string;
           intent_analysis?: IntentAnalysisPayload;
+          ward?: TimelineEvent["ward"];
         };
         push({
           id: raw.id ?? `${kind}-${msg.lastEventId || Math.random()}`,
           kind: raw.kind ?? kind,
           text: raw.text ?? "",
           intentAnalysis: raw.intent_analysis,
+          ward: raw.ward,
           receivedAt: Date.now(),
         });
       } catch {
@@ -82,6 +87,8 @@ export function createTimeline() {
       "compaction_triggered",
       "chitta_tool_invoked",
       "intent_analysis",
+      "ward_entered",
+      "ward_created",
     ];
     for (const k of kinds) es.addEventListener(k, handle(k) as EventListener);
     es.onopen = () => {

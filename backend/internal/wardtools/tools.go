@@ -101,7 +101,7 @@ func (t CreateTool) Exec(ctx context.Context, argsJSON string) Result {
 	if err := t.instantiate(ctx, name, archetype); err != nil {
 		return Result{Err: fmt.Errorf("ward_create: %w", err)}
 	}
-	view, err := t.Host.enter(ctx, name)
+	view, err := t.Host.enterKind(ctx, name, true)
 	if err != nil {
 		return Result{Err: fmt.Errorf("ward_create: enter after create: %w", err)}
 	}

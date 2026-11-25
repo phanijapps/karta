@@ -2143,6 +2143,34 @@ components:
           $ref: '#/components/schemas/Session'
         intent_analysis:
           $ref: '#/components/schemas/IntentAnalysisPayload'
+        ward:
+          $ref: '#/components/schemas/WardEventPayload'
+    WardEventPayload:
+      type: object
+      description: |
+        A ward hosting transition on a session — `ward_entered` (enter
+        or switch into an existing ward) or `ward_created` (a new ward
+        instantiated from an archetype). Constitution rule 4: hosting
+        changes are observable, never silent.
+      additionalProperties: false
+      required: [ward, archetype]
+      properties:
+        ward:
+          type: string
+          maxLength: 255
+          description: The ward's directory name.
+        archetype:
+          type: string
+          maxLength: 64
+        previous:
+          type: string
+          maxLength: 255
+          description: The ward this session was hosted in before a
+            switch (absent on the first entry or a creation).
+        digest:
+          type: string
+          maxLength: 64
+          description: The constitution + layout digest at entry.
     CreateSessionRequest:
       type: object
       additionalProperties: false
@@ -2313,6 +2341,8 @@ components:
           $ref: '#/components/schemas/ChittaToolInvokedPayload'
         intent_analysis:
           $ref: '#/components/schemas/IntentAnalysisPayload'
+        ward:
+          $ref: '#/components/schemas/WardEventPayload'
 
     IntentAnalysisPayload:
       type: object

@@ -89,7 +89,14 @@ type delegateTool struct {
 }
 
 func (d delegateTool) Def() tools.Def {
-	return tools.Def{Name: "delegate_agent", Description: d.desc, ParamsJSON: `{"type":"object","properties":{"agent":{"type":"string","description":"agent name"},"task":{"type":"string","description":"complete, self-contained task"}},"required":["agent","task"]}`}
+	desc := d.desc
+	if d.parent.wardHost != nil && d.parent.wardHost.Active() != nil {
+		// The ward guard: children act INSIDE the ward through the file
+		// and shell tools; entering/switching/creating wards is the
+		// root's structural call (children don't get ward_use/create).
+		desc += "\n\nWard: this run is hosted in a ward. Delegated agents work inside it (read/write/list/shell); they cannot enter, switch, or create wards — that is the root's call. State the ward and the task's file targets in the task text."
+	}
+	return tools.Def{Name: "delegate_agent", Description: desc, ParamsJSON: `{"type":"object","properties":{"agent":{"type":"string","description":"agent name"},"task":{"type":"string","description":"complete, self-contained task"}},"required":["agent","task"]}`}
 }
 
 // Exec runs the named agent as a CHILD of the parent's execution: its own
@@ -120,6 +127,12 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 		agentName: spec.Name, depth: d.parent.depth + 1,
 		grant: spec.MaxDepth, isChild: true,
 		wardHost: d.parent.wardHost, // read-only inheritance: children act inside the ward (file tools), structural stays root-only
+	}
+	// A hosted child executes as the ward's agent too: the same
+	// ## Active Ward section the root composes joins its prompt (the
+	// NVDA run's children had to `read` AGENTS.md manually before this).
+	if section := activeWardSection(child); section != "" {
+		child.systemPrompt = strings.TrimSpace(child.systemPrompt + "\n\n" + section)
 	}
 	if spec.Model != "" {
 		p, m, found := strings.Cut(spec.Model, "/")
