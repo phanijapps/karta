@@ -129,7 +129,12 @@
                 <span class="call-args">{JSON.stringify(c.args).slice(0, 160)}{JSON.stringify(c.args).length > 160 ? '…' : ''}</span>
               </div>
               {#each outs as o (o.callId + i)}
-                {#if isMarkdownRead(c, o)}
+                {#if c.name === 'delegate_agent' && !o.isError}
+                  <!-- The child's report is already the thread's report card;
+                       the tool result is the same text (stored twice by
+                       design) — a reference, not a second copy. -->
+                  <p class="result ref">Report returned — see the sub-agent report card in the thread.</p>
+                {:else if isMarkdownRead(c, o)}
                   <!-- A ward doc / wiki entry / report read back: prose,
                        rendered; still the sanitizer's output. -->
                   <div class="result md">{@html renderMarkdown(clampOut(o.output))}</div>
@@ -185,6 +190,7 @@
   .step-detail { margin: .1rem 0 .35rem 1.4rem; padding: .35rem .6rem; border-left: 1px solid var(--ds-color-border, #333); display: grid; gap: .35rem; }
   .narration { margin: 0; font-size: .74rem; color: var(--ds-color-muted, #888); }
   .step-text .agent { font-size: .68rem; color: var(--ds-color-primary, #3b82f6); margin-left: .3rem; white-space: nowrap; }
+  .result.ref { color: var(--ds-color-muted, #888); font-size: .74rem; }
   .narration-label { font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-color-muted, #888); border: 1px solid var(--ds-color-border, #333); border-radius: 999px; padding: 0 .4rem; margin-right: .2rem; }
   .thinking summary { cursor: pointer; display: inline-flex; gap: .3rem; align-items: center; list-style: none; font-size: .74rem; color: var(--ds-color-muted, #888); }
   .thinking p { margin: .2rem 0 0; padding: .3rem .5rem; border-left: 2px solid var(--ds-color-border, #333); border-radius: 4px; background: var(--ds-color-field, #1a1a1a); font-size: .72rem; max-height: 10rem; overflow: auto; }

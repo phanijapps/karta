@@ -64,7 +64,10 @@ through `Config.Emit` (the daemon's durable-first path):
 `analysis_completed{contract, tokens, ms, attempts, trimmed}`,
 `analysis_bypassed{reason}`, `analysis_failed{reason, attempts}` —
 emitted BEFORE the run when the session id is known (an ad-hoc run's
-terminal event waits for the engine-assigned id). The dedicated
+terminal event waits for the engine-assigned id). Every analysis event
+is attributed: `Agent: intent-analyst` + the analyst's execution id
+(a bypass is the wrapper's call about the ROOT run: agent root, the
+root execution id). The dedicated
 execution row opens through `Config.BeginAnalysis` (the daemon's
 `store.CreateAnalysisExecution`, parented under the root) and closes
 through `Config.FinishAnalysis` with the status and token usage.

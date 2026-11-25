@@ -115,4 +115,9 @@ mcpclient; never imports clients, engine, or UI code.
   (`dbSessionEvents`) translates legacy `intent_analysis` rows to the
   terminal `analysis_*` kind their status names; session state reads
   the latest terminal analysis (legacy rows included).
+- Run legibility: SSE frames carry `agent`, `execution_id` and the
+  `delegation` payload on both paths (replay: `payload.agent`, else the
+  executions join); `chatView` carries `agent` ("root" for legacy rows)
+  + `execution_id`; `GetSessionState` lists the session's executions
+  (typed 500 on failure).
 

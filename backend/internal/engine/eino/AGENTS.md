@@ -33,4 +33,16 @@ checks, and durable-first event emission.
   them from the routing table and `delegateTool.Exec` refuses them typed
   (`ErrNotDelegatable`) whatever their description — they are never
   workers, even though they sit in the roster for Settings.
+- Attribution (run-legibility): every durable payload carries `agent`
+  and the bus event carries `Agent` + `ExecutionID` (`runInput.agent()`
+  — "root", a named root agent, or the child's name; provider/model is
+  provenance, not an agent). Assistant rows carry `Agent` and the
+  model's `Reasoning`; the root execution's agent column is set at run
+  start (`SetExecutionAgent`). A delegation is a Timeline node:
+  `emitDelegation` persists + publishes `delegation_started` (agent,
+  task, execution) before the child's steps and `delegation_completed`
+  (usage read back via `store.ExecutionUsage`, duration, stored status)
+  after them. Ward transitions are attributed through the per-session
+  `runAttr` map (`setRunAttribution` at every run's start). `run.go`
+  is the root wrapper around `runLoop`.
 

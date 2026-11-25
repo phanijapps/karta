@@ -24,6 +24,9 @@ export type Step = {
   tool: string;
   /** The acting agent ("root" or a sub-agent's name) — attribution. */
   agent: string;
+  /** The execution the step ran under (child executions bind to their
+   *  delegation; "" on legacy rows). */
+  executionId: string;
   calls: ToolCall[];
   outcomes: CallOutcome[];
   /** Plan narration the model attached to the turn (folded detail). */
@@ -158,6 +161,8 @@ export function buildSteps(messages: ChatMessage[], liveTurnId?: string): Step[]
   const steps: Step[] = [];
   let delegate: Step | null = null;
   let pendingDelegateResultIds: string[] = [];
+  // child execution → the delegation step it bound to (identity-based nesting).
+  const boundDelegates = new Map<string, Step>();
   for (const m of messages) {
     if (m.role === "assistant" && m.tool_calls) {
       const calls = parseCalls(m);
@@ -172,6 +177,7 @@ export function buildSteps(messages: ChatMessage[], liveTurnId?: string): Step[]
         key: m.id,
         tool,
         agent: m.agent ?? "root",
+        executionId: m.execution_id ?? "",
         calls,
         outcomes: calls.flatMap((c) => byCall.get(c.id) ?? []),
         narration: m.content ?? "",
@@ -180,12 +186,28 @@ export function buildSteps(messages: ChatMessage[], liveTurnId?: string): Step[]
         merged: 1,
         live: m.id === liveTurnId,
       };
-      // Nest under an open delegation until its result lands — or, with
-      // attribution, under the turn's latest delegation whenever the row
-      // is a child's (order-independent).
-      const lastDelegate = [...steps].reverse().find((x) => x.tool === "delegate_agent");
-      if ((delegate && delegate.tool === "delegate_agent" && pendingDelegateResultIds.length > 0) || (step.agent !== "root" && lastDelegate)) {
-        (delegate && delegate.tool === "delegate_agent" && pendingDelegateResultIds.length > 0 ? delegate : lastDelegate)!.children.push(step);
+      // Nesting: an ATTRIBUTED child step binds to its delegation by
+      // EXECUTION (the first delegate step to its agent that no other
+      // execution has claimed yet; the binding sticks for that
+      // execution), so order never matters and a root-attributed step
+      // never nests. Legacy rows (no agent) keep adjacency: an open
+      // delegation until its result lands.
+      const openDelegate = delegate && delegate.tool === "delegate_agent" && pendingDelegateResultIds.length > 0 ? delegate : null;
+      if (step.agent !== "root" && step.agent !== "" && step.executionId) {
+        const claimed = new Set(boundDelegates.values());
+        let target: Step | undefined = boundDelegates.get(step.executionId);
+        if (!target) {
+          // The open delegation if it is to this agent; else the nearest
+          // unclaimed delegation to this agent.
+          const toAgent = (x: Step) => x.tool === "delegate_agent" && x.calls.some((c) => String(c.args.agent ?? "") === step.agent);
+          if (openDelegate && toAgent(openDelegate)) target = openDelegate;
+          else target = [...steps].reverse().find((x) => toAgent(x) && !claimed.has(x));
+          if (target) boundDelegates.set(step.executionId, target);
+        }
+        if (target) target.children.push(step);
+        else steps.push(step);
+      } else if (step.agent === "" && openDelegate) {
+        openDelegate.children.push(step);
       } else if (step.tool !== "delegate_agent" && steps.length > 0 && steps[steps.length - 1].tool === step.tool && steps[steps.length - 1].agent === step.agent && !steps[steps.length - 1].live) {
         // (Delegations never merge: each is its own step with its children.)
         const prev = steps[steps.length - 1];

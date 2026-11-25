@@ -58,6 +58,9 @@ export function createSessions() {
   // (switching sessions mid-fetch must not leak another session's
   // analysis into the active card/panel).
   let analysisGeneration = 0;
+  // Guards the executions/cost read independently of live analysis
+  // events: only the NEWEST state response may write them.
+  let stateGeneration = 0;
   let sendError = $state('');
 
   const groups = $derived.by<SessionGroups>(() => {
@@ -189,8 +192,10 @@ export function createSessions() {
   /** Refresh the active session's analysis from the state surface. */
   async function loadAnalysis(sessionId: string) {
     const mine = ++analysisGeneration;
+    const mineState = ++stateGeneration;
     const state = await getSessionState(sessionId);
     if (sessionId !== activeId) return; // switched away
+    if (mineState !== stateGeneration) return; // a newer state response won (no stale totals)
     // The cost always applies (a live analysis event cannot invalidate
     // it); the analysis itself yields to a live event that landed while
     // this fetch was in flight.

@@ -56,6 +56,7 @@ export async function mockDaemon(page: Page) {
     body: JSON.stringify({ sessions: [
       { id: 'default', type: 'chat', status: 'completed', updated_at: NOW },
       { id: INR, type: 'research', status: 'completed', ward: 'stock-analysis', title: 'INR vs USD pressures', updated_at: '2026-11-25T20:14:00Z' },
+      { id: 'r-inter', type: 'research', status: 'completed', ward: 'stock-analysis', title: 'Interleaved children', updated_at: '2026-11-22T20:14:00Z' },
       { id: 'r-old', type: 'research', status: 'completed', ward: 'stock-analysis', title: 'Older run', updated_at: '2026-11-20T20:14:00Z' },
     ], truncated: false }),
   }));
@@ -118,9 +119,15 @@ test('reports never pose as answers: sub-agent rows are collapsed cards, the roo
   await expect(page.getByRole('article', { name: 'Assistant message' })).toHaveCount(0);
   await expect(page.locator('.narration')).toContainText('Narration');
   await expect(page.locator('.narration')).toContainText('Verified the intervention figures');
-  // The report body is readable on demand, with its own thinking.
+  // The report body is readable on demand; its own Thinking is a
+  // second, separate disclosure.
   await reports.nth(0).locator(':scope > summary').click();
-  await expect(reports.nth(0)).toContainText('I will rank the drivers first.');
+  const reportThinking = reports.nth(0).locator('details.thinking');
+  await expect(reportThinking).not.toHaveAttribute('open', '');
+  await expect(reportThinking.locator('p')).toBeHidden();
+  await reportThinking.locator('summary').click();
+  await expect(reportThinking.locator('p')).toBeVisible();
+  await expect(reportThinking.locator('p')).toHaveText('I will rank the drivers first.');
 });
 
 test('thinking is the final step\'s reasoning', async ({ page }) => {
@@ -130,8 +137,11 @@ test('thinking is the final step\'s reasoning', async ({ page }) => {
   const answer = page.getByRole('article', { name: 'Final answer' });
   const thinking = answer.locator('details.answer-thinking');
   await expect(thinking).not.toHaveAttribute('open', '');
+  await expect(thinking.locator('p')).toBeHidden();
   await thinking.locator('summary').click();
-  await expect(thinking).toContainText('flag the reserve-figure divergence');
+  await expect(thinking).toHaveAttribute('open', '');
+  await expect(thinking.locator('p')).toBeVisible();
+  await expect(thinking.locator('p')).toHaveText('The report ranks oil and FPI flows first; I will lead with the ranked drivers and flag the reserve-figure divergence.');
 });
 
 test('the Work tab attributes steps, shows delegation cards with cost, and totals the run', async ({ page }) => {
@@ -164,5 +174,108 @@ test('the Work tab attributes steps, shows delegation cards with cost, and total
   await expect(foot).toContainText('Run: 1.0M prompt');
   await expect(foot).toContainText('61.9k completion');
   await expect(foot).toContainText('2 delegations');
-  await expect(foot).toContainText('14m 0s');
+  await expect(foot).toContainText('14m'); // zero parts drop
+  // Tool mix on the delegation card (from the child's attributed rows).
+  await expect(cards.nth(1)).toContainText('read ×1 · write ×1');
+  // The per-execution breakdown opens on demand.
+  const breakdown = work.locator('details.run-breakdown');
+  await expect(breakdown.locator('li').first()).toBeHidden();
+  await breakdown.locator('summary').click();
+  await expect(breakdown).toContainText('analyst intent-analyst · 1.9k → 317 · 4s · completed');
+  await expect(breakdown).toContainText('delegated builder-agent · 284.1k → 16.8k · 6m 12s · completed');
+});
+
+test('a stale state response never overwrites newer run totals', async ({ page }) => {
+  await mockBase(page);
+  await mockDaemon(page);
+  // The FIRST state fetch for the INR session is slow and stale (no
+  // executions); later fetches carry them.
+  let inrStateCalls = 0;
+  await page.route((url) => url.pathname === `/api/sessions/${INR}/state`, async (route) => {
+    inrStateCalls++;
+    if (inrStateCalls === 1) {
+      await new Promise((r) => setTimeout(r, 600));
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ session: { id: INR, type: 'research', status: 'completed', ward: 'stock-analysis', updated_at: NOW }, intent_analysis: { status: 'analyzed', primary_intent: 'stale', complexity: 'S', step_budget: 4 } }) });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ session: { id: INR, type: 'research', status: 'completed', ward: 'stock-analysis', updated_at: NOW }, intent_analysis: { status: 'analyzed', primary_intent: 'analyze-inr-usd-pressures', complexity: 'M', step_budget: 8 }, executions: EXECUTIONS }) });
+  });
+  await page.goto('/');
+  const nav = page.getByRole('navigation', { name: 'Workspace navigation' });
+  await nav.locator('.ward-row', { hasText: 'stock-analysis' }).click({ force: true }); // selects INR → stale fetch #1 pending
+  await nav.locator('.session.child', { hasText: 'Older run' }).click();
+  await nav.locator('.session.child', { hasText: 'INR vs USD' }).click(); // fetch #2 (fresh) lands before #1
+  await expect(page.locator('.analysis-chip')).toContainText('analyze-inr-usd-pressures');
+  if ((await page.getByRole('complementary', { name: 'Session context' }).count()) === 0) {
+    await page.getByRole('button', { name: 'Toggle right sidebar' }).click();
+  }
+  const panel = page.getByRole('complementary', { name: 'Session context' });
+  await panel.getByRole('tab', { name: /Work/ }).click();
+  const work = panel.getByRole('tabpanel', { name: 'Work' });
+  await expect(work.locator('footer.run-foot')).toContainText('Run: 1.0M prompt');
+  // Wait out the stale response: the totals and the analysis must stand.
+  await page.waitForTimeout(900);
+  await expect(work.locator('footer.run-foot')).toContainText('Run: 1.0M prompt');
+  await expect(page.locator('.analysis-chip')).toContainText('analyze-inr-usd-pressures');
+});
+
+test('interleaved children nest under their own delegation by execution, not by order', async ({ page }) => {
+  await mockBase(page);
+  await mockDaemon(page);
+  const SID = 'r-inter';
+  const ALPHA = 'exec-child-alpha', BETA = 'exec-child-beta';
+  const rows = [
+    { id: 'u1', seq: 1, role: 'user', agent: 'root', execution_id: 'exec-root', content: 'two delegations, interleaved', created_at: NOW },
+    { id: 'a1', seq: 2, role: 'assistant', agent: 'root', execution_id: 'exec-root', content: '', tool_calls: JSON.stringify([{ id: 'c1', function: { name: 'delegate_agent', arguments: JSON.stringify({ agent: 'alpha', task: 'A' }) } }]), created_at: NOW },
+    { id: 'a2', seq: 3, role: 'assistant', agent: 'root', execution_id: 'exec-root', content: '', tool_calls: JSON.stringify([{ id: 'c2', function: { name: 'delegate_agent', arguments: JSON.stringify({ agent: 'beta', task: 'B' }) } }]), created_at: NOW },
+    { id: 'ua', seq: 4, role: 'user', agent: 'alpha', execution_id: ALPHA, content: 'A', created_at: NOW },
+    { id: 'aa', seq: 5, role: 'assistant', agent: 'alpha', execution_id: ALPHA, content: '', tool_calls: JSON.stringify([{ id: 'c3', function: { name: 'read', arguments: JSON.stringify({ path: 'a.md' }) } }]), created_at: NOW },
+    { id: 'ub', seq: 6, role: 'user', agent: 'beta', execution_id: BETA, content: 'B', created_at: NOW },
+    { id: 'ab', seq: 7, role: 'assistant', agent: 'beta', execution_id: BETA, content: '', tool_calls: JSON.stringify([{ id: 'c4', function: { name: 'write', arguments: JSON.stringify({ path: 'b.md' }) } }]), created_at: NOW },
+    { id: 't3', seq: 8, role: 'tool', agent: 'alpha', execution_id: ALPHA, tool_name: 'read', tool_call_id: 'c3', content: 'a', created_at: NOW },
+    { id: 't4', seq: 9, role: 'tool', agent: 'beta', execution_id: BETA, tool_name: 'write', tool_call_id: 'c4', content: 'b', created_at: NOW },
+    { id: 't1', seq: 10, role: 'tool', agent: 'root', execution_id: 'exec-root', tool_name: 'delegate_agent', tool_call_id: 'c1', content: 'A done', created_at: NOW },
+    { id: 't2', seq: 11, role: 'tool', agent: 'root', execution_id: 'exec-root', tool_name: 'delegate_agent', tool_call_id: 'c2', content: 'B done', created_at: NOW },
+    { id: 'ar', seq: 12, role: 'assistant', agent: 'root', execution_id: 'exec-root', content: 'read root.txt then conclude', tool_calls: JSON.stringify([{ id: 'c5', function: { name: 'read', arguments: JSON.stringify({ path: 'root.txt' }) } }]), created_at: NOW },
+    { id: 't5', seq: 13, role: 'tool', agent: 'root', execution_id: 'exec-root', tool_name: 'read', tool_call_id: 'c5', content: 'r', created_at: NOW },
+    { id: 'af', seq: 14, role: 'assistant', agent: 'root', execution_id: 'exec-root', content: 'Done.', created_at: NOW },
+  ];
+  await page.route((url) => url.pathname === `/api/sessions/${SID}/state`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ session: { id: SID, type: 'research', status: 'completed', ward: 'stock-analysis', updated_at: NOW }, intent_analysis: { status: 'analyzed', primary_intent: 'inter', complexity: 'S', step_budget: 4 } }) }));
+  await page.route((url) => url.pathname === `/api/sessions/${SID}/events`, (route) => route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' }));
+  await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const u = new URL(route.request().url());
+    const sid = u.searchParams.get('session_id') ?? 'default';
+    const after = Number(u.searchParams.get('after_seq') ?? '0');
+    const list = sid === SID ? rows.filter((m) => m.seq > after) : [];
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ messages: list, next_cursor: list.length ? list[list.length - 1].seq : after, truncated: false }) });
+  });
+  await page.goto('/');
+  const nav = page.getByRole('navigation', { name: 'Workspace navigation' });
+  await nav.locator('.ward-row', { hasText: 'stock-analysis' }).click({ force: true });
+  await nav.locator('.session.child', { hasText: 'Interleaved children' }).click();
+  await expect(page.locator('.analysis-chip')).toContainText('inter');
+  if ((await page.getByRole('complementary', { name: 'Session context' }).count()) === 0) {
+    await page.getByRole('button', { name: 'Toggle right sidebar' }).click();
+  }
+  const panel = page.getByRole('complementary', { name: 'Session context' });
+  await panel.getByRole('tab', { name: /Work/ }).click();
+  const work = panel.getByRole('tabpanel', { name: 'Work' });
+  const delegateSteps = work.locator('.step.delegation');
+  await expect(delegateSteps).toHaveCount(2);
+  // alpha's step (which arrived AFTER both delegations started) nests
+  // under alpha's delegation; beta's under beta's; the root's step that
+  // ran while delegations were open stays top-level.
+  await delegateSteps.nth(0).locator('button.step-row').click();
+  const alphaChildren = delegateSteps.nth(0).locator('.step.child');
+  await expect(alphaChildren).toHaveCount(1);
+  await expect(alphaChildren.first()).toContainText('Read');
+  await expect(alphaChildren.first()).toContainText('alpha');
+  await delegateSteps.nth(1).locator('button.step-row').click();
+  const betaChildren = delegateSteps.nth(1).locator('.step.child');
+  await expect(betaChildren).toHaveCount(1);
+  await expect(betaChildren.first()).toContainText('Wrote');
+  await expect(betaChildren.first()).toContainText('beta');
+  await expect(work.locator('.step.delegation > .step-child-wrapper .step.child')).toHaveCount(0); // no child leaks out
+  // The root's own read after the delegations is a top-level step.
+  await expect(work.locator('.step:not(.delegation):not(.child) .verb', { hasText: 'Read' })).toHaveCount(1);
 });

@@ -34,6 +34,12 @@ observability, persisted before volatile notification).
   token usage in. `ActiveRuns`/`ExecutionResult` read root outcomes.
 - `LatestEventOfKind(sid, kinds...)` reads the newest event of any of
   the kinds (the session-state surface's latest TERMINAL analysis).
+- Attribution (run-legibility): `messages.agent` (the acting agent;
+  guarded migration `migrateMessagesAgent`; "" on legacy rows reads as
+  root), `Events` left-joins `executions` so every row carries its
+  agent even when the payload predates it, `SetExecutionAgent`,
+  `ExecutionUsage`, `SessionExecutions` (bounded — the state surface's
+  run cost) in executions.go.
 - `model_catalog` (catalog.go): per-provider `[{id, context_window}]`
   JSON + refresh time; rows from before windows existed hold a plain
   string list and still decode (`decodeCatalogModels`).

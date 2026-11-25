@@ -43,7 +43,8 @@
     void scrollToLatest();
   });
   // The run's latest narration (agent_step text) — the main thread's
-  // live "thinking" while the work itself fills the sidebar.
+  // live narration while the work itself fills the sidebar. Labelled
+  // narration, not thought: Thinking is the model's reasoning.
   const latestThought = $derived.by<string>(() => {
     for (let i = timeline.events.length - 1; i >= 0; i--) {
       const ev = timeline.events[i];
@@ -110,7 +111,10 @@
         // A user row right after a delegate_agent intent is the child's
         // injected context — absorb it, don't start a turn.
         const prevIntent = cur?.rows[cur.rows.length - 1];
-        if (cur && prevIntent?.tool_calls && prevIntent.tool_calls.includes('"delegate_agent"')) {
+        // An attributed child's injected context absorbs into the current
+        // turn whatever precedes it; legacy rows keep the adjacency rule.
+        const isChildContext = !!m.agent && m.agent !== 'root';
+        if (cur && (isChildContext || (prevIntent?.tool_calls && prevIntent.tool_calls.includes('"delegate_agent"')))) {
           cur.rows.push(m);
           continue;
         }
@@ -462,11 +466,11 @@
       {:else if sending && sessions.activeId === sendSessionId}
         <article class="bubble assistant pending" aria-label="Assistant is working" aria-busy="true">
           {#if isResearch}
-            <!-- The LATEST thinking, live: the engine's agent_step events
+            <!-- The LATEST narration, live: the engine's agent_step events
                  narrate the run; the tool history lives in the sidebar. -->
             {#if latestThought !== ''}
               <details class="thinking live" open>
-                <summary><Brain size={13} aria-hidden="true" /> Thinking <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></summary>
+                <summary><Brain size={13} aria-hidden="true" /> Narration <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></summary>
                 <p class="muted">{latestThought}</p>
               </details>
             {:else}

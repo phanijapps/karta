@@ -65,6 +65,22 @@
     }
     return [...byExec.values()];
   });
+  // Each delegation's tool mix, derived from the transcript rows that
+  // carry the child's execution id.
+  const toolMix = $derived.by(() => {
+    const out = new Map<string, Map<string, number>>();
+    for (const m of sessions.messages) {
+      if (m.role !== 'tool' || !m.tool_name || !m.execution_id || !m.agent || m.agent === 'root') continue;
+      const counts = out.get(m.execution_id) ?? new Map<string, number>();
+      counts.set(m.tool_name, (counts.get(m.tool_name) ?? 0) + 1);
+      out.set(m.execution_id, counts);
+    }
+    const rendered = new Map<string, string>();
+    for (const [exec, counts] of out) {
+      rendered.set(exec, [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t.replace(/^mcp_.*_/, '')} ×${n}`).join(' · '));
+    }
+    return rendered;
+  });
   // The run footer: every execution's cost (root, analyst, children).
   const runCost = $derived.by(() => {
     const ex = sessions.executions;
@@ -156,7 +172,10 @@
     for (const m of sessions.messages) {
       if (m.role === 'user') {
         const prevIntent = cur?.rows[cur.rows.length - 1];
-        if (cur && prevIntent?.tool_calls && prevIntent.tool_calls.includes('"delegate_agent"')) {
+        // An attributed child's injected context absorbs into the current
+        // turn whatever precedes it; legacy rows keep the adjacency rule.
+        const isChildContext = !!m.agent && m.agent !== 'root';
+        if (cur && (isChildContext || (prevIntent?.tool_calls && prevIntent.tool_calls.includes('"delegate_agent"')))) {
           cur.rows.push(m);
           continue;
         }
@@ -227,10 +246,13 @@
                 <span class="del-agent">{d.agent}</span>
                 {#if d.task}<span class="del-task" title={d.task}>{d.task.slice(0, 90)}{d.task.length > 90 ? '…' : ''}</span>{/if}
                 <span class="del-cost">
-                  {#if d.status === 'running'}<span class="pulse" aria-label="working"></span> running{:else}{d.status}{/if}
+                  {#if d.status === 'running'}<span class="pulse" aria-hidden="true"></span>{/if}
+                  <!-- The changing outcome is announced once per card, with its agent. -->
+                  <span role="status" aria-live="polite">{d.agent}: {d.status}</span>
                   {#if d.tokensIn || d.tokensOut} · {fmtTokens(d.tokensIn)} → {fmtTokens(d.tokensOut)}{/if}
                   {#if d.durationMs} · {fmtDuration(d.durationMs)}{/if}
                 </span>
+                {#if toolMix.get(d.execId)}<span class="del-tools">{toolMix.get(d.execId)}</span>{/if}
               </div>
             {/each}
           </section>
@@ -245,6 +267,14 @@
         {#if runCost.count > 1 || runCost.tokensIn}
           <footer class="run-foot" aria-label="Run cost">
             <span>Run: {fmtTokens(runCost.tokensIn)} prompt · {fmtTokens(runCost.tokensOut)} completion tokens{runCost.delegations ? ` · ${runCost.delegations} delegation${runCost.delegations > 1 ? 's' : ''}` : ''}{runCost.elapsedMs ? ` · ${fmtDuration(runCost.elapsedMs)}` : ''}</span>
+            <details class="run-breakdown">
+              <summary>Per execution</summary>
+              <ul>
+                {#each sessions.executions as e (e.id)}
+                  <li><span class="be-role">{e.role}</span> {e.agent} · {fmtTokens(e.tokens_in)} → {fmtTokens(e.tokens_out)}{e.started_at && e.finished_at ? ` · ${fmtDuration(Date.parse(e.finished_at) - Date.parse(e.started_at))}` : ''} · {e.status}</li>
+                {/each}
+              </ul>
+            </details>
           </footer>
         {/if}
       {/if}
@@ -336,7 +366,12 @@
   .delegation-card .del-cost { color: var(--ds-color-muted, #888); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .delegation-card.failed .del-cost { color: var(--ds-color-danger, #ef4444); }
   .delegation-card .pulse { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ds-color-success, #22c55e); margin-right: .3rem; }
+  .delegation-card .del-tools { grid-column: 1 / -1; color: var(--ds-color-muted, #888); font-size: .7rem; }
   .run-foot { margin-top: .6rem; padding-top: .5rem; border-top: 1px solid var(--ds-color-border, #333); color: var(--ds-color-muted, #888); font-size: .74rem; font-variant-numeric: tabular-nums; }
+  .run-breakdown { margin-top: .3rem; }
+  .run-breakdown summary { cursor: pointer; }
+  .run-breakdown ul { margin: .3rem 0 0; padding-left: 1.1rem; display: grid; gap: .1rem; }
+  .run-breakdown .be-role { display: inline-block; min-width: 4.2rem; text-transform: capitalize; }
 
   .ward-line { display: flex; align-items: center; gap: .35rem; margin: 0; font-size: .76rem; color: var(--ds-color-success, #22c55e); }
   .turn-user { margin: 0 0 .15rem; font-size: .72rem; color: var(--ds-color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 2px solid var(--ds-color-primary, #6366f1); padding-left: .4rem; }
