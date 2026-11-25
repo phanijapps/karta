@@ -20,5 +20,5 @@
 - [x] 3.1 Phase gates (gpt-6.1-terra backend, gpt-6.1-sol frontend); fix
   P0/P1; P2s fixed or recorded in findings.md. Verify: ledger zero open
   P0/P1.
-- [ ] 3.2 zbot-reviewer + `task verify` green (dev stack stopped).
+- [x] 3.2 zbot-reviewer + `task verify` green (dev stack stopped).
   Verify: reviewer zero open P0/P1; verify exits zero.
