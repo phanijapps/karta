@@ -31,8 +31,9 @@ MCP scoping, streaming research runs, transcript dedupe.
   execution's `delegation` column (`root` → `"root"`).
 - **D2 Thread roles.** Transcript rows gain `agent` + `execution_id`
   (new `messages.agent` column, guarded migration like `reasoning`;
-  the engine writes `in.agentName` or `"root"`, the chat path writes
-  `"root"`). Rule in the thread: `role === 'assistant' && !tool_calls`
+  the engine writes `in.agentName` or `"root"`, children their name; the
+  chat path leaves it empty and `chatView` renders empty as `"root"` —
+  so legacy and chat rows arrive as root on the wire). Rule in the thread: `role === 'assistant' && !tool_calls`
   → `agent === 'root'` (or no agent = legacy) is an answer; any other
   agent is a report card (`<details>`: agent · size). The last root
   answer of the turn is THE answer (styled as such).

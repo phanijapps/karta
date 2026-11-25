@@ -266,7 +266,9 @@
         {/if}
         {#if runCost.count > 1 || runCost.tokensIn}
           <footer class="run-foot" aria-label="Run cost">
-            <span>Run: {fmtTokens(runCost.tokensIn)} prompt · {fmtTokens(runCost.tokensOut)} completion tokens{runCost.delegations ? ` · ${runCost.delegations} delegation${runCost.delegations > 1 ? 's' : ''}` : ''}{runCost.elapsedMs ? ` · ${fmtDuration(runCost.elapsedMs)}` : ''}</span>
+            <!-- Totals are per SESSION: the root execution is one per session
+                 and accumulates tokens across its runs. -->
+            <span>Session: {fmtTokens(runCost.tokensIn)} prompt · {fmtTokens(runCost.tokensOut)} completion tokens{runCost.delegations ? ` · ${runCost.delegations} delegation${runCost.delegations > 1 ? 's' : ''}` : ''}{runCost.elapsedMs ? ` · ${fmtDuration(runCost.elapsedMs)}` : ''}</span>
             <details class="run-breakdown">
               <summary>Per execution</summary>
               <ul>

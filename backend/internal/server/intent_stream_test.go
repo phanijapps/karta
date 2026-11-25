@@ -142,6 +142,13 @@ func TestSSEFramesAttributed(t *testing.T) {
 	if err := db.AppendEvent(zbotstore.Event{ID: "evt-cur", SessionID: "sess-a", ExecutionID: root, Kind: "agent_step", Payload: string(cur)}); err != nil {
 		t.Fatal(err)
 	}
+	// An analysis row as the daemon's Emit now persists it: the analyst's
+	// execution on the row, the agent in the payload.
+	analyst, _ := db.CreateAnalysisExecution("sess-a", "intent-analyst", "analyze")
+	an, _ := json.Marshal(map[string]any{"text": "Task Analysis: x", "agent": "intent-analyst", "intent_analysis": map[string]any{"status": "analyzed", "primary_intent": "x"}})
+	if err := db.AppendEvent(zbotstore.Event{ID: "evt-analysis", SessionID: "sess-a", ExecutionID: analyst, Kind: "analysis_completed", Payload: string(an)}); err != nil {
+		t.Fatal(err)
+	}
 	// A delegation lifecycle row with its payload.
 	dp, _ := json.Marshal(map[string]any{"text": "research-agent finished", "agent": "research-agent", "delegation": map[string]any{"child_agent": "research-agent", "task": "x", "execution_id": child, "tokens_in": 1102, "tokens_out": 7961, "duration_ms": 84000, "status": "completed"}})
 	if err := db.AppendEvent(zbotstore.Event{ID: "evt-done", SessionID: "sess-a", ExecutionID: child, Kind: "delegation_completed", Payload: string(dp)}); err != nil {
@@ -153,8 +160,8 @@ func TestSSEFramesAttributed(t *testing.T) {
 	defer daemon.Close()
 	go func() {
 		time.Sleep(150 * time.Millisecond)
-		_ = bus.Publish(context.Background(), domain.TimelineEvent{ID: "evt-live", SessionID: "sess-a", ExecutionID: root, Kind: domain.EventToolCall, Agent: "root", Text: "shell", ToolCall: &domain.ToolCallPayload{Tool: "shell"}})
-		_ = bus.Publish(context.Background(), domain.TimelineEvent{ID: "evt-live-child", SessionID: "sess-a", ExecutionID: child, Kind: domain.EventDelegation, Agent: "research-agent", Text: "read", ToolCall: &domain.ToolCallPayload{Tool: "read"}})
+		_ = bus.Publish(context.Background(), domain.TimelineEvent{ID: "evt-live", SessionID: "sess-a", ExecutionID: root, Kind: domain.EventToolCall, Agent: "root", Text: "shell", Timestamp: time.Now(), ToolCall: &domain.ToolCallPayload{Tool: "shell"}})
+		_ = bus.Publish(context.Background(), domain.TimelineEvent{ID: "evt-live-child", SessionID: "sess-a", ExecutionID: child, Kind: domain.EventDelegation, Agent: "research-agent", Text: "read", Timestamp: time.Now(), ToolCall: &domain.ToolCallPayload{Tool: "read"}})
 	}()
 	var sb strings.Builder
 	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
@@ -177,6 +184,7 @@ func TestSSEFramesAttributed(t *testing.T) {
 		Kind        string                    `json:"kind"`
 		Agent       string                    `json:"agent"`
 		ExecutionID string                    `json:"execution_id"`
+		Timestamp   string                    `json:"timestamp"`
 		Delegation  *domain.DelegationPayload `json:"delegation"`
 	}
 	byID := map[string]frame{}
@@ -196,6 +204,7 @@ func TestSSEFramesAttributed(t *testing.T) {
 		"evt-done":       {Kind: "delegation_completed", Agent: "research-agent", ExecutionID: child},
 		"evt-live":       {Kind: "tool_call", Agent: "root", ExecutionID: root},             // live root
 		"evt-live-child": {Kind: "delegation", Agent: "research-agent", ExecutionID: child}, // live child
+		"evt-analysis":   {Kind: "analysis_completed", Agent: "intent-analyst", ExecutionID: analyst},
 	}
 	for id, w := range want {
 		f, ok := byID[id]
@@ -208,5 +217,12 @@ func TestSSEFramesAttributed(t *testing.T) {
 	}
 	if d := byID["evt-done"].Delegation; d == nil || d.TokensIn != 1102 || d.Status != "completed" || d.ChildAgent != "research-agent" {
 		t.Fatalf("delegation payload: %+v", byID["evt-done"].Delegation)
+	}
+	// Every frame carries the contract-required timestamp (replay: the
+	// row's created_at; live: the event's time).
+	for id, f := range byID {
+		if f.Timestamp == "" {
+			t.Fatalf("frame %s lacks a timestamp", id)
+		}
 	}
 }

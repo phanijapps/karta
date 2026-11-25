@@ -1382,3 +1382,51 @@ func containsKind(kinds []string, want string) bool {
 	}
 	return false
 }
+
+// After a child returns, host-level events the ROOT raises (a ward
+// transition) are attributed to the root again — not to the last child.
+// Ward events ride the bus (not the run channel), so the durable row is
+// the witness.
+func TestWardEventAfterDelegationAttributedToRoot(t *testing.T) {
+	t.Parallel()
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+		"delegate-ward": {
+			{toolCall: "delegate_agent", args: `{"agent":"researcher","task":"child-task x"}`},
+			{toolCall: "ward_use", args: `{"name":"stock-analysis"}`},
+			{content: "done"},
+		},
+		"child-task": {{content: "child answer"}},
+	}}
+	a := newDelegatingAdapter(t, gen, agentSnap)
+	vault := newWardVault(t)
+	a.SetWardVault(func() *wards.Vault { return vault })
+	ch, err := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "del-ward", Goal: "delegate-ward goal", Model: "prov/m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range ch {
+	}
+	rows, _ := a.st.Events("del-ward", "", 100)
+	var wardRows int
+	for _, e := range rows {
+		if e.Kind != string(domain.EventWardEntered) {
+			continue
+		}
+		wardRows++
+		var payload map[string]any
+		_ = json.Unmarshal([]byte(e.Payload), &payload)
+		if payload["agent"] != domain.AgentRoot || e.ExecutionID != "exec-root-del-ward" {
+			t.Fatalf("ward event after a delegation must be the root's: payload=%s exec=%q", e.Payload, e.ExecutionID)
+		}
+	}
+	if wardRows == 0 {
+		t.Fatal("the root's ward_use after the delegation produced no ward_entered row (fixture)")
+	}
+	// The attribution map is cleaned up when the run ends.
+	a.mu.Lock()
+	_, kept := a.runAttr["del-ward"]
+	a.mu.Unlock()
+	if kept {
+		t.Fatal("run attribution must be cleared at the run's end")
+	}
+}

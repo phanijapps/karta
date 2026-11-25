@@ -51,7 +51,8 @@ func TestWrapperEmitsStartedThenTerminal(t *testing.T) {
 	w.Cfg.Emit = log.emit
 	w.Cfg.Window = func(p, m string) (int, domain.IntentWindowSource) { return 1048576, domain.WindowOllama }
 	w.Cfg.FinishAnalysis = func(id, status, msg string, in, out int64) {}
-	w.Cfg.BeginAnalysis = func(sid, goal, model string) string { return "" } // no row in this test
+	var begun string
+	w.Cfg.BeginAnalysis = func(sid, goal, model string) string { begun = sid + ":" + model; return "exec-intent-1" }
 	evs, err := w.RunGoal(context.Background(), domain.GoalRequest{SessionID: "s1", Goal: "research task", Model: "zai/glm-5.3"})
 	if err != nil {
 		t.Fatal(err)
@@ -63,6 +64,15 @@ func TestWrapperEmitsStartedThenTerminal(t *testing.T) {
 	got := log.kinds()
 	if len(got) != 2 || got[0] != domain.EventAnalysisStarted || got[1] != domain.EventAnalysisCompleted {
 		t.Fatalf("emitted trail: %v", got)
+	}
+	if begun != "s1:zai/glm-5.3" {
+		t.Fatalf("the row opens for the run's model: %q", begun)
+	}
+	// Both events name the analyst and its execution row.
+	for _, ev := range log.evs[:2] {
+		if ev.Agent != AnalystAgentName || ev.ExecutionID != "exec-intent-1" {
+			t.Fatalf("analyst events must be attributed: %+v", ev)
+		}
 	}
 	start, done := log.evs[0].IntentAnalysis, log.evs[1].IntentAnalysis
 	if start.Status != domain.IntentStatusStarted || start.Model != "zai/glm-5.3" || start.ContextWindow != 1048576 || start.WindowSource != domain.WindowOllama || start.Mode != ModeTextJSON {
@@ -104,6 +114,7 @@ func TestWrapperBypassEmitsNoRow(t *testing.T) {
 				t.Fatal("no execution row for a bypassed run")
 				return ""
 			}
+			w.Cfg.BeginAnalysis = nil
 			evs, _ := w.RunGoal(context.Background(), domain.GoalRequest{SessionID: "s1", Goal: tc.goal})
 			for range evs {
 			}
@@ -112,6 +123,11 @@ func TestWrapperBypassEmitsNoRow(t *testing.T) {
 			}
 			if p := log.evs[0].IntentAnalysis; p.Status != domain.IntentStatusBypassed || p.Reason != tc.reason {
 				t.Fatalf("payload: %+v", p)
+			}
+			// A bypass is the wrapper's call about the ROOT run: root,
+			// under the root execution id.
+			if ev := log.evs[0]; ev.Agent != domain.AgentRoot || ev.ExecutionID != "exec-root-s1" {
+				t.Fatalf("bypass attribution: %+v", ev)
 			}
 		})
 	}

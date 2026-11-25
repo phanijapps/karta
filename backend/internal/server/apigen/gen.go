@@ -1311,7 +1311,7 @@ type ChatExchange struct {
 
 // ChatMessage defines model for ChatMessage.
 type ChatMessage struct {
-	// Agent The acting agent — `root` for root/chat rows, the delegated sub-agent's name for a child's rows; absent on rows that predate attribution (read as root).
+	// Agent The acting agent — `root` for root and chat rows (rows that predate attribution arrive as `root` too), the delegated sub-agent's name for a child's rows.
 	Agent            *string   `json:"agent,omitempty"`
 	CompletionTokens *int      `json:"completion_tokens,omitempty"`
 	Content          string    `json:"content"`

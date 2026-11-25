@@ -17,6 +17,7 @@ func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events cha
 		cancel()
 		a.mu.Lock()
 		delete(a.cancels, in.sessionID)
+		delete(a.runAttr, in.sessionID) // the run is over: no attribution to keep
 		a.mu.Unlock()
 		close(events)
 	}()

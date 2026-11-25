@@ -371,7 +371,7 @@ func workFrame(evt domain.TimelineEvent) string {
 			name = evt.ToolCall.Tool
 		}
 		return "🔧 " + clamp(name)
-	case domain.EventDelegation:
+	case domain.EventDelegation, domain.EventDelegationStarted, domain.EventDelegationCompleted:
 		return "👥 " + clamp(evt.Text)
 	case domain.EventAgentStep:
 		if evt.Text == "" || strings.HasPrefix(evt.Text, "engine:") || strings.HasPrefix(evt.Text, "Pre-execution") {

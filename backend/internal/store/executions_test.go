@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -141,5 +142,34 @@ func TestMigrateMessagesAgent(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	} else {
 		_ = s3.Close()
+	}
+}
+
+// The execution list keeps every root row and the NEWEST bounded set of
+// the rest, in creation order.
+func TestSessionExecutionsKeepsRootAndNewest(t *testing.T) {
+	s, err := Open(t.TempDir() + "/exec3.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	root, _ := s.EnsureSession("s-many", "research")
+	for i := 0; i < MaxSessionExecutions+5; i++ {
+		if _, err := s.CreateChildExecution("s-many", root, fmt.Sprintf("agent-%03d", i%7)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tree, err := s.SessionExecutions("s-many")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tree) != MaxSessionExecutions+1 {
+		t.Fatalf("want root + %d newest, got %d", MaxSessionExecutions, len(tree))
+	}
+	if tree[0].ID != root || tree[0].Role() != "root" {
+		t.Fatalf("root first: %+v", tree[0])
+	}
+	if !tree[len(tree)-1].StartedAt.After(tree[1].StartedAt) {
+		t.Fatalf("creation order broken")
 	}
 }

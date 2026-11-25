@@ -374,7 +374,7 @@ func (s *Server) StreamSessionEvents(w http.ResponseWriter, r *http.Request, ses
 			_, _ = fmt.Fprintf(w, ": heartbeat\n\n")
 			flusher.Flush()
 		case evt := <-busCh:
-			live := sseEvent{ID: evt.ID, SessionID: evt.SessionID, Kind: string(evt.Kind), Text: evt.Text, Ward: evt.Ward, Agent: evt.Agent, ExecutionID: evt.ExecutionID, Delegation: evt.Delegation}
+			live := sseEvent{ID: evt.ID, SessionID: evt.SessionID, Kind: string(evt.Kind), Text: evt.Text, Ward: evt.Ward, Agent: evt.Agent, ExecutionID: evt.ExecutionID, Delegation: evt.Delegation, Timestamp: evt.Timestamp}
 			if isAnalysisKind(evt.Kind) {
 				live.Intent = evt.IntentAnalysis
 			}

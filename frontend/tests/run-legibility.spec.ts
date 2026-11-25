@@ -171,7 +171,7 @@ test('the Work tab attributes steps, shows delegation cards with cost, and total
   await expect(cards.nth(1)).toContainText('284.1k → 16.8k');
   // The footer totals every execution: root + analyst + both children.
   const foot = work.locator('footer.run-foot');
-  await expect(foot).toContainText('Run: 1.0M prompt');
+  await expect(foot).toContainText('Session: 1.0M prompt');
   await expect(foot).toContainText('61.9k completion');
   await expect(foot).toContainText('2 delegations');
   await expect(foot).toContainText('14m'); // zero parts drop
@@ -211,10 +211,10 @@ test('a stale state response never overwrites newer run totals', async ({ page }
   const panel = page.getByRole('complementary', { name: 'Session context' });
   await panel.getByRole('tab', { name: /Work/ }).click();
   const work = panel.getByRole('tabpanel', { name: 'Work' });
-  await expect(work.locator('footer.run-foot')).toContainText('Run: 1.0M prompt');
+  await expect(work.locator('footer.run-foot')).toContainText('Session: 1.0M prompt');
   // Wait out the stale response: the totals and the analysis must stand.
   await page.waitForTimeout(900);
-  await expect(work.locator('footer.run-foot')).toContainText('Run: 1.0M prompt');
+  await expect(work.locator('footer.run-foot')).toContainText('Session: 1.0M prompt');
   await expect(page.locator('.analysis-chip')).toContainText('analyze-inr-usd-pressures');
 });
 

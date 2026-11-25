@@ -175,6 +175,9 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 		TokensIn: tokensIn, TokensOut: tokensOut, DurationMS: time.Since(started).Milliseconds(), Status: status}
 	d.adapter.emitDelegation(d.ctx, d.events, d.parent, domain.EventDelegationCompleted, done,
 		fmt.Sprintf("%s finished (%s) · %d tokens in / %d out · %d ms", spec.Name, status, tokensIn, tokensOut, done.DurationMS))
+	// The parent resumes: host-level events (a ward transition the root
+	// makes next) must be attributed to the parent again, not the child.
+	d.adapter.setRunAttribution(d.parent.sessionID, d.parent)
 	if err != nil {
 		return tools.Result{Err: fmt.Errorf("delegate_agent: %s: %w", args.Agent, err)}
 	}

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"zbot/backend/internal/domain"
 )
@@ -19,6 +20,9 @@ type sseEvent struct {
 	SessionID string
 	Kind      string
 	Text      string
+	// Timestamp is the event's time (the row's created_at on replay,
+	// the event's own time live) — the contract requires it.
+	Timestamp time.Time
 	// Agent + ExecutionID attribute every frame (replayed or live) to the
 	// acting agent and its execution — run-legibility.
 	Agent       string
@@ -52,6 +56,9 @@ func isAnalysisKind(kind domain.TimelineEventKind) bool {
 func writeSSE(w http.ResponseWriter, e sseEvent) {
 	body := map[string]any{
 		"id": e.ID, "session_id": e.SessionID, "kind": e.Kind, "text": e.Text,
+	}
+	if !e.Timestamp.IsZero() {
+		body["timestamp"] = e.Timestamp
 	}
 	if e.Agent != "" {
 		body["agent"] = e.Agent
@@ -108,7 +115,8 @@ func (s *Server) dbSessionEvents(sessionID, afterID string, limit int) ([]sseEve
 		if agent == "" {
 			agent = e.Agent
 		}
-		ev := sseEvent{ID: e.ID, SessionID: e.SessionID, Kind: kind, Text: payload.Text, Ward: payload.Ward, Agent: agent, ExecutionID: e.ExecutionID, Delegation: payload.Delegation}
+		ts, _ := time.Parse(time.RFC3339Nano, e.CreatedAt)
+		ev := sseEvent{ID: e.ID, SessionID: e.SessionID, Kind: kind, Text: payload.Text, Ward: payload.Ward, Agent: agent, ExecutionID: e.ExecutionID, Delegation: payload.Delegation, Timestamp: ts}
 		if isAnalysisKind(domain.TimelineEventKind(kind)) {
 			ev.Intent = payload.IntentAnalysis
 		}

@@ -1914,9 +1914,9 @@ components:
         agent:
           type: string
           maxLength: 128
-          description: The acting agent — `root` for root/chat rows, the
-            delegated sub-agent's name for a child's rows; absent on rows
-            that predate attribution (read as root).
+          description: The acting agent — `root` for root and chat rows
+            (rows that predate attribution arrive as `root` too), the
+            delegated sub-agent's name for a child's rows.
         execution_id:
           $ref: '#/components/schemas/Id'
 

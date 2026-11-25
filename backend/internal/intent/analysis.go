@@ -78,9 +78,10 @@ func (w *Wrapper) failedEvent(sessionID, execID, reason string, d Decision, took
 // bypassEvent: the router or the kill-switch skipped analysis.
 func (w *Wrapper) bypassEvent(sessionID, reason string) *domain.TimelineEvent {
 	// A bypass is the wrapper's decision about the ROOT run (no analyst
-	// execution exists) — attributed to root under the root execution id.
+	// execution exists) — attributed to root; the root execution id is
+	// filled in by the wrapper once the session id is known.
 	return &domain.TimelineEvent{
-		ID: eventID(), SessionID: sessionID, ExecutionID: "exec-root-" + sessionID, Agent: domain.AgentRoot, Kind: domain.EventAnalysisBypassed, Timestamp: time.Now().UTC(),
+		ID: eventID(), SessionID: sessionID, Agent: domain.AgentRoot, Kind: domain.EventAnalysisBypassed, Timestamp: time.Now().UTC(),
 		Text:           "Pre-execution intent analysis bypassed — " + reason,
 		IntentAnalysis: &domain.IntentAnalysisPayload{Status: domain.IntentStatusBypassed, Reason: reason},
 	}

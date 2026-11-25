@@ -1120,7 +1120,7 @@ export interface components {
             /** @description REQUEST usage (bills the whole request context); not content size. */
             prompt_tokens?: number;
             completion_tokens?: number;
-            /** @description The acting agent — `root` for root/chat rows, the delegated sub-agent's name for a child's rows; absent on rows that predate attribution (read as root). */
+            /** @description The acting agent — `root` for root and chat rows (rows that predate attribution arrive as `root` too), the delegated sub-agent's name for a child's rows. */
             agent?: string;
             execution_id?: components["schemas"]["Id"];
             /** @description The model's final reasoning/thinking text (assistant rows from reasoning models; null when the model produced none). */

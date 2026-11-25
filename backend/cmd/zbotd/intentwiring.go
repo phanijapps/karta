@@ -148,12 +148,16 @@ func wireIntentMiddleware(d intentDeps) domain.AgentEngine {
 			// stored payload carries text AND the typed analysis (the
 			// SSE replay reads both).
 			Emit: func(ev domain.TimelineEvent) {
+				// The durable row carries the attribution too (agent in the
+				// payload, execution on the row) — a replayed analysis is
+				// as attributed as the live one.
 				payload, _ := json.Marshal(map[string]any{
 					"text":            ev.Text,
+					"agent":           ev.Agent,
 					"intent_analysis": ev.IntentAnalysis,
 				})
 				_ = db.AppendEvent(zbotstore.Event{ //nolint:errcheck // attempted-durable-first (F-15 posture)
-					ID: ev.ID, SessionID: ev.SessionID, Kind: string(ev.Kind), Payload: string(payload),
+					ID: ev.ID, SessionID: ev.SessionID, ExecutionID: ev.ExecutionID, Kind: string(ev.Kind), Payload: string(payload),
 				})
 				_ = bus.Publish(context.WithoutCancel(ctx), ev) //nolint:errcheck // fire-and-forget emit (F-15)
 			},

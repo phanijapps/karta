@@ -6,6 +6,7 @@ package store
 
 import (
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -62,11 +63,28 @@ func (s *Store) ExecutionUsage(execID string) (tokensIn, tokensOut int64, status
 const MaxSessionExecutions = 256
 
 // SessionExecutions lists the session's execution tree in creation
-// order (root first by convention), bounded.
+// order (root first by convention). The root rows are always kept; the
+// other rows are bounded to the NEWEST MaxSessionExecutions, so a long
+// session never drops its latest runs.
 func (s *Store) SessionExecutions(sessionID string) ([]ExecutionInfo, error) {
-	rows, err := s.db.Query(`SELECT id, COALESCE(parent_id,''), agent, delegation, COALESCE(task,''), status,
+	const cols = `SELECT id, COALESCE(parent_id,''), agent, delegation, COALESCE(task,''), status,
 		tokens_in, tokens_out, created_at, COALESCE(finished_at,'')
-		FROM executions WHERE session_id = ? ORDER BY rowid LIMIT ?`, sessionID, MaxSessionExecutions)
+		FROM executions WHERE session_id = ? AND `
+	out, err := s.executionsWhere(cols+"delegation = 'root' ORDER BY rowid", sessionID)
+	if err != nil {
+		return nil, err
+	}
+	others, err := s.executionsWhere(cols+"delegation != 'root' ORDER BY rowid DESC LIMIT ?", sessionID, MaxSessionExecutions)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, others...)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].StartedAt.Before(out[j].StartedAt) })
+	return out, nil
+}
+
+func (s *Store) executionsWhere(q string, args ...any) ([]ExecutionInfo, error) {
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: session executions: %w", err)
 	}
