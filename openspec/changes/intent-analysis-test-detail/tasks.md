@@ -10,5 +10,5 @@
 
 - [x] 2.1 Phase gate (gpt-6.1-sol); fix P0/P1; P2s fixed or recorded in
   findings.md. Verify: ledger zero open P0/P1.
-- [ ] 2.2 zbot-reviewer + `task verify` green. Verify: reviewer zero
+- [x] 2.2 zbot-reviewer + `task verify` green. Verify: reviewer zero
   open P0/P1; verify exits zero.
