@@ -182,12 +182,13 @@ func (w *Wrapper) TestAnalysis(ctx context.Context, goal string) TestResult {
 		return res
 	}
 	res.Status = domain.IntentStatusAnalyzed
-	sanitized, _ := d.Analysis.Sanitize(w.knownSkills(), w.knownAgents(), w.knownMCP(), w.knownWards())
+	sanitized, drops := d.Analysis.Sanitize(w.knownSkills(), w.knownAgents(), w.knownMCP(), w.knownWards())
 	if b, err := sanitized.Complexity.StepBudget(); err == nil {
 		res.Analysis = contractPayload(sanitized, b)
 	} else {
 		res.Analysis = contractPayload(sanitized, 0)
 	}
+	res.Analysis.Dropped = drops // the probe reports drops like the event does
 	return res
 }
 

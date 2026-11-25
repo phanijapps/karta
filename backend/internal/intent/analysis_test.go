@@ -376,16 +376,43 @@ func TestCompletedEventCarriesFullContract(t *testing.T) {
 	if res.Analysis == nil || len(res.Analysis.HiddenIntents) != 2 || res.Analysis.Explanation == "" {
 		t.Fatalf("probe: %+v", res.Analysis)
 	}
-	// An unknown MCP recommendation is dropped (and named), not recommended.
+	// An unknown MCP recommendation is dropped (and named) on the event
+	// AND on the probe — never silently.
 	w.Cfg.KnownMCPs = func(string) bool { return false }
 	log.evs = nil
-	fc2 := &fakeCompleter{responses: []string{fullContract, fullContract, fullContract}}
+	fc2 := &fakeCompleter{responses: []string{fullContract, fullContract, fullContract, fullContract}}
 	w.Analyzer = &Analyzer{Completer: fc2}
 	evs, _ = w.RunGoal(context.Background(), domain.GoalRequest{SessionID: "s-full2", Goal: "g", Model: "p/m"})
 	for range evs {
 	}
 	done = log.evs[len(log.evs)-1].IntentAnalysis
-	if len(done.RecommendedMCPs) != 0 {
-		t.Fatalf("unknown MCPs must not be recommended: %v", done.RecommendedMCPs)
+	if len(done.RecommendedMCPs) != 0 || len(done.Dropped) != 1 || !strings.Contains(done.Dropped[0], "brave-mcp") {
+		t.Fatalf("unknown MCPs must be dropped and named: recs=%v dropped=%v", done.RecommendedMCPs, done.Dropped)
+	}
+	res = w.TestAnalysis(context.Background(), "")
+	if res.Analysis == nil || len(res.Analysis.RecommendedMCPs) != 0 || len(res.Analysis.Dropped) != 1 {
+		t.Fatalf("probe must report the drop too: %+v", res.Analysis)
+	}
+}
+
+// The wire bounds are enforced by clamping: an over-long decision is
+// trimmed, never failed.
+func TestSanitizeClampsAdvisoryTexts(t *testing.T) {
+	a := domain.IntentAnalysis{
+		PrimaryIntent: "x", Complexity: domain.ComplexityS,
+		HiddenIntents: make([]string, 20), SolutionPath: strings.Repeat("s", 4000),
+		WardRecommendation: domain.WardRecommendation{Action: domain.WardCreateNew, WardName: "ww", Reason: strings.Repeat("r", 2000), Archetype: strings.Repeat("a", 100)},
+		ExecutionStrategy:  domain.IntentExecutionPlan{Approach: domain.ApproachSimple, Explanation: strings.Repeat("e", 3000)},
+	}
+	for i := range a.HiddenIntents {
+		a.HiddenIntents[i] = strings.Repeat("h", 600)
+	}
+	a, _ = a.Sanitize(nil, nil, nil, nil)
+	if len(a.HiddenIntents) != domain.MaxHiddenIntents || len(a.HiddenIntents[0]) != domain.MaxHiddenIntentLen {
+		t.Fatalf("hidden intents clamp: %d / %d", len(a.HiddenIntents), len(a.HiddenIntents[0]))
+	}
+	if len(a.SolutionPath) != domain.MaxSolutionPathLen || len(a.ExecutionStrategy.Explanation) != domain.MaxExplanationLen ||
+		len(a.WardRecommendation.Reason) != domain.MaxWardReasonLen || len(a.WardRecommendation.Archetype) != domain.MaxWardArchetypeLen {
+		t.Fatalf("string clamps: %d %d %d %d", len(a.SolutionPath), len(a.ExecutionStrategy.Explanation), len(a.WardRecommendation.Reason), len(a.WardRecommendation.Archetype))
 	}
 }

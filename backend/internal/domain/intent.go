@@ -148,11 +148,46 @@ func (a IntentAnalysis) requiredFields() error {
 	return nil
 }
 
+// Contract bounds (the wire payload's declared limits): lists and
+// strings the analyst may produce at most this much of. Enforced by
+// clamping in Sanitize — an over-long advisory text is trimmed, never a
+// reason to fail a decision.
+const (
+	MaxHiddenIntents    = 12
+	MaxHiddenIntentLen  = 512
+	MaxSolutionPathLen  = 2048
+	MaxExplanationLen   = 2048
+	MaxWardReasonLen    = 1024
+	MaxWardArchetypeLen = 64
+)
+
+// clampList bounds a string list's length and each entry's length.
+func clampList(in []string, maxItems, maxLen int) []string {
+	if len(in) > maxItems {
+		in = in[:maxItems]
+	}
+	for i, s := range in {
+		if len(s) > maxLen {
+			in[i] = s[:maxLen]
+		}
+	}
+	return in
+}
+
+// clampLen bounds a string's length.
+func clampLen(s string, maxLen int) string {
+	if len(s) > maxLen {
+		return s[:maxLen]
+	}
+	return s
+}
+
 // Sanitize clamps the contract to values the runtime can act on:
 // budgets/approach fall back when invalid; recommended names are
 // filtered through the known predicates (a name the predicate does not
 // know is DROPPED, not guessed); use_existing must match a known ward
-// exactly or degrades to create_new; ward names must be valid shapes.
+// exactly or degrades to create_new; ward names must be valid shapes;
+// the advisory texts are clamped to the contract's declared bounds.
 // It returns the dropped names so the caller can warn.
 func (a IntentAnalysis) Sanitize(knownSkill, knownAgent, knownMCP, knownWard func(string) bool) (IntentAnalysis, []string) {
 	dropped := []string{}
@@ -198,5 +233,10 @@ func (a IntentAnalysis) Sanitize(knownSkill, knownAgent, knownMCP, knownWard fun
 		}
 		a.Complexity = ComplexityM
 	}
+	a.HiddenIntents = clampList(a.HiddenIntents, MaxHiddenIntents, MaxHiddenIntentLen)
+	a.SolutionPath = clampLen(a.SolutionPath, MaxSolutionPathLen)
+	a.ExecutionStrategy.Explanation = clampLen(a.ExecutionStrategy.Explanation, MaxExplanationLen)
+	a.WardRecommendation.Reason = clampLen(a.WardRecommendation.Reason, MaxWardReasonLen)
+	a.WardRecommendation.Archetype = clampLen(a.WardRecommendation.Archetype, MaxWardArchetypeLen)
 	return a, dropped
 }

@@ -315,7 +315,7 @@
               <h4>What the analyst saw</h4>
               {#if ia.hidden_intents?.length}
                 <ul class="analysis-list">
-                  {#each ia.hidden_intents as h (h)}<li>{h}</li>{/each}
+                  {#each ia.hidden_intents as h}<li>{h}</li>{/each}
                 </ul>
               {/if}
               {#if ia.explanation}<p class="analysis-prose">{ia.explanation}</p>{/if}
@@ -331,16 +331,17 @@
             <section class="analysis-section" aria-label="Resources">
               <h4>Resources</h4>
               <div class="skills-row">
-                {#each ia.recommended_skills ?? [] as s (s)}
+                {#each ia.recommended_skills ?? [] as s}
                   <span class="skill-chip" title="Provisioned for the run (the ## Skills section)">{s}</span>
                 {/each}
-                {#each ia.recommended_agents ?? [] as s (s)}
+                {#each ia.recommended_agents ?? [] as s}
                   <span class="skill-chip agent" title="Recommended for delegation">{s}</span>
                 {/each}
-                {#each ia.recommended_mcp_tools ?? [] as s (s)}
+                {#each ia.recommended_mcp_tools ?? [] as s}
                   <span class="skill-chip mcp" title="Recommended MCP tool — advisory until the orchestrator mounts recommendations">⚙ {s}</span>
                 {/each}
-                {#each ia.dropped ?? [] as s (s)}
+                {#if ia.recommended_mcp_tools?.length}<span class="muted small">MCP tools are recommendations only — not mounted for the run yet.</span>{/if}
+                {#each ia.dropped ?? [] as s}
                   <span class="skill-chip dropped" title="Recommended but not in the index — dropped">{s} ✕ dropped</span>
                 {/each}
               </div>
