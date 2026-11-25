@@ -39,7 +39,7 @@ async function mockDaemon(page: Page, opts: { status: Record<string, unknown>; c
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.testResult ?? {
       status: 'analyzed', model: 'zai/glm-5.3-flash', context_window: 128000, window_source: 'table',
       attempts: 2, tokens_in: 2400, tokens_out: 310, duration_ms: 4100, trimmed: false, packet_tokens: 2153,
-      analysis: { status: 'analyzed', primary_intent: 'probe-intent', complexity: 'M', step_budget: 8, approach: 'graph', ward_name: 'ai-agents-research' },
+      analysis: { status: 'analyzed', primary_intent: 'probe-intent', hidden_intents: ['compare energy use at idle', 'note licensing costs'], solution_path: 'benchmark, then write', explanation: 'needs two sources', complexity: 'M', step_budget: 8, approach: 'graph', ward_name: 'ai-agents-research', ward_reason: 'ai research lives here', recommended_skills: ['pdf'], recommended_mcp_tools: ['brave-mcp'], dropped: ['ghost'] },
     }) });
   });
 }
@@ -87,6 +87,14 @@ test('the Intent Analysis card derives limits read-only, saves the selection, an
   await expect(result).toContainText('Attempts');
   await expect(result).toContainText('probe-intent · M · graph · ward ai-agents-research');
   await expect(result).toContainText('no trimming');
+  // The whole decision, grouped like the chat popover, plus the raw JSON.
+  await expect(result.getByRole('region', { name: 'What the analyst saw' }).getByRole('listitem')).toHaveText(['compare energy use at idle', 'note licensing costs']);
+  await expect(result).toContainText('needs two sources');
+  await expect(result.getByRole('region', { name: 'Solution path' })).toContainText('benchmark, then write');
+  await expect(result.getByRole('region', { name: 'Resources' })).toContainText('brave-mcp');
+  await expect(result).toContainText('ghost ✕ dropped');
+  await expect(result).toContainText('Ward — ai research lives here');
+  await expect(result).toContainText('"primary_intent": "probe-intent"'); // the raw JSON (details are open in the accessibility tree)
   // A custom goal rides the body.
   await card.getByRole('textbox', { name: /Goal/ }).fill('Compare AMD and NVIDIA');
   await card.getByRole('button', { name: 'Test analysis' }).click();

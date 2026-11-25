@@ -228,6 +228,40 @@
               <div><dt>Decision</dt><dd>{testResult.analysis.primary_intent}{testResult.analysis.complexity ? ` · ${testResult.analysis.complexity}` : ''}{testResult.analysis.approach ? ` · ${testResult.analysis.approach}` : ''}{testResult.analysis.ward_name ? ` · ward ${testResult.analysis.ward_name}` : ''}</dd></div>
             {/if}
           </dl>
+          {#if testResult.analysis}
+            <!-- The analyst's whole decision, grouped like the chat popover. -->
+            {#if testResult.analysis.hidden_intents?.length || testResult.analysis.explanation}
+              <section class="test-section" aria-label="What the analyst saw">
+                <h5>What the analyst saw</h5>
+                {#if testResult.analysis.hidden_intents?.length}
+                  <ul class="test-list">{#each testResult.analysis.hidden_intents as h}<li>{h}</li>{/each}</ul>
+                {/if}
+                {#if testResult.analysis.explanation}<p class="test-prose">{testResult.analysis.explanation}</p>{/if}
+              </section>
+            {/if}
+            {#if testResult.analysis.solution_path}
+              <section class="test-section" aria-label="Solution path"><h5>Solution path</h5><p class="test-prose">{testResult.analysis.solution_path}</p></section>
+            {/if}
+            {#if testResult.analysis.recommended_skills?.length || testResult.analysis.recommended_agents?.length || testResult.analysis.recommended_mcp_tools?.length || testResult.analysis.dropped?.length}
+              <section class="test-section" aria-label="Resources">
+                <h5>Resources</h5>
+                <div class="test-chips">
+                  {#each testResult.analysis.recommended_skills ?? [] as s}<span class="test-chip">{s}</span>{/each}
+                  {#each testResult.analysis.recommended_agents ?? [] as s}<span class="test-chip agent">{s}</span>{/each}
+                  {#each testResult.analysis.recommended_mcp_tools ?? [] as s}<span class="test-chip mcp">⚙ {s}</span>{/each}
+                  {#each testResult.analysis.dropped ?? [] as s}<span class="test-chip dropped">{s} ✕ dropped</span>{/each}
+                </div>
+                {#if testResult.analysis.recommended_mcp_tools?.length}<p class="muted small">MCP tools are recommendations only — not mounted for a run yet.</p>{/if}
+              </section>
+            {/if}
+            {#if testResult.analysis.ward_reason}
+              <p class="muted small">Ward — {testResult.analysis.ward_reason}{testResult.analysis.ward_archetype ? ` (${testResult.analysis.ward_archetype} archetype)` : ''}</p>
+            {/if}
+            <details class="test-raw">
+              <summary>Raw decision JSON</summary>
+              <pre>{JSON.stringify(testResult.analysis, null, 2)}</pre>
+            </details>
+          {/if}
         </div>
       {/if}
     </section>
@@ -250,5 +284,17 @@
   .test-meta { display: grid; grid-template-columns: max-content 1fr; gap: var(--ds-space-1) var(--ds-space-4); margin: 0; font-size: 0.8125rem; }
   .test-meta dt { color: var(--ds-color-muted); }
   .test-meta dd { margin: 0; }
+  .test-section { display: grid; gap: var(--ds-space-1); margin-top: var(--ds-space-2); }
+  .test-section h5 { margin: 0; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ds-color-muted); }
+  .test-list { margin: 0; padding-left: 1.1rem; font-size: 0.8125rem; display: grid; gap: 0.1rem; }
+  .test-prose { margin: 0; font-size: 0.8125rem; line-height: 1.45; }
+  .test-chips { display: flex; flex-wrap: wrap; gap: var(--ds-space-1); }
+  .test-chip { font-size: 0.75rem; padding: 0.1rem 0.5rem; border-radius: 999px; border: 1px solid var(--ds-color-border); }
+  .test-chip.agent { border-color: var(--ds-color-primary); }
+  .test-chip.mcp { border-style: dashed; }
+  .test-chip.dropped { text-decoration: line-through; opacity: 0.8; }
+  .test-raw { margin-top: var(--ds-space-2); font-size: 0.75rem; }
+  .test-raw summary { cursor: pointer; color: var(--ds-color-muted); }
+  .test-raw pre { margin: var(--ds-space-1) 0 0; padding: var(--ds-space-2); max-height: 16rem; overflow: auto; border-radius: 8px; background: var(--ds-color-hover); font-size: 0.7rem; }
   @media (max-width: 720px) { .fields { grid-template-columns: minmax(0, 1fr); } }
 </style>
