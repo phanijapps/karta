@@ -428,8 +428,11 @@ test('a live research run shows its latest thinking in the thread; the analysis 
     return new Promise(() => {});
   });
   await page.route((url) => url.pathname === '/api/sessions/r-stock/events', (route) => {
+    // The intent-analyst trail: started (work-stream row only — never the
+    // chip) then completed (the chip lands from the terminal event).
     const frames = [
-      'event: intent_analysis\ndata: ' + JSON.stringify({ id: 'e1', kind: 'intent_analysis', text: 't', intent_analysis: { status: 'analyzed', primary_intent: 'nvda-check', complexity: 'M', step_budget: 8, approach: 'graph', recommended_skills: ['pdf'] } }),
+      'event: analysis_started\ndata: ' + JSON.stringify({ id: 'e0', kind: 'analysis_started', text: 'Intent analysis started — zai/glm-5.3-flash (window 128000, table)', intent_analysis: { status: 'started', model: 'zai/glm-5.3-flash', context_window: 128000, window_source: 'table' } }),
+      'event: analysis_completed\ndata: ' + JSON.stringify({ id: 'e1', kind: 'analysis_completed', text: 't', intent_analysis: { status: 'analyzed', primary_intent: 'nvda-check', complexity: 'M', step_budget: 8, approach: 'graph', recommended_skills: ['pdf'], tokens_in: 1200, tokens_out: 180, duration_ms: 900, attempts: 1, model: 'zai/glm-5.3-flash', context_window: 128000, window_source: 'table' } }),
       'event: agent_step\ndata: ' + JSON.stringify({ id: 'e2', kind: 'agent_step', text: 'Entering the ward and staging the search.' }),
       'event: agent_step\ndata: ' + JSON.stringify({ id: 'e3', kind: 'agent_step', text: 'Reading the prior brief before searching.' }),
       'event: tool_call\ndata: ' + JSON.stringify({ id: 'e4', kind: 'tool_call', text: 'mcp_brave-mcp_brave_web_search' }),
@@ -447,8 +450,14 @@ test('a live research run shows its latest thinking in the thread; the analysis 
   await expect(working).toBeVisible();
   await expect(working).toContainText('Reading the prior brief before searching.');
   await expect(working).not.toContainText('Entering the ward and staging');
-  // The analysis chip lands mid-run from the SSE event.
+  // The analysis chip lands mid-run from the TERMINAL event, with its
+  // cost in the popover.
   await expect(page.locator('.analysis-chip')).toContainText('nvda-check');
+  await page.getByRole('button', { name: 'Task analysis details' }).click();
+  const popover = page.getByRole('dialog', { name: 'Task Analysis' });
+  await expect(popover).toContainText('1.2k in / 180 out');
+  await expect(popover).toContainText('900 ms');
+  await expect(popover).toContainText('zai/glm-5.3-flash');
 });
 
 test('leaving a ward: the strip offers Leave (non-warden), clears the binding, focus returns to the composer', async ({ page }) => {
