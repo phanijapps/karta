@@ -212,8 +212,10 @@
         <button class="secondary" onclick={() => void runTest()} disabled={!canTest}>{testing ? 'Analyzing…' : 'Test analysis'}</button>
       </div>
       {#if testResult}
-        <div class="test-result" role="status">
-          <p class="test-status" class:failed={testResult.status === 'failed'}>
+        <div class="test-result">
+          <!-- Only the outcome line is a live region: the decision's prose
+               below is read on demand, not announced atomically. -->
+          <p class="test-status" class:failed={testResult.status === 'failed'} role="status">
             {testResult.status === 'analyzed' ? 'Analyzed' : 'Failed'}
             {#if testResult.status === 'failed' && testResult.reason}<span class="muted"> — {testResult.reason}</span>{/if}
           </p>

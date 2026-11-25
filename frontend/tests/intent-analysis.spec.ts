@@ -94,7 +94,14 @@ test('the Intent Analysis card derives limits read-only, saves the selection, an
   await expect(result.getByRole('region', { name: 'Resources' })).toContainText('brave-mcp');
   await expect(result).toContainText('ghost ✕ dropped');
   await expect(result).toContainText('Ward — ai research lives here');
-  await expect(result).toContainText('"primary_intent": "probe-intent"'); // the raw JSON (details are open in the accessibility tree)
+  // The raw JSON sits in a native disclosure: hidden until the summary
+  // is activated (keyboard works), then the parsed payload is readable.
+  const raw = result.locator('pre');
+  await expect(raw).toBeHidden();
+  await result.getByText('Raw decision JSON').focus();
+  await page.keyboard.press('Enter');
+  await expect(raw).toBeVisible();
+  expect(JSON.parse((await raw.textContent()) ?? '{}').primary_intent).toBe('probe-intent');
   // A custom goal rides the body.
   await card.getByRole('textbox', { name: /Goal/ }).fill('Compare AMD and NVIDIA');
   await card.getByRole('button', { name: 'Test analysis' }).click();
