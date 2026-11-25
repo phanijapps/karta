@@ -13,8 +13,16 @@ const (
 	EventSession TimelineEventKind = "session"
 	// EventAgentStep — one agent reasoning/writing step.
 	EventAgentStep TimelineEventKind = "agent_step"
-	// EventDelegation — the agent spawned a sub-agent for a task.
+	// EventDelegation — a delegated child's steps, surfaced in the
+	// parent's live stream (the durable rows keep the original kinds
+	// under the child's execution, attributed by agent).
 	EventDelegation TimelineEventKind = "delegation"
+	// EventDelegationStarted — a child run began (agent, task,
+	// execution). A delegation is a Timeline node.
+	EventDelegationStarted TimelineEventKind = "delegation_started"
+	// EventDelegationCompleted — the child run ended, with its token
+	// usage, duration and status.
+	EventDelegationCompleted TimelineEventKind = "delegation_completed"
 	// EventToolCall — a tool was invoked (with its outcome).
 	EventToolCall TimelineEventKind = "tool_call"
 	// EventHookDecision — lifecycle hooks decided allow/block/warn.
@@ -57,10 +65,15 @@ type TimelineEvent struct {
 	SessionID string `json:"session_id"`
 	// ParentID nests events (a delegation's children reference it); empty at root.
 	ParentID string `json:"parent_id,omitempty"`
-	// Agent names the acting agent (root or sub-agent).
-	Agent     string            `json:"agent,omitempty"`
-	Kind      TimelineEventKind `json:"kind"`
-	Timestamp time.Time         `json:"timestamp"`
+	// Agent names the ACTING agent: "root", a named root agent, the
+	// delegated sub-agent's name, or "intent-analyst". Every frame and
+	// durable row carries it.
+	Agent string `json:"agent,omitempty"`
+	// ExecutionID is the execution the event belongs to (root, analyst,
+	// or the delegated child's) — attribution for grouping and cost.
+	ExecutionID string            `json:"execution_id,omitempty"`
+	Kind        TimelineEventKind `json:"kind"`
+	Timestamp   time.Time         `json:"timestamp"`
 	// Text is the human-readable description of the step.
 	Text string `json:"text,omitempty"`
 
@@ -188,4 +201,14 @@ type DelegationPayload struct {
 	ChildAgent     string `json:"child_agent"`
 	ChildSessionID string `json:"child_session_id,omitempty"`
 	Task           string `json:"task"`
+	// ExecutionID, tokens, duration and status ride the completed
+	// event (the started one carries the execution id only).
+	ExecutionID string `json:"execution_id,omitempty"`
+	TokensIn    int64  `json:"tokens_in,omitempty"`
+	TokensOut   int64  `json:"tokens_out,omitempty"`
+	DurationMS  int64  `json:"duration_ms,omitempty"`
+	Status      string `json:"status,omitempty"`
 }
+
+// AgentRoot names the root run's acting agent on rows and events.
+const AgentRoot = "root"

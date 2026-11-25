@@ -15,6 +15,10 @@ type Event struct {
 	Kind        string // domain.TimelineEventKind values
 	Payload     string // JSON kind-specific payload
 	CreatedAt   string // RFC3339Nano UTC
+	// Agent is the execution's agent from the executions join ("root" for
+	// the root run) — the attribution fallback for rows whose payload
+	// predates agents riding it (run-legibility).
+	Agent string
 }
 
 // AppendEvent durably records one timeline event.
@@ -37,14 +41,18 @@ func (s *Store) AppendEvent(e Event) error {
 // Events replays durable events ordered by creation (rowid as the stable
 // insertion order), bounded; afterID empty replays from the start.
 func (s *Store) Events(sessionID, afterID string, limit int) ([]Event, error) {
-	q := `SELECT id, COALESCE(execution_id,''), COALESCE(parent_id,''), kind, payload, created_at
-		FROM timeline_events WHERE session_id = ?`
+	// Left-joined to the execution so every row knows its agent even when
+	// its payload predates attribution (run-legibility).
+	q := `SELECT e.id, COALESCE(e.execution_id,''), COALESCE(e.parent_id,''), e.kind, e.payload, e.created_at,
+		COALESCE(CASE WHEN x.delegation = 'root' THEN 'root' ELSE x.delegation END, '')
+		FROM timeline_events e LEFT JOIN executions x ON x.id = e.execution_id
+		WHERE e.session_id = ?`
 	args := []any{sessionID}
 	if afterID != "" {
-		q += ` AND rowid > (SELECT rowid FROM timeline_events WHERE id = ?)`
+		q += ` AND e.rowid > (SELECT rowid FROM timeline_events WHERE id = ?)`
 		args = append(args, afterID)
 	}
-	q += ` ORDER BY rowid LIMIT ?`
+	q += ` ORDER BY e.rowid LIMIT ?`
 	args = append(args, limit)
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
@@ -54,7 +62,7 @@ func (s *Store) Events(sessionID, afterID string, limit int) ([]Event, error) {
 	var out []Event
 	for rows.Next() {
 		var e Event
-		if err := rows.Scan(&e.ID, &e.ExecutionID, &e.ParentID, &e.Kind, &e.Payload, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.ExecutionID, &e.ParentID, &e.Kind, &e.Payload, &e.CreatedAt, &e.Agent); err != nil {
 			return nil, fmt.Errorf("store: event scan: %w", err)
 		}
 		e.SessionID = sessionID

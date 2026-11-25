@@ -12,11 +12,13 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 
 	"zbot/backend/internal/domain"
 	"zbot/backend/internal/registry"
+	"zbot/backend/internal/store"
 	"zbot/backend/internal/tools"
 )
 
@@ -156,11 +158,56 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 		return tools.Result{Err: fmt.Errorf("delegate_agent: child execution: %w", err)}
 	}
 	child.execID = childExec
+	// The delegation is a Timeline node: started when the child's
+	// execution exists, completed with its cost when the run ends.
+	started := time.Now()
+	d.adapter.emitDelegation(d.ctx, d.events, d.parent, domain.EventDelegationStarted,
+		&domain.DelegationPayload{ChildAgent: spec.Name, Task: args.Task, ExecutionID: childExec},
+		fmt.Sprintf("Delegated to %s: %s", spec.Name, firstLine(args.Task)))
 	answer, err := d.adapter.runLoop(d.ctx, d.events, child)
+	tokensIn, tokensOut, status, uerr := d.adapter.st.ExecutionUsage(childExec)
+	if err != nil || uerr != nil {
+		status = "failed"
+	}
+	done := &domain.DelegationPayload{ChildAgent: spec.Name, Task: args.Task, ExecutionID: childExec,
+		TokensIn: tokensIn, TokensOut: tokensOut, DurationMS: time.Since(started).Milliseconds(), Status: status}
+	d.adapter.emitDelegation(d.ctx, d.events, d.parent, domain.EventDelegationCompleted, done,
+		fmt.Sprintf("%s finished (%s) · %d tokens in / %d out · %d ms", spec.Name, status, tokensIn, tokensOut, done.DurationMS))
 	if err != nil {
 		return tools.Result{Err: fmt.Errorf("delegate_agent: %s: %w", args.Agent, err)}
 	}
 	return tools.Result{Output: answer}
+}
+
+// firstLine bounds the task text on the started event's line.
+func firstLine(task string) string {
+	line, _, _ := strings.Cut(task, "\n")
+	line = strings.TrimSpace(line)
+	if len(line) > 120 {
+		line = line[:120] + "…"
+	}
+	if line == "" {
+		line = "(task)"
+	}
+	return line
+}
+
+// emitDelegation persists, publishes and streams one delegation
+// lifecycle event into the PARENT's stream (attempted-durable-first,
+// the engine's posture). The event's execution is the CHILD's.
+func (a *Adapter) emitDelegation(ctx context.Context, events chan domain.TimelineEvent, parent runInput, kind domain.TimelineEventKind, p *domain.DelegationPayload, text string) {
+	evt := domain.TimelineEvent{ID: a.idGen(), SessionID: parent.sessionID, ExecutionID: p.ExecutionID, Kind: kind, Agent: p.ChildAgent, Text: text, Delegation: p}
+	payload, _ := json.Marshal(map[string]any{"text": text, "agent": p.ChildAgent, "delegation": p})
+	_ = a.st.AppendEvent(store.Event{ //nolint:errcheck // attempted-durable-first (F-15 posture)
+		ID: evt.ID, SessionID: parent.sessionID, ExecutionID: p.ExecutionID, Kind: string(kind), Payload: string(payload),
+	})
+	if a.bus != nil {
+		_ = a.bus.Publish(context.Background(), evt) // ctx-ok: F-15 fire-and-forget emit
+	}
+	select {
+	case events <- evt:
+	case <-ctx.Done():
+	}
 }
 
 // Cancel stops a session's active run.

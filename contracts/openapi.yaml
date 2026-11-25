@@ -1911,6 +1911,15 @@ components:
         completion_tokens:
           type: integer
           minimum: 0
+        agent:
+          type: string
+          maxLength: 128
+          description: The acting agent — `root` for root/chat rows, the
+            delegated sub-agent's name for a child's rows; absent on rows
+            that predate attribution (read as root).
+        execution_id:
+          $ref: '#/components/schemas/Id'
+
         reasoning:
           type: string
           maxLength: 262144
@@ -2231,6 +2240,45 @@ components:
           $ref: '#/components/schemas/Session'
         intent_analysis:
           $ref: '#/components/schemas/IntentAnalysisPayload'
+        executions:
+          type: array
+          maxItems: 256
+          description: The session's execution rows (root, the intent
+            analyst, every delegated child) with their token usage — the
+            run's cost, readable without a new endpoint.
+          items:
+            $ref: '#/components/schemas/SessionExecution'
+
+    SessionExecution:
+      type: object
+      additionalProperties: false
+      required: [id, agent, role, status, tokens_in, tokens_out, started_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        parent_id:
+          $ref: '#/components/schemas/Id'
+        agent:
+          type: string
+          maxLength: 128
+        role:
+          type: string
+          enum: [root, analyst, delegated]
+        status:
+          type: string
+          maxLength: 32
+        tokens_in:
+          type: integer
+          minimum: 0
+        tokens_out:
+          type: integer
+          minimum: 0
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
     WardEventPayload:
       type: object
       description: |
@@ -2523,7 +2571,7 @@ components:
         (`analysis_completed`, `analysis_bypassed`, `analysis_failed`);
         the pre-existing `intent_analysis` kind is gone (durable replay
         translates legacy rows to the terminal kind by status).
-      enum: [session, agent_step, delegation, tool_call, hook_decision, compaction_triggered, chitta_tool_invoked, chat_delta, analysis_started, analysis_completed, analysis_bypassed, analysis_failed, ward_entered, ward_created]
+      enum: [session, agent_step, delegation, delegation_started, delegation_completed, tool_call, hook_decision, compaction_triggered, chitta_tool_invoked, chat_delta, analysis_started, analysis_completed, analysis_bypassed, analysis_failed, ward_entered, ward_created]
 
     TimelineEvent:
       type: object
@@ -2539,6 +2587,11 @@ components:
         agent:
           type: string
           maxLength: 128
+          description: The ACTING agent — `root`, a named root agent, the
+            delegated sub-agent's name, or `intent-analyst`. Carried on
+            every frame, replayed or live.
+        execution_id:
+          $ref: '#/components/schemas/Id'
         kind:
           $ref: '#/components/schemas/TimelineEventKind'
         timestamp:
@@ -2751,6 +2804,9 @@ components:
 
     DelegationPayload:
       type: object
+      description: A delegation's lifecycle. `delegation_started` carries
+        the agent, task and execution; `delegation_completed` adds the
+        child's token usage, duration and terminal status.
       additionalProperties: false
       required: [child_agent, task]
       properties:
@@ -2765,6 +2821,20 @@ components:
           type: string
           minLength: 1
           maxLength: 16384
+        execution_id:
+          $ref: '#/components/schemas/Id'
+        tokens_in:
+          type: integer
+          minimum: 0
+        tokens_out:
+          type: integer
+          minimum: 0
+        duration_ms:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+          maxLength: 32
 
     HookAction:
       type: string

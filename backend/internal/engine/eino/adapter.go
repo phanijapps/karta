@@ -219,19 +219,16 @@ func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events cha
 func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent, in runInput) (string, error) {
 
 	emit := func(kind domain.TimelineEventKind, text string) {
-		chanKind, chanAgent := kind, in.providerName+"/"+in.modelID
+		chanKind, agent := kind, in.agent()
 		if in.isChild {
 			// Child steps surface in the parent's stream as delegation
-			// events (the Timeline Tree keeps the original kinds under
-			// the child's execution).
-			chanKind, chanAgent = domain.EventDelegation, in.agentName
-		} else if in.agentName != "" {
-			// Named root runs attribute their events to the agent.
-			chanAgent = in.agentName
+			// events (the durable rows keep the original kinds under
+			// the child's execution, attributed by agent).
+			chanKind = domain.EventDelegation
 		}
 		evt := domain.TimelineEvent{
-			ID: a.idGen(), SessionID: in.sessionID, Kind: chanKind,
-			Text: text, Agent: chanAgent,
+			ID: a.idGen(), SessionID: in.sessionID, ExecutionID: in.execID, Kind: chanKind,
+			Text: text, Agent: agent,
 		}
 		// ATTEMPTED-durable-first (F-15, pinned by characterization tests):
 		// the append error is IGNORED — publish and stream happen anyway, so
@@ -239,7 +236,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 		// does the OPPOSITE (skips publish on append failure). The
 		// retry/log/publish-anyway policy is owned by follow-up
 		// backend-engine-run-ownership.
-		payload, _ := json.Marshal(map[string]any{"text": text})
+		payload, _ := json.Marshal(map[string]any{"text": text, "agent": agent})
 		_ = a.st.AppendEvent(store.Event{
 			ID: evt.ID, SessionID: in.sessionID, ExecutionID: in.execID,
 			Kind: string(kind), Payload: string(payload),
@@ -276,7 +273,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 	var err error
 	_, err = a.st.Append(store.Message{
 		ID: fmt.Sprintf("msg-goal-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
-		ExecutionID: in.execID, Role: "user", Content: in.goal,
+		ExecutionID: in.execID, Role: "user", Agent: in.agent(), Content: in.goal,
 	})
 	if err != nil {
 		emit(domain.EventAgentStep, "engine: failed to persist goal: "+err.Error())
@@ -399,10 +396,11 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 		}
 
 		if len(out.ToolCalls) == 0 {
-			// Final answer.
+			// Final answer (with the step's reasoning — the model's
+			// thinking for this step, as the chat path stores it).
 			_, _ = a.st.Append(store.Message{
 				ID: fmt.Sprintf("msg-final-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
-				ExecutionID: in.execID, Role: "assistant", Content: out.Content,
+				ExecutionID: in.execID, Role: "assistant", Agent: in.agent(), Content: out.Content, Reasoning: out.ReasoningContent,
 				Provider: in.providerName, Model: in.modelID,
 			})
 			emit(domain.EventAgentStep, out.Content)
@@ -415,7 +413,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 		intentJSON, _ := json.Marshal(out.ToolCalls)
 		_, _ = a.st.Append(store.Message{
 			ID: fmt.Sprintf("msg-intent-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
-			ExecutionID: in.execID, Role: "assistant", Content: out.Content,
+			ExecutionID: in.execID, Role: "assistant", Agent: in.agent(), Content: out.Content, Reasoning: out.ReasoningContent,
 			ToolCalls: string(intentJSON), Provider: in.providerName, Model: in.modelID,
 		})
 		emit(domain.EventAgentStep, out.Content)
@@ -433,23 +431,21 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 			}
 			tracker.Record(tc.Function.Name, tc.Function.Arguments, errText)
 			// Tool event.
-			payload, _ := json.Marshal(map[string]any{"tool": tc.Function.Name, "output": content})
+			payload, _ := json.Marshal(map[string]any{"tool": tc.Function.Name, "output": content, "agent": in.agent()})
 			_ = a.st.AppendEvent(store.Event{
 				ID: a.idGen(), SessionID: in.sessionID, ExecutionID: in.execID,
 				Kind: "tool_call", Payload: string(payload),
 			})
 			toolEvt := domain.TimelineEvent{
-				ID: a.idGen(), SessionID: in.sessionID, Kind: domain.EventToolCall,
+				ID: a.idGen(), SessionID: in.sessionID, ExecutionID: in.execID, Kind: domain.EventToolCall,
 				Text:     tc.Function.Name, // the name rides Text too: every SSE consumer (UI work stream, /v1 frames) renders it
+				Agent:    in.agent(),
 				ToolCall: &domain.ToolCallPayload{Tool: tc.Function.Name, Output: content},
 			}
-			if in.isChild || in.agentName != "" {
-				// Tool events carry the agent attribution (child runs
-				// surface them as delegation events like every step).
-				toolEvt.Agent = in.agentName
-				if in.isChild {
-					toolEvt.Kind = domain.EventDelegation
-				}
+			if in.isChild {
+				// Child tool calls surface as delegation events (the
+				// durable row keeps "tool_call" under the child's execution).
+				toolEvt.Kind = domain.EventDelegation
 			}
 			if a.bus != nil {
 				_ = a.bus.Publish(context.Background(), toolEvt) // ctx-ok: F-15
@@ -460,7 +456,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 			}
 			_, _ = a.st.Append(store.Message{
 				ID: fmt.Sprintf("msg-tool-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
-				ExecutionID: in.execID, Role: "tool", Content: content,
+				ExecutionID: in.execID, Role: "tool", Agent: in.agent(), Content: content,
 				ToolCallID: tc.ID, ToolName: tc.Function.Name,
 			})
 			if in.isChild {

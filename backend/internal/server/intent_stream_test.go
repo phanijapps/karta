@@ -119,3 +119,66 @@ func TestReplayTranslatesLegacyIntentAnalysis(t *testing.T) {
 		t.Fatalf("legacy kind must not leak to clients:\n%s", body)
 	}
 }
+
+// run-legibility: every SSE frame names its agent and execution — live
+// frames from the bus event, replayed rows from the payload's agent or,
+// for rows that predate it, from the execution they belong to; the
+// delegation lifecycle payload rides its kinds.
+func TestSSEFramesAttributed(t *testing.T) {
+	db, err := zbotstore.Open(t.TempDir() + "/attrib.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	root, _ := db.EnsureSession("sess-a", "research")
+	// A legacy row: no agent in the payload, attributed through the join.
+	child, _ := db.CreateChildExecution("sess-a", root, "research-agent")
+	legacy, _ := json.Marshal(map[string]any{"text": "child reads", "tool": "read"})
+	if err := db.AppendEvent(zbotstore.Event{ID: "evt-legacy", SessionID: "sess-a", ExecutionID: child, Kind: "tool_call", Payload: string(legacy)}); err != nil {
+		t.Fatal(err)
+	}
+	// A current row: the payload's agent wins over the join.
+	cur, _ := json.Marshal(map[string]any{"text": "t", "agent": "root"})
+	if err := db.AppendEvent(zbotstore.Event{ID: "evt-cur", SessionID: "sess-a", ExecutionID: root, Kind: "agent_step", Payload: string(cur)}); err != nil {
+		t.Fatal(err)
+	}
+	// A delegation lifecycle row with its payload.
+	dp, _ := json.Marshal(map[string]any{"text": "research-agent finished", "agent": "research-agent", "delegation": map[string]any{"child_agent": "research-agent", "task": "x", "execution_id": child, "tokens_in": 1102, "tokens_out": 7961, "duration_ms": 84000, "status": "completed"}})
+	if err := db.AppendEvent(zbotstore.Event{ID: "evt-done", SessionID: "sess-a", ExecutionID: child, Kind: "delegation_completed", Payload: string(dp)}); err != nil {
+		t.Fatal(err)
+	}
+	bus := eventbus.New()
+	srv := New(nil, nil, nil, nil, nil, bus, db, nil, nil, nil, nil, "test")
+	daemon := httptest.NewServer(srv.Routes())
+	defer daemon.Close()
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		_ = bus.Publish(context.Background(), domain.TimelineEvent{ID: "evt-live", SessionID: "sess-a", ExecutionID: root, Kind: domain.EventToolCall, Agent: "root", Text: "shell", ToolCall: &domain.ToolCallPayload{Tool: "shell"}})
+		_ = bus.Publish(context.Background(), domain.TimelineEvent{ID: "evt-live-child", SessionID: "sess-a", ExecutionID: child, Kind: domain.EventDelegation, Agent: "research-agent", Text: "read", ToolCall: &domain.ToolCallPayload{Tool: "read"}})
+	}()
+	var sb strings.Builder
+	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, daemon.URL+"/api/sessions/sess-a/events", nil)
+	res, err := daemon.Client().Do(req)
+	if err == nil {
+		defer res.Body.Close()
+		sc := bufio.NewScanner(res.Body)
+		for sc.Scan() {
+			sb.WriteString(sc.Text() + "\n")
+		}
+	} else if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("GET events: %v", err)
+	}
+	body := sb.String()
+	for _, want := range []string{
+		`"agent":"research-agent"`, `"execution_id":"` + child + `"`, // legacy row via the join
+		`"agent":"root"`, `"execution_id":"` + root + `"`, // payload agent + the live root frame
+		`"child_agent":"research-agent"`, `"tokens_in":1102`, `"status":"completed"`, // delegation payload
+		"research-agent finished",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("SSE body missing %v:\n%s", want, body)
+		}
+	}
+}

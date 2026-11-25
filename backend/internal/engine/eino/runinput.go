@@ -1,6 +1,7 @@
 package eino
 
 import (
+	"zbot/backend/internal/domain"
 	"zbot/backend/internal/providers"
 	"zbot/backend/internal/wardtools"
 )
@@ -27,4 +28,14 @@ type runInput struct {
 	// off. Root runs get the ward tools; children get the file tools +
 	// the Active Ward packet on their prompt (read + declared roles).
 	wardHost *wardtools.Host
+}
+
+// agent names the acting agent on rows and events: "root" for the root
+// run (a named root run uses its agent's name), the sub-agent's name
+// for children. Provider/model is provenance, not an agent.
+func (in runInput) agent() string {
+	if in.agentName != "" {
+		return in.agentName
+	}
+	return domain.AgentRoot
 }

@@ -694,9 +694,10 @@ func TestDelegationDepthGrantAndCap(t *testing.T) {
 // fakeGenStep is one scripted generator turn: a final answer (content) or
 // a tool call (toolCall+args).
 type fakeGenStep struct {
-	content  string
-	toolCall string
-	args     string
+	content   string
+	toolCall  string
+	args      string
+	reasoning string // the model's thinking for the step (ReasoningContent)
 }
 
 // routingGenerator scripts completions BY GOAL MARKER: the first user
@@ -739,14 +740,14 @@ func (g *routingGenerator) Generate(_ context.Context, msgs []*schema.Message, _
 	}
 	step := script[idx]
 	if step.toolCall != "" {
-		msg := &schema.Message{Role: schema.Assistant}
+		msg := &schema.Message{Role: schema.Assistant, ReasoningContent: step.reasoning}
 		msg.ToolCalls = []schema.ToolCall{{
 			ID: fmt.Sprintf("call-%d", nextFakeCallID.Add(1)), Type: "function",
 			Function: schema.FunctionCall{Name: step.toolCall, Arguments: step.args},
 		}}
 		return msg, nil
 	}
-	return &schema.Message{Role: schema.Assistant, Content: step.content}, nil
+	return &schema.Message{Role: schema.Assistant, Content: step.content, ReasoningContent: step.reasoning}, nil
 }
 
 var nextFakeCallID atomic.Int64
@@ -1214,4 +1215,139 @@ func drain(ch <-chan domain.TimelineEvent, quiet time.Duration) []domain.Timelin
 			return out
 		}
 	}
+}
+
+// run-legibility: every row and event names its agent and execution on
+// both paths (durable rows, live frames), root rows read "root", and
+// the model's reasoning lands on the assistant row.
+func TestEngineRowsAndEventsAttributed(t *testing.T) {
+	t.Parallel()
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+		"attrib": {
+			{toolCall: "echo", args: `{"text":"hi"}`, reasoning: "I should echo first"},
+			{content: "final answer", reasoning: "then answer"},
+		},
+	}}
+	a := newDelegatingAdapter(t, gen, agentSnap)
+	ch, err := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "attrib", Goal: "attrib root goal", Model: "prov/m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var live []domain.TimelineEvent
+	for evt := range ch {
+		live = append(live, evt)
+	}
+	for _, evt := range live {
+		if evt.Kind == domain.EventChatDelta {
+			continue
+		}
+		if evt.Agent != domain.AgentRoot || evt.ExecutionID != "exec-root-attrib" {
+			t.Fatalf("live frame must be attributed root/exec: %+v", evt)
+		}
+	}
+	rows, _ := a.st.Events("attrib", "", 50)
+	for _, e := range rows {
+		if e.ExecutionID != "exec-root-attrib" {
+			t.Fatalf("durable row execution: %+v", e)
+		}
+		var payload map[string]any
+		_ = json.Unmarshal([]byte(e.Payload), &payload)
+		if payload["agent"] != domain.AgentRoot {
+			t.Fatalf("durable payload agent: %s", e.Payload)
+		}
+	}
+	msgs, _ := a.st.Replay("attrib", 0, 20)
+	for _, m := range msgs {
+		if m.Agent != domain.AgentRoot {
+			t.Fatalf("row agent: %+v", m)
+		}
+	}
+	// Reasoning rides every assistant row the model reasoned on.
+	var sawReasoning int
+	for _, m := range msgs {
+		if m.Role == "assistant" && m.Reasoning != "" {
+			sawReasoning++
+		}
+	}
+	if sawReasoning != 2 {
+		t.Fatalf("reasoning on assistant rows: %d (%+v)", sawReasoning, msgs)
+	}
+}
+
+// A delegation is a Timeline node with a lifecycle and its cost: started
+// before the child's steps, completed after them, both attributed to the
+// child's agent and execution; the child's rows carry its name.
+func TestDelegationLifecycleEvents(t *testing.T) {
+	t.Parallel()
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+		"delegate": {
+			{toolCall: "delegate_agent", args: `{"agent":"researcher","task":"child-task research X"}`},
+			{content: "root synthesized"},
+		},
+		"child-task": {
+			{toolCall: "echo", args: `{"text":"x"}`},
+			{content: "child findings"},
+		},
+	}}
+	a := newDelegatingAdapter(t, gen, agentSnap)
+	ch, err := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "deleg-life", Goal: "delegate root goal", Model: "prov/m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var started, completed domain.TimelineEvent
+	var sawStarted, sawCompleted bool
+	i := 0
+	for evt := range ch {
+		switch evt.Kind {
+		case domain.EventDelegationStarted:
+			started, sawStarted = evt, true
+		case domain.EventDelegationCompleted:
+			completed, sawCompleted = evt, true
+		case domain.EventDelegation:
+			if evt.Agent != "researcher" {
+				t.Fatalf("child step attribution: %+v", evt)
+			}
+		}
+		i++
+	}
+	if !sawStarted || !sawCompleted {
+		t.Fatal("delegation lifecycle events missing")
+	}
+	if started.Delegation.ChildAgent != "researcher" || started.Delegation.ExecutionID == "" || !strings.Contains(started.Delegation.Task, "research X") {
+		t.Fatalf("started payload: %+v", started.Delegation)
+	}
+	if completed.Delegation.Status != "completed" || completed.Delegation.ExecutionID != started.Delegation.ExecutionID || completed.Delegation.DurationMS < 0 {
+		t.Fatalf("completed payload: %+v", completed.Delegation)
+	}
+	// Durable: both rows exist under the child's execution with the payload.
+	rows, _ := a.st.Events("deleg-life", "", 100)
+	var kinds []string
+	for _, e := range rows {
+		kinds = append(kinds, e.Kind)
+		if e.Kind == "delegation_completed" && e.ExecutionID != started.Delegation.ExecutionID {
+			t.Fatalf("durable completed row execution: %+v", e)
+		}
+	}
+	if !containsKind(kinds, "delegation_started") || !containsKind(kinds, "delegation_completed") {
+		t.Fatalf("durable lifecycle rows: %v", kinds)
+	}
+	// Child rows carry the child's agent; the root's carry root.
+	msgs, _ := a.st.Replay("deleg-life", 0, 20)
+	agents := map[string]map[string]bool{}
+	for _, m := range msgs {
+		agents[m.Agent] = map[string]bool{}
+		agents[m.Agent][m.ExecutionID[:11]] = true
+	}
+	if _, ok := agents["researcher"]; !ok {
+		t.Fatalf("child rows must be attributed to the child agent: %+v", msgs)
+	}
+}
+
+func containsKind(kinds []string, want string) bool {
+	for _, k := range kinds {
+		if k == want {
+			return true
+		}
+	}
+	return false
 }

@@ -19,12 +19,19 @@ type sseEvent struct {
 	SessionID string
 	Kind      string
 	Text      string
+	// Agent + ExecutionID attribute every frame (replayed or live) to the
+	// acting agent and its execution — run-legibility.
+	Agent       string
+	ExecutionID string
 	// Intent carries the analysis payload for the analysis_* kinds (both
 	// replay and live paths).
 	Intent *domain.IntentAnalysisPayload
 	// Ward carries the ward transition payload for ward_entered /
 	// ward_created events.
 	Ward *domain.WardEventPayload
+	// Delegation carries the lifecycle payload for delegation_started /
+	// delegation_completed.
+	Delegation *domain.DelegationPayload
 }
 
 // legacyIntentAnalysisKind is the pre-intent-analyst-agent event kind;
@@ -46,8 +53,17 @@ func writeSSE(w http.ResponseWriter, e sseEvent) {
 	body := map[string]any{
 		"id": e.ID, "session_id": e.SessionID, "kind": e.Kind, "text": e.Text,
 	}
+	if e.Agent != "" {
+		body["agent"] = e.Agent
+	}
+	if e.ExecutionID != "" {
+		body["execution_id"] = e.ExecutionID
+	}
 	if e.Intent != nil {
 		body["intent_analysis"] = e.Intent
+	}
+	if e.Delegation != nil {
+		body["delegation"] = e.Delegation
 	}
 	if e.Ward != nil {
 		body["ward"] = e.Ward
@@ -69,8 +85,10 @@ func (s *Server) dbSessionEvents(sessionID, afterID string, limit int) ([]sseEve
 	for _, e := range storeEvents {
 		var payload struct {
 			Text           string                        `json:"text"`
+			Agent          string                        `json:"agent"`
 			IntentAnalysis *domain.IntentAnalysisPayload `json:"intent_analysis"`
 			Ward           *domain.WardEventPayload      `json:"ward"`
+			Delegation     *domain.DelegationPayload     `json:"delegation"`
 		}
 		_ = json.Unmarshal([]byte(e.Payload), &payload)
 		kind := e.Kind
@@ -84,7 +102,13 @@ func (s *Server) dbSessionEvents(sessionID, afterID string, limit int) ([]sseEve
 			}
 			kind = legacyAnalysisKind(payload.IntentAnalysis)
 		}
-		ev := sseEvent{ID: e.ID, SessionID: e.SessionID, Kind: kind, Text: payload.Text, Ward: payload.Ward}
+		// Attribution: the payload's agent when it carries one, else the
+		// execution's agent from the join (rows that predate it).
+		agent := payload.Agent
+		if agent == "" {
+			agent = e.Agent
+		}
+		ev := sseEvent{ID: e.ID, SessionID: e.SessionID, Kind: kind, Text: payload.Text, Ward: payload.Ward, Agent: agent, ExecutionID: e.ExecutionID, Delegation: payload.Delegation}
 		if isAnalysisKind(domain.TimelineEventKind(kind)) {
 			ev.Intent = payload.IntentAnalysis
 		}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"zbot/backend/internal/chat"
+	"zbot/backend/internal/domain"
 	"zbot/backend/internal/providers"
 	apigen "zbot/backend/internal/server/apigen"
 	"zbot/backend/internal/store"
@@ -401,11 +402,16 @@ func chatViews(rows []store.Message) []apigen.ChatMessage {
 }
 
 func chatView(m store.Message) apigen.ChatMessage {
+	agent := m.Agent
+	if agent == "" {
+		agent = domain.AgentRoot // rows that predate attribution read as root
+	}
 	view := apigen.ChatMessage{
 		Id: m.ID, Seq: int(m.Seq), Role: apigen.ChatMessageRole(m.Role),
 		Content: m.Content, CreatedAt: m.CreatedAt,
 		ToolCallId: nilStrPtr(m.ToolCallID), ToolName: nilStrPtr(m.ToolName),
 		Provider: nilStrPtr(m.Provider), Model: nilStrPtr(m.Model),
+		Agent: &agent, ExecutionId: (*apigen.Id)(nilStrPtr(m.ExecutionID)),
 	}
 	if m.Reasoning != "" {
 		view.Reasoning = &m.Reasoning

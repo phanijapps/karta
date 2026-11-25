@@ -444,6 +444,39 @@ func TestSessionState(t *testing.T) {
 	if code != http.StatusNotFound {
 		t.Fatalf("unknown state: %d", code)
 	}
+
+	// The state carries the session's executions (root + analyst +
+	// children) with their cost — the run footer's source.
+	root, _ := db.EnsureSession(sid, "research")
+	analyst, _ := db.CreateAnalysisExecution(sid, "intent-analyst", "analyze")
+	child, _ := db.CreateChildExecution(sid, root, "research-agent")
+	_ = db.FinishExecution(child, "completed", "", 1102, 7961)
+	code, body = mutate(t, "GET", url+"/api/sessions/"+sid+"/state", nil)
+	if code != http.StatusOK {
+		t.Fatalf("state with executions: %d", code)
+	}
+	execs, _ := body["executions"].([]any)
+	if len(execs) != 3 {
+		t.Fatalf("executions: %v", body["executions"])
+	}
+	_ = analyst
+	byRole := map[string]map[string]any{}
+	for _, e := range execs {
+		m := e.(map[string]any)
+		byRole[m["role"].(string)] = m
+	}
+	if byRole["root"]["id"] != root || byRole["analyst"]["agent"] != "intent-analyst" || byRole["delegated"]["agent"] != "research-agent" {
+		t.Fatalf("execution roles: %v", execs)
+	}
+	if byRole["delegated"]["tokens_in"] != float64(1102) || byRole["delegated"]["tokens_out"] != float64(7961) || byRole["delegated"]["status"] != "completed" || byRole["delegated"]["parent_id"] != root {
+		t.Fatalf("child execution: %v", byRole["delegated"])
+	}
+	if _, has := byRole["root"]["finished_at"]; has {
+		t.Fatalf("a running root has no finished_at: %v", byRole["root"])
+	}
+	if _, has := byRole["delegated"]["finished_at"]; !has {
+		t.Fatalf("a finished child carries finished_at: %v", byRole["delegated"])
+	}
 }
 
 // TestOpenAiChannel (task 4.2): /v1/models lists the Karta models;

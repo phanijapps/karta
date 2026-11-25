@@ -374,7 +374,7 @@ func (s *Server) StreamSessionEvents(w http.ResponseWriter, r *http.Request, ses
 			_, _ = fmt.Fprintf(w, ": heartbeat\n\n")
 			flusher.Flush()
 		case evt := <-busCh:
-			live := sseEvent{ID: evt.ID, SessionID: evt.SessionID, Kind: string(evt.Kind), Text: evt.Text, Ward: evt.Ward}
+			live := sseEvent{ID: evt.ID, SessionID: evt.SessionID, Kind: string(evt.Kind), Text: evt.Text, Ward: evt.Ward, Agent: evt.Agent, ExecutionID: evt.ExecutionID, Delegation: evt.Delegation}
 			if isAnalysisKind(evt.Kind) {
 				live.Intent = evt.IntentAnalysis
 			}
@@ -425,6 +425,27 @@ func (s *Server) GetSessionState(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 	state := apigen.SessionState{Session: s.sessionView(sess, latest > 0, time.Time{})}
+	// The run's shape and cost: every execution row (root, the analyst,
+	// delegated children) with its token usage — run-legibility.
+	if execs, err := s.db.SessionExecutions(sid); err == nil && len(execs) > 0 {
+		state.Executions = &[]apigen.SessionExecution{}
+		for _, e := range execs {
+			view := apigen.SessionExecution{
+				Id: apigen.Id(e.ID), Agent: e.Agent, Role: apigen.SessionExecutionRole(e.Role()),
+				Status: e.Status, TokensIn: int(e.TokensIn), TokensOut: int(e.TokensOut), StartedAt: e.StartedAt,
+			}
+			if e.Delegation != "root" && e.Delegation != "" {
+				view.Agent = e.Delegation // the delegated agent's name (the executions.agent column carries it too)
+			}
+			if e.ParentID != "" {
+				view.ParentId = (*apigen.Id)(&e.ParentID)
+			}
+			if !e.FinishedAt.IsZero() {
+				view.FinishedAt = &e.FinishedAt
+			}
+			*state.Executions = append(*state.Executions, view)
+		}
+	}
 	// The three terminal kinds plus the legacy pre-upgrade kind: an
 	// upgraded home's last pre-upgrade analysis still reads as state.
 	if ev, err := s.db.LatestEventOfKind(sid, string(domain.EventAnalysisCompleted), string(domain.EventAnalysisBypassed), string(domain.EventAnalysisFailed), legacyIntentAnalysisKind); err != nil {

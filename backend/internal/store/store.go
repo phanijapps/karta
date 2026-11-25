@@ -30,6 +30,7 @@ type Message struct {
 	ExecutionID      string
 	Seq              int64
 	Role             string // user|assistant|tool|system|summary
+	Agent            string // the acting agent ("root" or a sub-agent's name); "" on legacy rows reads as root
 	Content          string
 	Reasoning        string // the model's thinking text (assistant rows; "" when none)
 	ToolCalls        string // JSON array (assistant intent rows)
@@ -190,6 +191,23 @@ func tableColumns(db *sql.DB, table string) (map[string]bool, error) {
 	return cols, nil
 }
 
+// migrateMessagesAgent adds the messages.agent column (run-legibility:
+// the acting agent on every row) to databases created before it existed
+// (guarded: absent column only) — the house pattern.
+func migrateMessagesAgent(db *sql.DB) error {
+	cols, err := tableColumns(db, "messages")
+	if err != nil {
+		return err
+	}
+	if cols["agent"] {
+		return nil // already present
+	}
+	if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN agent TEXT NOT NULL DEFAULT ''`); err != nil {
+		return fmt.Errorf("store: messages.agent migration alter: %w", err)
+	}
+	return nil
+}
+
 func migrateReasoning(db *sql.DB) error {
 	cols, err := tableColumns(db, "messages")
 	if err != nil {
@@ -223,6 +241,9 @@ func Open(path string) (*Store, error) {
 	if err := migrateSessionType(db); err != nil {
 		_ = db.Close()
 		return nil, err
+	}
+	if err := migrateMessagesAgent(db); err != nil {
+		return nil, fmt.Errorf("store: %w", err)
 	}
 	if err := migrateReasoning(db); err != nil {
 		_ = db.Close()
@@ -261,12 +282,12 @@ func (s *Store) Append(m Message) (Message, error) {
 	}
 	m.CreatedAt = time.Now().UTC()
 	res, err := s.db.Exec(`INSERT INTO messages
-		(id, session_id, execution_id, seq, role, content, reasoning, tool_calls, tool_call_id, tool_name,
+		(id, session_id, execution_id, seq, role, agent, content, reasoning, tool_calls, tool_call_id, tool_name,
 		 provider, model, prompt_tokens, completion_tokens, created_at)
 		VALUES (?, ?, ?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM messages WHERE session_id = ?),
-		        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.ID, m.SessionID, m.ExecutionID, m.SessionID,
-		m.Role, m.Content, nullStr(m.Reasoning), nullStr(m.ToolCalls), nullStr(m.ToolCallID), nullStr(m.ToolName),
+		m.Role, m.Agent, m.Content, nullStr(m.Reasoning), nullStr(m.ToolCalls), nullStr(m.ToolCallID), nullStr(m.ToolName),
 		nullStr(m.Provider), nullStr(m.Model), m.PromptTokens, m.CompletionTokens, fmtTime(m.CreatedAt))
 	if err != nil {
 		return m, fmt.Errorf("store: append: %w", err)
@@ -333,7 +354,7 @@ func (s *Store) SessionUpdated(sessionID string) (string, error) {
 
 // Replay returns rows with seq > afterSeq in order, bounded by limit.
 func (s *Store) Replay(sessionID string, afterSeq int64, limit int) ([]Message, error) {
-	rows, err := s.db.Query(`SELECT id, session_id, execution_id, seq, role, content,
+	rows, err := s.db.Query(`SELECT id, session_id, execution_id, seq, role, content, COALESCE(agent, ''),
 		COALESCE(reasoning, ''), COALESCE(tool_calls, ''), COALESCE(tool_call_id, ''), COALESCE(tool_name, ''),
 		COALESCE(provider, ''), COALESCE(model, ''), prompt_tokens, completion_tokens, created_at
 		FROM messages WHERE session_id = ? AND seq > ? ORDER BY seq LIMIT ?`,
@@ -378,7 +399,7 @@ func scanMessages(rows *sql.Rows) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		var created string
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.ExecutionID, &m.Seq, &m.Role, &m.Content,
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.ExecutionID, &m.Seq, &m.Role, &m.Content, &m.Agent,
 			&m.Reasoning, &m.ToolCalls, &m.ToolCallID, &m.ToolName, &m.Provider, &m.Model,
 			&m.PromptTokens, &m.CompletionTokens, &created); err != nil {
 			return nil, fmt.Errorf("store: scan: %w", err)

@@ -1120,6 +1120,9 @@ export interface components {
             /** @description REQUEST usage (bills the whole request context); not content size. */
             prompt_tokens?: number;
             completion_tokens?: number;
+            /** @description The acting agent — `root` for root/chat rows, the delegated sub-agent's name for a child's rows; absent on rows that predate attribution (read as root). */
+            agent?: string;
+            execution_id?: components["schemas"]["Id"];
             /** @description The model's final reasoning/thinking text (assistant rows from reasoning models; null when the model produced none). */
             reasoning?: string;
         };
@@ -1280,6 +1283,22 @@ export interface components {
         SessionState: {
             session: components["schemas"]["Session"];
             intent_analysis?: components["schemas"]["IntentAnalysisPayload"];
+            /** @description The session's execution rows (root, the intent analyst, every delegated child) with their token usage — the run's cost, readable without a new endpoint. */
+            executions?: components["schemas"]["SessionExecution"][];
+        };
+        SessionExecution: {
+            id: components["schemas"]["Id"];
+            parent_id?: components["schemas"]["Id"];
+            agent: string;
+            /** @enum {string} */
+            role: "root" | "analyst" | "delegated";
+            status: string;
+            tokens_in: number;
+            tokens_out: number;
+            /** Format: date-time */
+            started_at: string;
+            /** Format: date-time */
+            finished_at?: string;
         };
         /**
          * @description A ward hosting transition on a session — `ward_entered` (enter
@@ -1408,12 +1427,14 @@ export interface components {
          * @description Mirrors the domain TimelineEventKind set. The analysis trail is `analysis_started` followed by exactly one terminal kind (`analysis_completed`, `analysis_bypassed`, `analysis_failed`); the pre-existing `intent_analysis` kind is gone (durable replay translates legacy rows to the terminal kind by status).
          * @enum {string}
          */
-        TimelineEventKind: "session" | "agent_step" | "delegation" | "tool_call" | "hook_decision" | "compaction_triggered" | "chitta_tool_invoked" | "chat_delta" | "analysis_started" | "analysis_completed" | "analysis_bypassed" | "analysis_failed" | "ward_entered" | "ward_created";
+        TimelineEventKind: "session" | "agent_step" | "delegation" | "delegation_started" | "delegation_completed" | "tool_call" | "hook_decision" | "compaction_triggered" | "chitta_tool_invoked" | "chat_delta" | "analysis_started" | "analysis_completed" | "analysis_bypassed" | "analysis_failed" | "ward_entered" | "ward_created";
         TimelineEvent: {
             id: components["schemas"]["Id"];
             session_id: components["schemas"]["Id"];
             parent_id?: components["schemas"]["Id"];
+            /** @description The ACTING agent — `root`, a named root agent, the delegated sub-agent's name, or `intent-analyst`. Carried on every frame, replayed or live. */
             agent?: string;
+            execution_id?: components["schemas"]["Id"];
             kind: components["schemas"]["TimelineEventKind"];
             /** Format: date-time */
             timestamp: string;
@@ -1507,10 +1528,16 @@ export interface components {
             error?: string;
             duration_ms?: number;
         };
+        /** @description A delegation's lifecycle. `delegation_started` carries the agent, task and execution; `delegation_completed` adds the child's token usage, duration and terminal status. */
         DelegationPayload: {
             child_agent: string;
             child_session_id?: string;
             task: string;
+            execution_id?: components["schemas"]["Id"];
+            tokens_in?: number;
+            tokens_out?: number;
+            duration_ms?: number;
+            status?: string;
         };
         /** @enum {string} */
         HookAction: "allow" | "block" | "warn";

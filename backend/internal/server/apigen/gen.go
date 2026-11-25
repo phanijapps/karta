@@ -915,6 +915,27 @@ func (e SessionType) Valid() bool {
 	}
 }
 
+// Defines values for SessionExecutionRole.
+const (
+	Analyst   SessionExecutionRole = "analyst"
+	Delegated SessionExecutionRole = "delegated"
+	Root      SessionExecutionRole = "root"
+)
+
+// Valid indicates whether the value is a known member of the SessionExecutionRole enum.
+func (e SessionExecutionRole) Valid() bool {
+	switch e {
+	case Analyst:
+		return true
+	case Delegated:
+		return true
+	case Root:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SessionStatus.
 const (
 	SessionStatusCancelled SessionStatus = "cancelled"
@@ -1097,6 +1118,8 @@ const (
 	TimelineEventKindChittaToolInvoked   TimelineEventKind = "chitta_tool_invoked"
 	TimelineEventKindCompactionTriggered TimelineEventKind = "compaction_triggered"
 	TimelineEventKindDelegation          TimelineEventKind = "delegation"
+	TimelineEventKindDelegationCompleted TimelineEventKind = "delegation_completed"
+	TimelineEventKindDelegationStarted   TimelineEventKind = "delegation_started"
 	TimelineEventKindHookDecision        TimelineEventKind = "hook_decision"
 	TimelineEventKindSession             TimelineEventKind = "session"
 	TimelineEventKindToolCall            TimelineEventKind = "tool_call"
@@ -1124,6 +1147,10 @@ func (e TimelineEventKind) Valid() bool {
 	case TimelineEventKindCompactionTriggered:
 		return true
 	case TimelineEventKindDelegation:
+		return true
+	case TimelineEventKindDelegationCompleted:
+		return true
+	case TimelineEventKindDelegationStarted:
 		return true
 	case TimelineEventKindHookDecision:
 		return true
@@ -1284,9 +1311,12 @@ type ChatExchange struct {
 
 // ChatMessage defines model for ChatMessage.
 type ChatMessage struct {
+	// Agent The acting agent — `root` for root/chat rows, the delegated sub-agent's name for a child's rows; absent on rows that predate attribution (read as root).
+	Agent            *string   `json:"agent,omitempty"`
 	CompletionTokens *int      `json:"completion_tokens,omitempty"`
 	Content          string    `json:"content"`
 	CreatedAt        time.Time `json:"created_at"`
+	ExecutionId      *Id       `json:"execution_id,omitempty"`
 	Id               string    `json:"id"`
 
 	// Model Provenance — which model answered (assistant rows).
@@ -1389,11 +1419,16 @@ type CredentialKind string
 // CredentialStatus Credential resolution state. `ready` — resolvable now; `missing` — referenced but unset or absent; `unavailable` — the keyring cannot be reached; `unset` — no credential reference.
 type CredentialStatus string
 
-// DelegationPayload defines model for DelegationPayload.
+// DelegationPayload A delegation's lifecycle. `delegation_started` carries the agent, task and execution; `delegation_completed` adds the child's token usage, duration and terminal status.
 type DelegationPayload struct {
 	ChildAgent     string  `json:"child_agent"`
 	ChildSessionId *string `json:"child_session_id,omitempty"`
+	DurationMs     *int    `json:"duration_ms,omitempty"`
+	ExecutionId    *Id     `json:"execution_id,omitempty"`
+	Status         *string `json:"status,omitempty"`
 	Task           string  `json:"task"`
+	TokensIn       *int    `json:"tokens_in,omitempty"`
+	TokensOut      *int    `json:"tokens_out,omitempty"`
 }
 
 // DistillationSettings defines model for DistillationSettings.
@@ -2064,6 +2099,22 @@ type SessionRun string
 // and immutable (the session model: no mode toggle).
 type SessionType string
 
+// SessionExecution defines model for SessionExecution.
+type SessionExecution struct {
+	Agent      string               `json:"agent"`
+	FinishedAt *time.Time           `json:"finished_at,omitempty"`
+	Id         Id                   `json:"id"`
+	ParentId   *Id                  `json:"parent_id,omitempty"`
+	Role       SessionExecutionRole `json:"role"`
+	StartedAt  time.Time            `json:"started_at"`
+	Status     string               `json:"status"`
+	TokensIn   int                  `json:"tokens_in"`
+	TokensOut  int                  `json:"tokens_out"`
+}
+
+// SessionExecutionRole defines model for SessionExecution.Role.
+type SessionExecutionRole string
+
 // SessionList defines model for SessionList.
 type SessionList struct {
 	NextCursor *string          `json:"next_cursor,omitempty"`
@@ -2075,6 +2126,9 @@ type SessionList struct {
 
 // SessionState defines model for SessionState.
 type SessionState struct {
+	// Executions The session's execution rows (root, the intent analyst, every delegated child) with their token usage — the run's cost, readable without a new endpoint.
+	Executions *[]SessionExecution `json:"executions,omitempty"`
+
 	// IntentAnalysis One pre-execution intent analysis outcome for a root goal run — started (the call is in flight), analyzed (with the contract summary and its cost), bypassed (trivial goal or disabled), or failed (non-fatal; the run proceeds).
 	IntentAnalysis *IntentAnalysisPayload `json:"intent_analysis,omitempty"`
 	Session        Session                `json:"session"`
@@ -2267,14 +2321,18 @@ type SkillUpdate struct {
 
 // TimelineEvent defines model for TimelineEvent.
 type TimelineEvent struct {
+	// Agent The ACTING agent — `root`, a named root agent, the delegated sub-agent's name, or `intent-analyst`. Carried on every frame, replayed or live.
 	Agent *string `json:"agent,omitempty"`
 
 	// ChittaToolInvoked One chitta tool invocation (memory_* / knowledge_* tools) — the observable heartbeat of the chitta capability.
 	ChittaToolInvoked *ChittaToolInvokedPayload `json:"chitta_tool_invoked,omitempty"`
 	Compaction        *CompactionStats          `json:"compaction,omitempty"`
-	Delegation        *DelegationPayload        `json:"delegation,omitempty"`
-	Hook              *HookDecision             `json:"hook,omitempty"`
-	Id                Id                        `json:"id"`
+
+	// Delegation A delegation's lifecycle. `delegation_started` carries the agent, task and execution; `delegation_completed` adds the child's token usage, duration and terminal status.
+	Delegation  *DelegationPayload `json:"delegation,omitempty"`
+	ExecutionId *Id                `json:"execution_id,omitempty"`
+	Hook        *HookDecision      `json:"hook,omitempty"`
+	Id          Id                 `json:"id"`
 
 	// IntentAnalysis Carries the analysis payload for the four `analysis_*` kinds (the property keeps its name for the session-state and card consumers).
 	IntentAnalysis *IntentAnalysisPayload `json:"intent_analysis,omitempty"`
