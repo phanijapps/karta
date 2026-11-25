@@ -145,49 +145,53 @@ Three options were on the table (Study B §4). The right one, given the framing 
 - **Injection budget** (G8): `## Skills` bodies are capped (total chars, per-skill truncation with a marker, largest-first by recommendation order); the composed prompt's size is measured and emitted with `analysis_completed` so the Settings card can show it.
 - Unrecalled entries sort by **description length then id** (short, generic descriptions first) — or better, by a stable relevance proxy (last_used from the resource index) — so cap truncation is not alphabetical luck (G10). MCP entries gain descriptions from the probe (G11).
 
-### 3.4 Token configuration — the SELECTED MODEL's defaults, with a fallback (G1)
+### 3.4 Token limits — the MODEL's limits, no pruning (G1)
 
-**Operator decision (2026-11-24):** no token knobs on the card. The
-card has the model picker only; input and output token limits derive
-from the selected model — simple by default, a safe fallback when the
-model's limits are unknown.
+**Operator decisions (2026-11-24):**
+1. No token knobs on the card — limits derive from the selected model.
+2. **Input and output = the model's own limits.** No artificial
+   analyst budget below the window: intent analysis is structured
+   output (a bounded contract — the validator caps every field), so
+   the limit is a guard against a runaway response, not a constraint
+   on the decision. Pruning a catalog to fit a smaller-than-window
+   budget risks dropping the one skill or ward the decision needed.
 
-Where the limits come from, in order:
+**What "the model's limits" concretely means** (verified against the
+operator's live Ollama on 2026-11-24): every model reports
+`<family>.context_length` in `/api/show` → `model_info`
+(`glm5_next.context_length: 1048576`, `qwen3.context_length: 40960`,
+`llama.context_length: 131072`, `gptoss.context_length: 131072`) — one
+suffix match (`*.context_length`) covers every family. **No model
+reports a separate output cap**: Ollama's semantics are "output is
+bounded by the remaining window". So the model contributes ONE number,
+its context window.
 
-1. **Discoverable** — Ollama's `/api/show` returns `model_info` with
-   the context length (and the model's declared parameter limits) per
-   model; the daemon already talks to Ollama for the catalog. Local
-   models: read it once per model at catalog-refresh time and cache it
-   on the `Model` entry (`context_length`, `max_output`).
-2. **Built-in table** for cloud providers whose list-models API
-   carries no limits (z.ai, OpenAI-compatible endpoints): a small
-   `model_limits.yaml` seed under `~/.zbot/config/providers/` keyed by
-   model-id prefix (`glm-5.3*: {context: 128k, max_output: 16k}`,
-   `deepseek-v4*: …`) — user-editable, hot-reloaded like the rest of
-   the config tree.
-3. **Fallback** — unknown model: `{context: 32k, max_output: 4096}`
-   (agentzero's 4096 default; conservative enough for every provider).
+Resolution, in order:
+
+1. **Discoverable** — Ollama `model_info` → `*.context_length`, read
+   once per model at catalog refresh, cached on the `Model` entry.
+2. **Built-in table** for providers whose list-models API carries no
+   limits (z.ai and OpenAI-compatible endpoints): a user-editable
+   `model_limits.yaml` under `~/.zbot/config/providers/` keyed by
+   model-id prefix (`glm-5.3*: 128000`, …), hot-reloaded.
+3. **Fallback** — unknown model: **32,000** context (a window every
+   current provider exceeds; conservative, never optimistic).
 
 Derived (never configured):
 
-| Knob | Derivation | Why |
+| Knob | Value | Guard |
 |---|---|---|
-| analyst **max_output_tokens** | `min(model.max_output, 4096)` | a classification decision never needs more than 4096; a model with a smaller output cap wins |
-| analyst **max_input_tokens** (the packet budget) | `model.context − max_output − persona_reserve(4k)`, capped at **8k** for the analyst | the packet is a slice of the catalog, never the window; 8k keeps the decision fast |
-| packet trimming | per-kind caps shrink proportionally to fit the input budget | a real knob — unlike agentzero's dead `maxInputTokens` |
+| analyst `max_tokens` (output) | **the model's context window** — sent as `max_tokens: <window>` so the API never truncates a valid contract | the validator + 45s deadline are the real bounds; a response larger than a contract is a failed decision, typed |
+| analyst input (packet) | **the packet fits the window**: catalog caps stay 20/20/20/64 + the request echo (32k chars ≈ 8k tokens); the composed analyst prompt is measured (~4 chars/token) and compared to the window | if it ever exceeds `window − output_reserve(4k)`, per-kind caps shrink proportionally — a safety valve that fires only on a tiny-window model, not a routine budget |
+| packet trimming | only the safety valve above | — |
 
-The daemon resolves the limits when the card saves a model and
-**shows them on the card read-only** ("glm-5.3-flash · context 128k ·
-output 16k · analyst: 8k in / 4k out · source: table") so the operator
-sees what will happen without configuring it. A **"Test analysis"**
-button runs the analyst on a sample and shows tokens + ms + the
-contract — the latency question from the handoff, measurable.
+The card shows the derivation read-only — *"glm-5.3-flash · window 1,048,576 (Ollama) · analyst: full window · packet 8k tokens · no trimming"* — plus the **Test analysis** button (tokens in/out, ms, attempts, the contract, whether the safety valve fired).
 
 `intent-analysis.json` (the daemon-managed file the card writes) holds
 only: `provider`, `model`, `reasoning_effort` (default `low` for
-glm-5.3*, `medium` otherwise — the rig-preflight evidence),
-`deadline_seconds` (45), `max_attempts` (3). Advanced fields are
-editable in the file; the card stays a picker plus a read-only summary.
+glm-5.3* per the rig-preflight evidence, else `medium`),
+`deadline_seconds` (45), `max_attempts` (3). The card is a picker plus
+the read-only summary; advanced fields are editable in the file.
 
 ### 3.5 Provider-aware output modes (G13)
 
@@ -212,7 +216,7 @@ A `use_existing` recommendation must match exactly one real ward directory; else
 
 | Slice | Covers | Size | Why this order |
 |---|---|---|---|
-| **S1 — Analyst agent + model-derived limits** | G1, G2, G17, §3.2, §3.4 | M | Your two gaps; limits from the selected model + fallback; the card shows them + a Test button |
+| **S1 — Analyst agent + model limits** | G1, G2, G17, §3.2, §3.4 | M | Your two gaps; limits = the selected model's window (Ollama-discovered / table / 32k fallback), no pruning; the card shows them + a Test button |
 | **S2 — Contract v2 + the packet handed over** | G3–G6, G12, §3.1, §3.3 (packet + Plan + events) | L | The biggest quality lift: the orchestrator finally gets what the analyst saw |
 | **S3 — Orchestrator wiring** | G7–G11, G15, G16, §3.3 (MCP grants, budget, ward canonicalization, warm-ward path) | M | Depends on S2's contract |
 | **S4 — Provider modes + adaptive confidence** | G13, G14, §3.5, adaptive half of §3.7 | S | When a local analyst model is in play |
@@ -222,7 +226,7 @@ S1 can start immediately (no contract dependency). S2 is contract-first (`Intent
 ## 5. Decisions to confirm before S1
 
 1. **Agent shape**: registry `AgentSpec` + dedicated execution row + events (§3.2) — confirm you're happy that it stays a *validated single decision*, not a tool loop (§0 explains why).
-2. ~~Token defaults~~ — **decided**: no knobs; the selected model's limits (Ollama `model_info` → built-in table → fallback 32k/4k); analyst derives 8k in / ≤4k out; the card shows the derivation read-only.
+2. ~~Token defaults~~ — **decided**: no knobs; input and output = the model's own limits (Ollama `*.context_length` → built-in table → fallback 32k); no analyst-side pruning; the card shows the derivation read-only.
 3. **Model precedence**: Settings card > agent spec > `intent_analysis.model` > ward > run model — or should the ward orchestrator model win over the card when a ward orchestrates?
 4. **Plan tracking**: do you want plan steps as Timeline events (Work tab shows "step 2/5: …") in S2, or is the rendered `## Plan` enough for now?
 
