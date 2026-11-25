@@ -37,7 +37,19 @@
 **Parked (operator direction — do NOT start):** Phase 2 channels, the
 Wails shell, the recorded P2s in `docs/product/backlog.md`.
 
-## The next slice: S2 — `intent-contract-v2` (plan §3.1 + §3.3, G3–G6, G12)
+## Two plans on the table (read both, pick the next slice)
+
+- `docs/architecture/run-legibility-plan.md` — the INR run review
+  (2026-11-25): delegation is invisible on the wire (SSE drops `agent`,
+  durable rows lose it, ChatMessage has no agent/exec), sub-agent
+  reports render as answers, the 26 KB report is stored twice, reasoning
+  is never persisted, no delegation/plan/cost events. Slices L1
+  (attribution), L2 (reasoning + roles), L3 (delegation + cost events).
+  Recommended order: **L1 → S2 → L2/L3 → S3**; G9 is reframed as MCP
+  *scoping* (tools are already mounted on root runs).
+- `intent-analysis-enhancement-plan.md` S2 — below.
+
+## S2 — `intent-contract-v2` (plan §3.1 + §3.3, G3–G6, G12)
 
 Contract-first and ADDITIVE: `IntentAnalysisPayload` gains `plan[]`
 (step, owner root|agent|ward:<name>, deliverable, depends_on[]),
