@@ -237,3 +237,74 @@ export function buildSteps(messages: ChatMessage[], liveTurnId?: string): Step[]
   }
   return steps;
 }
+
+/** One delegation as the thread shows it: the root's `delegate_agent`
+ *  call, the agent it went to, the child's rows, and the report. */
+export type DelegationGroup = {
+  callId: string;
+  agent: string;
+  task: string;
+  /** The child's execution when its rows carry it ("" on legacy rows). */
+  executionId: string;
+  /** The intent row (the root's assistant row carrying the call). */
+  intent: ChatMessage;
+  /** The child's rows: its tool-call intents and their results. */
+  rows: ChatMessage[];
+  /** The report the root received (the call's tool result). */
+  report: string;
+  /** True once the result row has landed. */
+  done: boolean;
+};
+
+/**
+ * delegationGroups derives one group per `delegate_agent` call from a
+ * turn's rows. The child's rows are those between the intent and the
+ * call's result; with attribution, rows carrying the child's execution
+ * id join the group wherever they sit. Works for transcripts that
+ * predate attribution (the intent's arguments name the agent).
+ */
+export function delegationGroups(rows: ChatMessage[]): DelegationGroup[] {
+  const groups: DelegationGroup[] = [];
+  const byCall = new Map<string, DelegationGroup>();
+  for (const m of rows) {
+    if (m.role === "assistant" && m.tool_calls) {
+      let isDelegateIntent = false;
+      for (const c of parseCalls(m)) {
+        if (c.name !== "delegate_agent") continue;
+        isDelegateIntent = true;
+        const g: DelegationGroup = {
+          callId: c.id,
+          agent: String(c.args.agent ?? "agent"),
+          task: String(c.args.task ?? ""),
+          executionId: "",
+          intent: m,
+          rows: [],
+          report: "",
+          done: false,
+        };
+        groups.push(g);
+        byCall.set(c.id, g);
+      }
+      if (isDelegateIntent) continue; // the root's intent row is not a child row
+    }
+    if (m.role === "tool" && m.tool_name === "delegate_agent") {
+      // The result row: by call id, else (legacy rows without ids) the
+      // first group still waiting for its answer.
+      const g = (m.tool_call_id && byCall.get(m.tool_call_id)) || groups.find((x) => !x.done);
+      if (g) {
+        g.report = m.content ?? "";
+        g.done = true;
+      }
+      continue;
+    }
+    // A child's row: attributed (non-root agent) → its execution's
+    // group; legacy → the nearest open (not yet answered) group.
+    if (m.role === "user" || m.role === "assistant" || m.role === "tool") {
+      const attributed = m.agent && m.agent !== "root" ? groups.find((g) => !g.done && g.agent === m.agent && (g.executionId === "" || g.executionId === m.execution_id)) : undefined;
+      if (attributed && m.execution_id && !attributed.executionId) attributed.executionId = m.execution_id;
+      const open = attributed ?? groups.find((g) => !g.done);
+      if (open && (m.agent ? m.agent !== "root" : true)) open.rows.push(m);
+    }
+  }
+  return groups;
+}

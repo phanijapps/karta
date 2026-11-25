@@ -3,6 +3,8 @@
   import { ArrowUp, Brain, Sparkles, Microscope, FolderOpen, RefreshCw, Info, X, Users } from '@lucide/svelte';
   import { sendChatMessage, streamChatMessage, continueSession } from '../../shared/api/client';
   import { costText, fmtTokens, isTerminalAnalysisKind } from '../../entities/timeline-event/analysisText';
+  import DelegationSlideout from './DelegationSlideout.svelte';
+  import { delegationGroups, type DelegationGroup } from './steps';
   import { createTimeline } from '../../shared/sse/timeline.svelte';
   import { renderMarkdown } from '../../shared/markdown/render';
   import type { Sessions } from '../../entities/session/session.svelte';
@@ -131,6 +133,24 @@
     if (out.length) out[out.length - 1].live = sending && sessions.activeId === sendSessionId;
     return out;
   });
+  // Delegation pills: one per delegate_agent call in a turn; the
+  // slideout shows the chosen one. The pill keeps the focus for return.
+  let openDelegation = $state<{ turn: string; callId: string } | null>(null);
+  let pillTrigger = $state<HTMLButtonElement | null>(null);
+  const openGroup = $derived.by<DelegationGroup | null>(() => {
+    if (!openDelegation) return null;
+    const want = openDelegation;
+    const turn = turns.find((t) => t.key === want.turn);
+    return turn ? delegationGroups(turn.rows).find((g) => g.callId === want.callId) ?? null : null;
+  });
+  function showDelegation(turnKey: string, g: DelegationGroup, el: HTMLButtonElement) {
+    pillTrigger = el;
+    openDelegation = { turn: turnKey, callId: g.callId };
+  }
+  function closeDelegation() {
+    openDelegation = null;
+    pillTrigger?.focus();
+  }
   // The Task Analysis popover (the (i) chip): open state + the
   // trigger ref for focus return on close.
   let analysisOpen = $state(false);
@@ -158,12 +178,6 @@
       if (r.role === 'assistant' && r.tool_calls && (r.content ?? '').trim() !== '' && (!r.agent || r.agent === 'root')) return (r.content ?? '').trim();
     }
     return '';
-  }
-
-  /** 26,466 → "26 KB"; 1,921 → "1.9 KB" — report sizes stay short. */
-  function fmtSize(chars: number): string {
-    if (chars >= 1024) return `${(chars / 1024).toFixed(1)} KB`;
-    return `${chars} chars`;
   }
 
   async function send() {
@@ -401,26 +415,24 @@
         {#if turn.user}
           <article class="bubble user" aria-label="Your message">{turn.user.content}</article>
         {/if}
-        {#each turn.reports as r (r.id)}
-          <!-- A sub-agent's report: collapsed, attributed, never the answer style. -->
-          <details class="report">
-            <summary>
-              <Users size={14} aria-hidden="true" />
-              <span class="report-kind">Sub-agent report</span>
-              <span class="report-agent">{r.agent}</span>
-              <span class="report-meta">{fmtSize((r.content ?? '').length)}</span>
-            </summary>
-            <div class="report-body">
-              {#if r.reasoning}
-                <details class="thinking">
-                  <summary><Brain size={13} aria-hidden="true" /> Thinking</summary>
-                  <p class="muted">{r.reasoning}</p>
-                </details>
-              {/if}
-              {@html renderMarkdown(r.content ?? '')}
-            </div>
-          </details>
-        {/each}
+        {@const groups = delegationGroups(turn.rows)}
+        {#if groups.length}
+          <!-- One pill per delegation (from the root's delegate_agent
+               intents — legacy sessions too); the slideout shows the
+               agent's calls and report. -->
+          <div class="delegation-pills" aria-label="Delegations">
+            {#each groups as g (g.callId)}
+              <button
+                type="button"
+                class="delegation-pill"
+                title={g.task || `Delegated to ${g.agent}`}
+                aria-haspopup="dialog"
+                aria-expanded={openDelegation?.callId === g.callId}
+                onclick={(e) => showDelegation(turn.key, g, e.currentTarget)}
+              ><Users size={13} aria-hidden="true" /> {g.agent}{#if !g.done}<span class="pill-live" aria-label="working"></span>{/if}</button>
+            {/each}
+          </div>
+        {/if}
         {#each turn.answers as m, ai (m.id)}
           {@const isFinal = isResearch && ai === turn.answers.length - 1}
           <article class="bubble assistant" class:final-answer={isFinal} aria-label={isFinal ? 'Final answer' : 'Assistant message'}>
@@ -487,6 +499,9 @@
         </article>
       {/if}
   </div>
+  {#if openGroup}
+    <DelegationSlideout group={openGroup} executions={sessions.executions} onclose={closeDelegation} />
+  {/if}
   <div class="composer-region">
     <!-- Ward context strip (research sessions with a sticky binding) -->
     {#if isResearch && ward}
@@ -542,15 +557,12 @@
   .bubble { max-width: min(48rem, 90%); padding: .7rem 1rem; border-radius: 14px; line-height: 1.55; overflow-wrap: break-word; }
   .bubble.user { white-space: pre-wrap; }
   /* Rendered markdown inside assistant bubbles */
-  /* Sub-agent reports: collapsed cards, attributed (run-legibility). */
-  .report { align-self: flex-start; max-width: 92%; border: 1px solid color-mix(in oklab, var(--ds-color-primary, #3b82f6) 45%, transparent); border-radius: 12px; background: color-mix(in oklab, var(--ds-color-primary, #3b82f6) 7%, var(--ds-color-surface, #1e1e1e)); }
-  .report > summary { list-style: none; display: flex; align-items: center; gap: .5rem; padding: .45rem .8rem; cursor: pointer; font-size: .8125rem; }
-  .report > summary::-webkit-details-marker { display: none; }
-  .report-kind { font-size: .62rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-color-primary, #3b82f6); font-weight: 600; }
-  .report-agent { font-weight: 600; }
-  .report-meta { margin-left: auto; color: var(--ds-color-muted, #888); font-size: .74rem; font-variant-numeric: tabular-nums; }
-  .report-body { padding: .5rem .9rem .7rem; border-top: 1px dashed var(--ds-color-border, #333); font-size: .9rem; }
-  .report-body :global(> :first-child) { margin-top: 0; }
+  /* Delegation pills: one per delegation, clickable, opening the slideout. */
+  .delegation-pills { display: flex; flex-wrap: wrap; gap: .4rem; align-self: flex-start; }
+  .delegation-pill { display: inline-flex; align-items: center; gap: .35rem; padding: .2rem .65rem .2rem .5rem; border-radius: 999px; border: 1px solid color-mix(in oklab, var(--ds-color-primary, #3b82f6) 55%, transparent); background: color-mix(in oklab, var(--ds-color-primary, #3b82f6) 10%, var(--ds-color-surface, #1e1e1e)); color: var(--ds-color-text, #f4f4f4); font-size: .78rem; font-weight: 600; cursor: pointer; }
+  .delegation-pill:hover { background: color-mix(in oklab, var(--ds-color-primary, #3b82f6) 22%, var(--ds-color-surface, #1e1e1e)); }
+  .delegation-pill[aria-expanded='true'] { border-color: var(--ds-color-primary, #3b82f6); }
+  .delegation-pill .pill-live { width: 6px; height: 6px; border-radius: 50%; background: var(--ds-color-success, #22c55e); }
   /* THE answer: the root's last assistant row, tagged, with its narration. */
   .bubble.assistant.final-answer { border-color: color-mix(in oklab, var(--ds-color-success, #22c55e) 45%, transparent); }
   .answer-head { display: flex; align-items: center; gap: .5rem; margin-bottom: .35rem; }

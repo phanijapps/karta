@@ -640,4 +640,22 @@ test('work tab groups consecutive same-tool turns and nests a delegation\'s work
   await expect(page.getByRole('main').getByLabel('Final answer')).toContainText('Here is the brief.');
 });
 
-
+test('a legacy session shows delegation pills from the delegate_agent intents; the slideout shows the agent and its report', async ({ page }) => {
+  await mockBase(page);
+  await mockSessions(page);
+  await mockTranscripts(page);
+  await mockStates(page);
+  await page.goto('/');
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
+  // The r-stock transcript predates attribution (no agent on any row)
+  // but carries a delegate_agent intent → one pill, named from the args.
+  const pill = page.getByRole('main').getByRole('button', { name: /research-agent/ });
+  await expect(pill).toHaveCount(1);
+  await pill.click();
+  const dialog = page.getByRole('dialog', { name: 'Delegation to research-agent' });
+  await expect(dialog).toContainText('market share estimates');
+  await expect(dialog.getByRole('region', { name: 'Report' })).toContainText('done: 3 sources');
+  await expect(dialog).toContainText('completed');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+});
