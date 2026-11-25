@@ -86,6 +86,19 @@ async function mockStates(page: Page) {
   });
 }
 
+
+/** The right sidebar's Work tab (tool history). The panel auto-opens
+ * for research sessions on wide viewports; this makes it explicit. */
+async function workTab(page: Page) {
+  // The panel auto-opens for research sessions; only toggle when closed.
+  if ((await page.getByRole('complementary', { name: 'Session context' }).count()) === 0) {
+    await page.getByRole('button', { name: 'Toggle right sidebar' }).click();
+  }
+  const panel = page.getByRole('complementary', { name: 'Session context' });
+  await panel.getByRole('tab', { name: /Work/ }).click();
+  return panel.getByRole('tabpanel', { name: 'Work' });
+}
+
 /** Cursor-aware transcript mock: honors after_seq per session (a mock
  * that ignores the cursor masks remount/incremental-sync regressions). */
 async function mockTranscripts(page: Page) {
@@ -165,8 +178,11 @@ test('sidebar groups sessions and switching swaps the transcript', async ({ page
   await page.keyboard.press('Escape');
   await expect(pop).toHaveCount(0);
   await expect(info).toBeFocused();
-  const steps = page.getByLabel('Work steps');
-  await expect(steps).toContainText('Delegated research-agent');
+  // The tool history lives in the SIDEBAR's Work tab — the thread is
+  // dialogue only (user message + answer bubbles, nothing between).
+  const work = await workTab(page);
+  await expect(work).toContainText('Delegated research-agent');
+  await expect(page.getByRole('main').getByRole('button', { name: /Delegated/ })).toHaveCount(0);
 
   // Back to quick chat: lean again, no ward bar, no analysis card.
   await chatGroup.getByRole('button', { name: /Quick Chat/ }).click();
@@ -215,7 +231,7 @@ test('new research creates a shell and activates it', async ({ page }) => {
   await expect(page.getByRole('radiogroup')).toHaveCount(0);
 });
 
-test('context panel: ward card + skills + agents for a ward-bound session; none for chat', async ({ page }) => {
+test('context tab: ward card + skills + agents for a ward-bound session; none for chat', async ({ page }) => {
   await mockBase(page);
   await mockSessions(page);
   await mockTranscripts(page);
@@ -234,22 +250,25 @@ test('context panel: ward card + skills + agents for a ward-bound session; none 
     }),
   );
   await page.goto('/');
-
-  // Open the right panel and switch to the ward-bound session.
-  await page.getByRole('button', { name: 'Toggle right sidebar' }).click();
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click({ force: true });
+  // The panel auto-opened on the research session (Work tab). Switch
+  // to Context for the ward card / skills / agents.
+  const nav = page.getByRole('navigation', { name: 'Workspace navigation' });
+  await nav.locator('.ward-row').click();
   const panel = page.getByRole('complementary', { name: 'Session context' });
-  await expect(panel.getByLabel('Active ward')).toBeVisible();
-  await expect(panel.getByText('Stock Analysis — equity research method')).toBeVisible();
-  await expect(panel.getByLabel('Ward layout')).toContainText('canonical');
-  await expect(panel.getByLabel('Ward layout')).toContainText('brief');
-  await expect(panel.getByLabel('Provisioned skills')).toContainText('pdf');
-  await expect(panel.getByLabel('Provisioned skills')).toContainText('clean-code');
-  await expect(panel.getByLabel('Agents')).toContainText('research-agent');
+  await panel.getByRole('tab', { name: 'Context' }).click();
+  const ctx = panel.getByRole('tabpanel', { name: 'Context' });
+  await expect(ctx.getByLabel('Active ward')).toBeVisible();
+  await expect(ctx.getByText('Stock Analysis — equity research method')).toBeVisible();
+  await expect(ctx.getByLabel('Ward layout')).toContainText('canonical');
+  await expect(ctx.getByLabel('Ward layout')).toContainText('brief');
+  await expect(ctx.getByLabel('Provisioned skills')).toContainText('pdf');
+  await expect(ctx.getByLabel('Provisioned skills')).toContainText('clean-code');
+  await expect(ctx.getByLabel('Agents')).toContainText('research-agent');
 
-  // Quick chat: no ward card (the section reports the lean posture).
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: /Quick Chat/ }).click();
-  await expect(panel.getByLabel('Active ward')).toHaveCount(0);
+  // Quick chat: the panel lands on Context with no ward card, and the
+  // Work tab has nothing to show.
+  await nav.getByRole('list', { name: 'Sessions' }).locator('li', { hasText: 'Chat' }).first().getByRole('button', { name: /Quick Chat/ }).click();
+  await expect(ctx.getByLabel('Active ward')).toHaveCount(0);
 });
 
 test('remounting the chat surface keeps the full history (no cursor-blanking)', async ({ page }) => {
@@ -397,42 +416,38 @@ test('unique ward rows: expand + latest selected; empty wards ensure their warde
   expect(ensured).toBe(1);
 });
 
-test('research runs stream their work live (Timeline SSE → work stream)', async ({ page }) => {
+test('a live research run shows its latest thinking in the thread; the analysis lands in the chip mid-run', async ({ page }) => {
   await mockBase(page);
   await mockSessions(page);
   await mockTranscripts(page);
   await mockStates(page);
-  // A send that never completes (the run "works" meanwhile)…
   let sendStarted = false;
   await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
     if (route.request().method() === 'GET') return route.fallback();
     sendStarted = true;
     return new Promise(() => {});
   });
-  // …and its event stream replaying the run's live Timeline events.
   await page.route((url) => url.pathname === '/api/sessions/r-stock/events', (route) => {
     const frames = [
       'event: intent_analysis\ndata: ' + JSON.stringify({ id: 'e1', kind: 'intent_analysis', text: 't', intent_analysis: { status: 'analyzed', primary_intent: 'nvda-check', complexity: 'M', step_budget: 8, approach: 'graph', recommended_skills: ['pdf'] } }),
       'event: agent_step\ndata: ' + JSON.stringify({ id: 'e2', kind: 'agent_step', text: 'Entering the ward and staging the search.' }),
-      'event: tool_call\ndata: ' + JSON.stringify({ id: 'e3', kind: 'tool_call', text: 'mcp_brave-mcp_brave_web_search' }),
-      'event: delegation\ndata: ' + JSON.stringify({ id: 'e4', kind: 'delegation', text: 'research-agent — market share' }),
+      'event: agent_step\ndata: ' + JSON.stringify({ id: 'e3', kind: 'agent_step', text: 'Reading the prior brief before searching.' }),
+      'event: tool_call\ndata: ' + JSON.stringify({ id: 'e4', kind: 'tool_call', text: 'mcp_brave-mcp_brave_web_search' }),
     ].join('\n\n') + '\n\n';
     return route.fulfill({ status: 200, contentType: 'text/event-stream', body: frames });
   });
   await page.goto('/');
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click({ force: true });
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
   await page.getByLabel('Research question').fill('live streaming check');
   await page.getByLabel('Research question').press('Enter');
   await expect.poll(() => sendStarted).toBe(true);
-
-  // The work stream renders the live events as they arrive.
-  const stream = page.getByLabel('Research run in progress');
-  await expect(stream).toBeVisible();
-  await expect(stream.getByText('nvda-check · M · budget 8')).toBeVisible();
-  await expect(stream.getByText('Entering the ward and staging the search.')).toBeVisible();
-  await expect(stream.getByText('mcp_brave-mcp_brave_web_search')).toBeVisible();
-  await expect(stream.getByText('research-agent — market share')).toBeVisible();
-  // The analysis ALSO lands live (mid-run, from the SSE event) in the chip.
+  // The MAIN THREAD shows the run's LATEST narration as live thinking
+  // (the newest agent_step), not a log of every event.
+  const working = page.getByLabel('Assistant is working');
+  await expect(working).toBeVisible();
+  await expect(working).toContainText('Reading the prior brief before searching.');
+  await expect(working).not.toContainText('Entering the ward and staging');
+  // The analysis chip lands mid-run from the SSE event.
   await expect(page.locator('.analysis-chip')).toContainText('nvda-check');
 });
 
@@ -475,7 +490,7 @@ test('leaving a ward: the strip offers Leave (non-warden), clears the binding, f
   await expect(page.locator('[aria-live="polite"]')).toContainText('Left stock-analysis');
 });
 
-test('thinking stays in the brain: friendly-verb steps, folded plan + reasoning, answers are the only bubbles', async ({ page }) => {
+test('the thread is dialogue only; tool history with friendly verbs lives in the sidebar Work tab', async ({ page }) => {
   await mockBase(page);
   await mockSessions(page);
   await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
@@ -491,25 +506,32 @@ test('thinking stays in the brain: friendly-verb steps, folded plan + reasoning,
   await mockStates(page);
   await page.goto('/');
   await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
-  // Only the ANSWER is a chat bubble.
-  const bubbles = page.getByLabel('Assistant message');
-  await expect(bubbles).toHaveCount(1);
-  await expect(bubbles).toContainText('Done — it printed hi.');
-  // The step reads as a friendly verb + object + outcome; the plan
-  // narration and the reasoning are folded (hidden), never inline.
-  const steps = page.getByLabel('Work steps');
-  await expect(steps.getByRole('button', { name: /Ran echo hi/ })).toBeVisible();
-  await expect(steps.getByRole('button', { name: /Ran echo hi/ })).toContainText('exit 0');
-  await expect(steps.getByText('Announcing, then executing')).toBeHidden();
-  await expect(steps.getByText('Hmm — every call')).toBeHidden();
-  await steps.getByRole('button', { name: /Ran echo hi/ }).click();
-  await expect(steps.getByText('Announcing, then executing')).toBeVisible();
-  await expect(steps.getByText('Hmm — every call')).toBeHidden(); // the brain stays collapsed until opened
-  await steps.getByText('Thinking').click();
-  await expect(steps.getByText('Hmm — every call')).toBeVisible();
+  // MAIN THREAD: your message + the answer. Nothing else.
+  const main = page.getByRole('main');
+  await expect(main.getByLabel('Your message')).toHaveCount(1);
+  await expect(main.getByLabel('Assistant message')).toHaveCount(1);
+  await expect(main.getByLabel('Assistant message')).toContainText('Done — it printed hi.');
+  await expect(main.getByText('Announcing, then executing')).toHaveCount(0);
+  await expect(main.getByText('Hmm — every call')).toHaveCount(0);
+  // SIDEBAR: the turn grouped under its user message, a friendly-verb
+  // step with the outcome; narration + brain folded until expanded.
+  const work = await workTab(page);
+  await expect(work.locator('.turn-user')).toContainText('run the thing');
+  const step = work.getByRole('button', { name: /Ran echo hi/ });
+  await expect(step).toContainText('exit 0');
+  await expect(work.getByText('Announcing, then executing')).toBeHidden();
+  await step.click();
+  await expect(work.getByText('Announcing, then executing')).toBeVisible();
+  await expect(work.getByText('Hmm — every call')).toBeHidden(); // the brain stays collapsed
+  await work.getByText('Thinking').click();
+  await expect(work.getByText('Hmm — every call')).toBeVisible();
+  // The Context tab still has the ward/skills.
+  const panel = page.getByRole('complementary', { name: 'Session context' });
+  await panel.getByRole('tab', { name: 'Context' }).click();
+  await expect(panel.getByRole('tabpanel', { name: 'Context' })).toContainText('Provisioned Skills');
 });
 
-test('steps group consecutive same-tool turns and nest a delegation\'s work', async ({ page }) => {
+test('work tab groups consecutive same-tool turns and nests a delegation\'s work', async ({ page }) => {
   await mockBase(page);
   await mockSessions(page);
   await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
@@ -522,16 +544,12 @@ test('steps group consecutive same-tool turns and nest a delegation\'s work', as
         { id: 'u1', seq: 1, role: 'user', content: 'research it', created_at: NOW },
         intent('a1', 2, [call('c1', 'ward_use', '{"name":"stock-analysis"}')]),
         result('t1', 3, 'c1', 'ward_use', 'ACTIVE WARD: stock-analysis'),
-        // Two CONSECUTIVE searches → one merged step (2 calls).
         intent('a2', 4, [call('c2', 'mcp_brave-mcp_brave_web_search', '{"query":"nvda revenue"}')]),
         result('t2', 5, 'c2', 'mcp_brave-mcp_brave_web_search', '7 results…'),
         intent('a3', 6, [call('c3', 'mcp_brave-mcp_brave_web_search', '{"query":"nvda q3"}')]),
         result('t3', 7, 'c3', 'mcp_brave-mcp_brave_web_search', '5 results…'),
-        // A write between → the next search is a SEPARATE step.
         intent('a4', 8, [call('c4', 'write', '{"path":"notes.md","content":"x"}')]),
         result('t4', 9, 'c4', 'write', 'wrote notes.md'),
-        // A delegation whose child (injected user row + its own tool turns)
-        // nests under it.
         intent('a5', 10, [call('c5', 'delegate_agent', '{"agent":"research-agent","task":"market share"}')]),
         { id: 'u-child', seq: 11, role: 'user', content: 'Execute… inside the ward', created_at: NOW },
         intent('a6', 12, [call('c6', 'mcp_brave-mcp_brave_web_search', '{"query":"trendforce"}')]),
@@ -543,20 +561,18 @@ test('steps group consecutive same-tool turns and nest a delegation\'s work', as
   await mockStates(page);
   await page.goto('/');
   await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
-  const steps = page.getByLabel('Work steps');
-  await expect(steps.getByRole('button', { name: /Entered ward stock-analysis/ })).toBeVisible();
-  const searches = steps.getByRole('button', { name: /Searched the web/ });
-  await expect(searches).toHaveCount(1); // the merged pair; the child's search nests under the delegation
+  const work = await workTab(page);
+  await expect(work.getByRole('button', { name: /Entered ward stock-analysis/ })).toBeVisible();
+  const searches = work.getByRole('button', { name: /Searched the web/ });
+  await expect(searches).toHaveCount(1); // the merged pair; the child's nests
   await expect(searches.first()).toContainText('2 calls');
-  await expect(searches.first()).toContainText('results');
   await expect(searches.first()).toContainText('nvda revenue, nvda q3');
-  await expect(steps.getByRole('button', { name: /Wrote notes.md/ })).toBeVisible();
-  // The child's user row is NOT a chat bubble (absorbed into the turn).
-  await expect(page.getByLabel('Your message')).toHaveCount(1);
-  // Expanding the delegation shows the child's work nested under it.
-  const delegated = steps.getByRole('button', { name: /Delegated research-agent/ });
+  await expect(work.getByRole('button', { name: /Wrote notes.md/ })).toBeVisible();
+  // The child's user row is absorbed — ONE turn header, not a bubble.
+  await expect(work.locator('.turn-user')).toHaveCount(1);
+  const delegated = work.getByRole('button', { name: /Delegated research-agent/ });
   await delegated.click();
-  await expect(steps.locator('.children')).toContainText('Searched the web');
-  await expect(page.getByLabel('Assistant message')).toContainText('Here is the brief.');
+  await expect(work.locator('.children')).toContainText('Searched the web');
+  await expect(page.getByRole('main').getByLabel('Assistant message')).toContainText('Here is the brief.');
 });
 

@@ -56,7 +56,7 @@ import { clearChat } from '../shared/api/client';
       <div class="header-actions"><button class="icon-button" onclick={() => (confirmClear = true)} aria-label="Clear conversation" title="Clear conversation (deletes all messages)"><Trash2 size={18} strokeWidth={1.6} /></button><button class="icon-button" onclick={() => theme = theme === 'dark' ? 'light' : 'dark'} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}>{#if theme === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}</button><button class="icon-button" onclick={toggleRight} aria-label="Toggle right sidebar" aria-expanded={rightDocked ? rightExpanded : drawer === 'right'} aria-controls={rightDocked && rightExpanded || drawer === 'right' ? 'right-sidebar' : undefined}><PanelRight size={20} strokeWidth={1.5} /></button></div>
     </header>
     <main id="workspace" bind:this={main!} tabindex="-1">
-      {#if view === 'schedules'}<Schedules onopenSession={() => { view = 'chat'; }} />{:else if view === 'wards'}<Wards />{:else}<Chat {sessions} />{/if}
+      {#if view === 'schedules'}<Schedules onopenSession={() => { view = 'chat'; }} />{:else if view === 'wards'}<Wards />{:else}<Chat {sessions} onresearch={() => { if (rightDocked) rightExpanded = true; }} />{/if}
     </main>
   </div>
   {#if rightDocked && rightExpanded}<div class="right-panel" id="right-sidebar"><ContextPanel {sessions} onclose={() => rightExpanded = false} /></div>{/if}

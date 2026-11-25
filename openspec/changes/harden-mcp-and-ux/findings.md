@@ -156,6 +156,24 @@ fixed on the way). Decisions recorded: collapsed-by-default with
 auto-open-while-live; friendly verb at the top level, raw name in the
 expansion.
 
+**Operator refinement — side by side (thread = dialogue, work = sidebar):**
+"Still stacking" → the step tree left the thread entirely. The MAIN
+THREAD is dialogue only (your message → the answer); while a run is
+live it shows the model's LATEST narration as a live Thinking bubble
+(the newest agent_step, never a log). The tool history lives in the
+EXISTING right sidebar under a **Work** tab (default for research
+sessions; the panel auto-opens on wide screens), grouped by turn under
+the user message that started it; **Context** (ward, skills, agents)
+is the second tab. The in-chat work-stream section and the chat-side
+step rendering retired; `steps.ts`/`WorkSteps.svelte` moved into the
+panel unchanged. Live on the operator's NVDA session: thread = brief
+only; Work = 7 steps. 94 Playwright (dialogue-only thread, sidebar
+grouping/nesting, live latest-thinking, context tab).
+
+Spotted on the live view (not yet addressed): assistant content
+renders raw markdown (`**bold**`, `##`) — the chat has no markdown
+renderer; flagged to the operator as the next contained change.
+
 **task verify: exit 0** — gates + codegen zero drift + lint 0 +
 full suites + budget gates OK (suite 27.3s / 28s — the hardening
 tests' cost trimmed honestly: the echo server builds once per test

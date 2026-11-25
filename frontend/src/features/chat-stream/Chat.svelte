@@ -3,10 +3,9 @@
   import { ArrowUp, Brain, Sparkles, Microscope, FolderOpen, RefreshCw, Info, X } from '@lucide/svelte';
   import { sendChatMessage, streamChatMessage, continueSession } from '../../shared/api/client';
   import { createTimeline } from '../../shared/sse/timeline.svelte';
-  import WorkSteps from './WorkSteps.svelte';
   import type { Sessions } from '../../entities/session/session.svelte';
   import type { ChatMessage } from '../../shared/api/client';
-  let { sessions }: { sessions: Sessions } = $props();
+  let { sessions, onresearch }: { sessions: Sessions; onresearch?: () => void } = $props();
   let draft = $state('');
   let sending = $state(false);
   let transcriptEl: HTMLElement;
@@ -41,6 +40,15 @@
     sessions.messages;
     void scrollToLatest();
   });
+  // The run's latest narration (agent_step text) — the main thread's
+  // live "thinking" while the work itself fills the sidebar.
+  const latestThought = $derived.by<string>(() => {
+    for (let i = timeline.events.length - 1; i >= 0; i--) {
+      const ev = timeline.events[i];
+      if (ev.kind === 'agent_step' && ev.text && !ev.text.startsWith('engine:') && !ev.text.startsWith('Pre-execution')) return ev.text;
+    }
+    return '';
+  });
   // Live analysis: the SSE intent_analysis event renders the card the
   // moment the analysis lands (mid-run), not at completion.
   $effect(() => {
@@ -55,6 +63,11 @@
     sessions.activeId;
     return () => timeline.close();
   });
+  // Research sessions show their work in the right sidebar: open it
+  // (once, on wide screens) when a research session becomes active.
+  $effect(() => {
+    if (sessions.isResearch) onresearch?.();
+  });
   const canSend = $derived(draft.trim() !== '' && !sending);
   const isResearch = $derived(sessions.isResearch);
   // Turns: the transcript split at USER rows — each turn carries the
@@ -62,7 +75,7 @@
   // content → answers). Children's injected user rows (delegation
   // context) are absorbed into the preceding turn so the step tree
   // nests them instead of breaking the view.
-  type Turn = { key: string; user: ChatMessage | null; rows: ChatMessage[]; steps: ChatMessage[]; answers: ChatMessage[]; live: boolean };
+  type Turn = { key: string; user: ChatMessage | null; rows: ChatMessage[]; answers: ChatMessage[]; live: boolean };
   const turns = $derived.by<Turn[]>(() => {
     const out: Turn[] = [];
     let cur: Turn | null = null;
@@ -75,27 +88,16 @@
           cur.rows.push(m);
           continue;
         }
-        cur = { key: m.id, user: m, rows: [], steps: [], answers: [], live: false };
+        cur = { key: m.id, user: m, rows: [], answers: [], live: false };
         out.push(cur);
         continue;
       }
       if (!cur) continue;
       if (m.role === 'assistant' && !m.tool_calls && (m.content || '').trim() !== '') cur.answers.push(m);
-      else {
-        cur.rows.push(m);
-        if (m.role === 'assistant' && m.tool_calls) cur.steps.push(m);
-      }
+      else cur.rows.push(m);
     }
     if (out.length) out[out.length - 1].live = sending && sessions.activeId === sendSessionId;
     return out;
-  });
-  // The latest intent row id overall = the live turn's marker.
-  const lastIntentId = $derived.by<string | undefined>(() => {
-    for (let i = sessions.messages.length - 1; i >= 0; i--) {
-      const m = sessions.messages[i];
-      if (m.role === 'assistant' && m.tool_calls) return m.id;
-    }
-    return undefined;
   });
   // The Task Analysis popover (the (i) chip): open state + the
   // trigger ref for focus return on close.
@@ -337,9 +339,6 @@
         {#if turn.user}
           <article class="bubble user" aria-label="Your message">{turn.user.content}</article>
         {/if}
-        {#if turn.steps.length}
-          <WorkSteps messages={turn.rows} liveTurnId={turn.live ? lastIntentId : undefined} />
-        {/if}
         {#each turn.answers as m (m.id)}
           <article class="bubble assistant" aria-label="Assistant message">
             {#if m.reasoning}
@@ -353,29 +352,6 @@
         {/each}
       {/each}
     {/if}
-      {#if sending && sessions.activeId === sendSessionId && isResearch && timeline.events.length > 0}
-        <!-- The LIVE work stream: Timeline events as the research run
-             works — analysis, steps, tool calls, delegations. -->
-        <section class="work-stream" aria-label="Research run in progress" aria-live="polite">
-          {#each timeline.events as ev (ev.id)}
-            {@const row = workRow(ev)}
-            {#if row}
-              <div class="work-row {row.tone}">
-                <span class="work-icon" aria-hidden="true">{row.icon}</span>
-                <span class="work-kind">{row.kind}</span>
-                <span class="work-text">{row.text}</span>
-                {#if row.more}
-                  <details class="work-more">
-                    <summary>more</summary>
-                    <pre>{row.more}</pre>
-                  </details>
-                {/if}
-              </div>
-            {/if}
-          {/each}
-          <div class="work-row live" aria-hidden="true"><span class="dots"><i></i><i></i><i></i></span> working…</div>
-        </section>
-      {/if}
       {#if streaming && sessions.activeId === sendSessionId && (reasoning !== '' || content !== '')}
         <article class="bubble assistant streaming" aria-label="Assistant is responding" aria-busy="true">
           {#if reasoning !== ''}
@@ -393,11 +369,20 @@
       {:else if sending && sessions.activeId === sendSessionId}
         <article class="bubble assistant pending" aria-label="Assistant is working" aria-busy="true">
           {#if isResearch}
-            <div class="research-progress">
-              <Microscope size={16} aria-hidden="true" />
-              <span>Running the full pipeline…</span>
-              <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
-            </div>
+            <!-- The LATEST thinking, live: the engine's agent_step events
+                 narrate the run; the tool history lives in the sidebar. -->
+            {#if latestThought !== ''}
+              <details class="thinking live" open>
+                <summary><Brain size={13} aria-hidden="true" /> Thinking <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></summary>
+                <p class="muted">{latestThought}</p>
+              </details>
+            {:else}
+              <div class="research-progress">
+                <Microscope size={16} aria-hidden="true" />
+                <span>Running the full pipeline…</span>
+                <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              </div>
+            {/if}
           {:else}
             <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
           {/if}
@@ -463,6 +448,8 @@
   .bubble.pending, .bubble.streaming { min-height: 2.5rem; display: grid; align-content: center; }
   .thinking { margin-bottom: .5rem; font-size: .8rem; color: var(--ds-color-muted, #888); }
   .thinking summary { cursor: pointer; display: inline-flex; gap: .35rem; align-items: center; list-style: none; }
+  .thinking.live summary .dots { display: inline-flex; gap: 3px; margin-left: .3rem; }
+  .thinking.live summary .dots i { width: 4px; height: 4px; }
   .thinking p { margin: .3rem 0 0; padding: .4rem .6rem; border-left: 2px solid var(--ds-color-border, #333); font-size: .78rem; }
   .stream-text { white-space: pre-wrap; }
   .dots { display: inline-flex; gap: 4px; }
@@ -515,18 +502,6 @@
   /* Delegation tree */
   .research-progress { display: flex; align-items: center; gap: .5rem; color: var(--ds-color-muted, #888); font-size: .85rem; }
   /* The live work stream */
-  .work-stream { display: grid; gap: .25rem; max-width: min(48rem, 90%); padding: .6rem .8rem; border: 1px solid var(--ds-color-border, #333); border-radius: 12px; background: var(--ds-color-surface, #1e1e1e); font-size: .78rem; overflow: hidden; }
-  .work-row { display: flex; align-items: baseline; gap: .5rem; margin: 0; min-width: 0; color: var(--ds-color-text, #eee); }
-  .work-row .work-icon { flex-shrink: 0; }
-  .work-row .work-kind { flex-shrink: 0; font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-color-muted, #888); min-width: 4.2rem; }
-  .work-row .work-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .work-row.tool .work-text, .work-row.step .work-text { color: var(--ds-color-muted, #aaa); }
-  .work-row.analysis { color: var(--accent, #6366f1); font-weight: 500; }
-  .work-row.delegation .work-text { color: var(--ds-color-success, #22c55e); }
-  .work-row.system .work-text { color: var(--ds-color-muted, #888); font-style: italic; }
-  .work-row.live { color: var(--ds-color-muted, #888); }
-  .work-more summary { cursor: pointer; color: var(--ds-color-muted, #888); font-size: .68rem; }
-  .work-more pre { max-width: 36rem; max-height: 8rem; overflow: auto; margin: .2rem 0 0; padding: .3rem .5rem; border-radius: 4px; background: var(--ds-color-field, #1a1a1a); font-size: .68rem; white-space: pre-wrap; }
   .composer-region { padding: .75rem clamp(.75rem, 3vw, 2rem) .5rem; display: grid; gap: .4rem; border-top: 1px solid var(--ds-color-border, #333); background: var(--ds-color-sidebar, #161616); min-width: 0; max-width: 100%; overflow: hidden; }
   .ward-bar .leave-ward { margin-left: auto; background: none; border: none; color: var(--ds-color-muted, #888); font-size: .72rem; cursor: pointer; text-decoration: underline; }
   .ward-bar .ward-note { font-size: .68rem; }

@@ -1,9 +1,31 @@
 <script lang="ts">
-  import { X, FolderOpen, Layers, Users } from '@lucide/svelte';
+  import { X, FolderOpen, Layers, Users, ListTree } from '@lucide/svelte';
   import { getWard, type Ward } from '../shared/api/client';
   import type { Sessions } from '../entities/session/session.svelte';
+  import WorkSteps from '../features/chat-stream/WorkSteps.svelte';
 
+  // FSD note: the app layer composes features — importing the step view
+  // here is app → features (allowed), not a cross-feature import.
   let { sessions, onclose }: { sessions: Sessions; onclose: () => void } = $props();
+
+  // Tabs: Work (the tool history — the live one, default for research)
+  // and Context (ward, skills, agents).
+  type Tab = 'work' | 'context';
+  let tab = $state<Tab>('work');
+  // Switching to a research session lands on Work; chat has none.
+  $effect(() => {
+    tab = sessions.isResearch ? 'work' : 'context';
+  });
+  const running = $derived(sessions.isRunning(sessions.activeId));
+  // The live turn's latest intent row (auto-opens in the step view).
+  const liveTurnId = $derived.by<string | undefined>(() => {
+    if (!running) return undefined;
+    for (let i = sessions.messages.length - 1; i >= 0; i--) {
+      const m = sessions.messages[i];
+      if (m.role === 'assistant' && m.tool_calls) return m.id;
+    }
+    return undefined;
+  });
 
   let wardDetail = $state<Ward | null>(null);
   let wardLoadError = $state('');
@@ -56,6 +78,31 @@
     return out;
   });
 
+  // Work turns: rows split at USER rows; a user row right after a
+  // delegate intent is the child's injected context (absorbed).
+  type WorkTurn = { key: string; user: import('../shared/api/client').ChatMessage | null; rows: import('../shared/api/client').ChatMessage[]; live: boolean };
+  const workTurns = $derived.by<WorkTurn[]>(() => {
+    const out: WorkTurn[] = [];
+    let cur: WorkTurn | null = null;
+    for (const m of sessions.messages) {
+      if (m.role === 'user') {
+        const prevIntent = cur?.rows[cur.rows.length - 1];
+        if (cur && prevIntent?.tool_calls && prevIntent.tool_calls.includes('"delegate_agent"')) {
+          cur.rows.push(m);
+          continue;
+        }
+        cur = { key: m.id, user: m, rows: [], live: false };
+        out.push(cur);
+        continue;
+      }
+      if (!cur) continue;
+      if (m.role === 'assistant' && !m.tool_calls && (m.content || '').trim() !== '') continue; // the ANSWER stays in the chat
+      cur.rows.push(m);
+    }
+    if (out.length) out[out.length - 1].live = running;
+    return out;
+  });
+
   /** Render the ward's layout node ids as a compact tree list. */
   function layoutLines(node: unknown, depth: number, out: string[]): void {
     if (!node || typeof node !== 'object' || out.length > 24) return;
@@ -74,10 +121,32 @@
 
 <aside class="context" aria-label="Session context">
   <header>
-    <h2>Context</h2>
+    <div class="tabs" role="tablist" aria-label="Session panel">
+      <button role="tab" aria-selected={tab === 'work'} class:active={tab === 'work'} onclick={() => (tab = 'work')}>
+        <ListTree size={13} aria-hidden="true" /> Work
+        {#if running}<span class="live-dot" aria-label="run in progress"></span>{/if}
+      </button>
+      <button role="tab" aria-selected={tab === 'context'} class:active={tab === 'context'} onclick={() => (tab = 'context')}>Context</button>
+    </div>
     <button class="icon-button" onclick={onclose} aria-label="Close right sidebar"><X size={18} /></button>
   </header>
-  <div class="context-body">
+  {#if tab === 'work'}
+    <!-- The tool history: every turn's steps (friendly verbs, folded
+         detail), grouped under the user message that started them. -->
+    <div class="context-body work" role="tabpanel" aria-label="Work">
+      {#if sessions.messages.length === 0 && !running}
+        <p class="muted small">No work yet — send a research question and the steps appear here as the run works.</p>
+      {:else}
+        {#each workTurns as turn (turn.key)}
+          <section class="work-turn" aria-label="Turn">
+            {#if turn.user}<p class="turn-user" title={turn.user.content}>{turn.user.content}</p>{/if}
+            <WorkSteps messages={turn.rows} liveTurnId={turn.live ? liveTurnId : undefined} />
+          </section>
+        {/each}
+      {/if}
+    </div>
+  {:else}
+  <div class="context-body" role="tabpanel" aria-label="Context">
     {#if ward}
       <section class="ctx-section" aria-label="Active ward">
         <p class="ctx-title"><FolderOpen size={12} aria-hidden="true" /> Active Ward</p>
@@ -144,13 +213,21 @@
       {/if}
     </section>
   </div>
+  {/if}
   <footer>Local by design. Yours to control.</footer>
 </aside>
 
 <style>
   .context { height: 100%; display: flex; flex-direction: column; border-left: 1px solid var(--ds-color-border); background: var(--ds-color-background); }
+  .tabs { display: flex; gap: var(--ds-space-1); }
+  .tabs [role="tab"] { display: inline-flex; align-items: center; gap: .3rem; padding: var(--ds-space-2); font-size: var(--ds-font-nav); min-height: 32px; color: var(--ds-color-muted); border-radius: 6px; }
+  .tabs [role="tab"].active { color: var(--ds-color-text); background: var(--ds-color-hover); }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ds-color-success, #22c55e); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+  .context-body.work { padding: var(--ds-space-3); gap: var(--ds-space-4); }
+  .work-turn { display: grid; gap: .25rem; }
+  .turn-user { margin: 0 0 .15rem; font-size: .72rem; color: var(--ds-color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 2px solid var(--ds-color-primary, #6366f1); padding-left: .4rem; }
   header { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: var(--ds-space-2) var(--ds-space-3); border-bottom: 1px solid var(--ds-color-border); }
-  h2 { font-size: var(--ds-font-chat); font-weight: 550; }
   .context-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--ds-space-4); display: flex; flex-direction: column; gap: var(--ds-space-6); color: var(--ds-color-muted); font-size: var(--ds-font-control); line-height: 1.7; }
   .ctx-section { display: grid; gap: var(--ds-space-2); align-content: start; }
   .ctx-title { display: flex; align-items: center; gap: var(--ds-space-2); margin: 0; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ds-color-muted); }
