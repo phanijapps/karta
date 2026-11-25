@@ -1,5 +1,7 @@
 # Run Legibility — Review and Plan
 
+> Visual mockup (today vs. after, toggle at the top):
+> `run-legibility-mockup.html` next to this file — open it in a browser.
 > Evidence: the INR research run `research-1795639221673033347-1`
 > (2026-11-25, after intent-analyst-agent + intent-analysis-detail).
 > Operator report: "I didn't see agent delegation, and the final dump is

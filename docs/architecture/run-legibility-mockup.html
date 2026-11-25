@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-state="after">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Karta — Run legibility mockup (today → after L1–L3)</title>
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --radius: 10px; --radius-pill: 999px;
+    --accent: #6366f1; --ok: #22c55e; --warn: #f59e0b; --danger: #ef4444;
+  }
+  [data-theme="dark"] {
+    --bg: #141414; --surface: #1e1e1e; --surface-2: #262626; --hover: #2a2a2a; --border: #333; --text: #f4f4f4; --muted: #9a9a9a;
+    --primary: #f4f4f4; --on-primary: #141414; --chip: #2b2b2b; --code: #111; --shadow: 0 12px 32px rgb(0 0 0 / .45);
+  }
+  [data-theme="light"] {
+    --bg: #f7f7f8; --surface: #ffffff; --surface-2: #f3f3f4; --hover: #ececee; --border: #e4e4e7; --text: #18181b; --muted: #71717a;
+    --primary: #18181b; --on-primary: #ffffff; --chip: #f1f1f3; --code: #f4f4f5; --shadow: 0 12px 32px rgb(0 0 0 / .12);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.45 var(--font-sans); color: var(--text); background: var(--bg); }
+  button { font: inherit; color: inherit; }
+
+  /* ---- top bar: the mockup's own controls ---- */
+  .mock-bar { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 10; }
+  .mock-bar strong { font-weight: 600; }
+  .mock-bar .sub { color: var(--muted); font-size: 12.5px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-pill); overflow: hidden; margin-left: auto; }
+  .seg button { background: transparent; border: 0; padding: 6px 14px; cursor: pointer; color: var(--muted); font-weight: 500; font-size: 13px; }
+  .seg button[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); }
+  .theme { border: 1px solid var(--border); background: transparent; border-radius: var(--radius-pill); padding: 6px 12px; cursor: pointer; font-size: 13px; color: var(--muted); }
+
+  /* ---- app shell ---- */
+  .shell { display: grid; grid-template-columns: 230px minmax(0, 1fr) 400px; height: calc(100vh - 49px - 30px); }
+  .nav { border-right: 1px solid var(--border); padding: 12px; display: flex; flex-direction: column; gap: 6px; background: var(--surface); }
+  .nav .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 8px; }
+  .nav .brand i { width: 22px; height: 22px; border-radius: 7px; background: var(--accent); display: inline-block; }
+  .nav .group { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 10px 0 2px; }
+  .nav .item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; color: var(--muted); font-size: 13px; }
+  .nav .item.active { background: var(--hover); color: var(--text); }
+  .nav .item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); margin-left: auto; }
+  .nav .item.ward::before { content: "📁"; font-size: 12px; }
+
+  /* ---- thread ---- */
+  .thread { display: flex; flex-direction: column; min-width: 0; }
+  .thread-head { padding: 12px 20px 6px; border-bottom: 1px solid var(--border); position: relative; }
+  .thread-title { font-weight: 600; font-size: 15px; }
+  .analysis-chip-row { margin-top: 8px; }
+  .analysis-chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface-2); font-size: 13px; }
+  .analysis-chip .intent { font-weight: 600; }
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 1px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border); }
+  .badge.complexity-M { color: #60a5fa; border-color: currentColor; font-weight: 600; }
+  .badge.ward { color: var(--ok); border-color: currentColor; }
+  .info-btn { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; display: inline-grid; place-items: center; font-size: 12px; }
+  .info-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+
+  /* the analysis popover (as shipped) */
+  .popover { position: absolute; left: 20px; top: 100%; margin-top: 6px; width: min(620px, 90%); max-height: 60vh; overflow: auto; background: var(--surface); border: 1px solid var(--accent); border-radius: 14px; padding: 12px 16px; box-shadow: var(--shadow); z-index: 5; display: grid; gap: 10px; font-size: 13px; }
+  .popover[hidden] { display: none; }
+  .popover h3 { margin: 0; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .popover h4, .sec-title { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .popover dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 0; }
+  .popover dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  .popover dd { margin: 0; }
+  .popover ul { margin: 4px 0 0; padding-left: 18px; }
+  .popover p { margin: 4px 0 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .chip { font-size: 12px; padding: 2px 9px; border-radius: var(--radius-pill); border: 1px solid var(--border); background: var(--chip); }
+  .chip.agent { border-color: #60a5fa; }
+  .chip.mcp { border-style: dashed; }
+  .chip.dropped { text-decoration: line-through; opacity: .75; }
+  .note { color: var(--muted); font-size: 12.5px; margin: 0; }
+
+  .messages { flex: 1; overflow: auto; padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+  .user { align-self: flex-end; max-width: 78%; background: var(--primary); color: var(--on-primary); padding: 10px 14px; border-radius: 16px 16px 4px 16px; }
+  .assistant { max-width: 92%; }
+  .assistant .body { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 12px 16px; }
+  .assistant .body p { margin: 0 0 8px; }
+  .assistant .body p:last-child { margin: 0; }
+  .who { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin: 0 0 6px 4px; }
+  .who .role { font-weight: 600; color: var(--text); }
+  .who .role.final { color: var(--ok); }
+  .avatar { width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11px; background: var(--surface-2); border: 1px solid var(--border); }
+  .avatar.sub { background: color-mix(in oklab, var(--accent) 18%, transparent); border-color: color-mix(in oklab, var(--accent) 50%, transparent); }
+  .avatar.root { background: color-mix(in oklab, var(--ok) 18%, transparent); border-color: color-mix(in oklab, var(--ok) 50%, transparent); }
+
+  /* sub-agent report card (collapsed) */
+  .report { max-width: 92%; border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent); border-radius: 14px; background: color-mix(in oklab, var(--accent) 7%, var(--surface)); overflow: hidden; }
+  .report summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; }
+  .report summary::-webkit-details-marker { display: none; }
+  .report .kind { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); font-weight: 600; }
+  .report .agent { font-weight: 600; }
+  .report .meta { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .report .chev { transition: transform .15s; color: var(--muted); }
+  .report[open] .chev { transform: rotate(90deg); }
+  .report .excerpt { padding: 0 14px 12px 14px; color: var(--muted); font-size: 13px; border-top: 1px dashed var(--border); padding-top: 10px; }
+
+  /* the answer block with thinking + narration */
+  .final .block { background: var(--surface); border: 1px solid color-mix(in oklab, var(--ok) 45%, transparent); border-radius: 16px; overflow: hidden; }
+  .final .toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--surface-2); font-size: 12.5px; }
+  .final .toolbar .label { color: var(--muted); }
+  .final .toolbar .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; padding: 1px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border); color: var(--muted); }
+  .final .toolbar .tag.answer { color: var(--ok); border-color: currentColor; }
+  .final .toolbar button { margin-left: auto; background: transparent; border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 3px 10px; cursor: pointer; font-size: 12px; color: var(--muted); }
+  .thinking { display: none; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface-2); font-size: 13px; color: var(--muted); }
+  .thinking.shown { display: block; }
+  .thinking .t-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); margin-bottom: 4px; }
+  .thinking em { font-style: italic; }
+  .narration { padding: 8px 14px; font-size: 12.5px; color: var(--muted); border-bottom: 1px dashed var(--border); }
+  .narration .t-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-right: 8px; }
+  .final .body { padding: 12px 16px; }
+  .chart { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
+  .chart .box { aspect-ratio: 16 / 9; border-radius: 10px; background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 18%, transparent), transparent 85%); border: 1px solid var(--border); display: grid; place-items: end center; font-size: 11px; color: var(--muted); padding-bottom: 6px; }
+  .chart svg { width: 100%; height: 100%; }
+  .final ul { margin: 6px 0 0; padding-left: 18px; }
+  .file { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 3px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--chip); font-size: 12.5px; }
+
+  .composer { border-top: 1px solid var(--border); padding: 10px 20px 14px; background: var(--surface); }
+  .composer .box { border: 1px solid var(--border); border-radius: 18px; padding: 10px 14px; color: var(--muted); background: var(--bg); display: flex; align-items: center; justify-content: space-between; }
+  .composer .send { width: 28px; height: 28px; border-radius: 50%; background: var(--primary); color: var(--on-primary); display: grid; place-items: center; font-size: 13px; }
+
+  /* ---- right panel: Work tab ---- */
+  .context { border-left: 1px solid var(--border); display: flex; flex-direction: column; min-width: 0; background: var(--surface); }
+  .context .tabs { display: flex; gap: 4px; padding: 8px 12px 0; border-bottom: 1px solid var(--border); }
+  .context .tabs button { background: transparent; border: 0; padding: 8px 10px; color: var(--muted); cursor: pointer; font-weight: 500; border-bottom: 2px solid transparent; }
+  .context .tabs button.active { color: var(--text); border-color: var(--text); }
+  .work { padding: 12px; overflow: auto; flex: 1; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+  .w-section { display: grid; gap: 6px; }
+  .w-section .sec-title { display: flex; align-items: center; gap: 8px; }
+  .w-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+  .w-row .icon { width: 18px; text-align: center; }
+  .w-row .main { min-width: 0; flex: 1; }
+  .w-row .main b { font-weight: 600; }
+  .w-row .main .sub { color: var(--muted); font-size: 12px; }
+  .w-row .cost { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .w-row.delegation { border-color: color-mix(in oklab, var(--accent) 45%, transparent); }
+  .w-row .tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .w-row .tools span { font-size: 11px; padding: 1px 7px; border-radius: var(--radius-pill); background: var(--chip); border: 1px solid var(--border); }
+  .plan { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+  .plan .step { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+  .plan .step .n { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border); display: inline-grid; place-items: center; font-size: 10.5px; color: var(--muted); }
+  .plan .step.done .n { background: var(--ok); border-color: var(--ok); color: #06210f; }
+  .plan .step.done { color: var(--muted); text-decoration: line-through; }
+  .plan .step.active .n { border-color: var(--accent); color: var(--accent); }
+  .plan .step .owner { margin-left: auto; font-size: 11px; color: var(--muted); }
+  .run-foot { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .plain-steps { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); font-size: 12.5px; }
+  .plain-steps .s { display: flex; gap: 8px; align-items: center; }
+  .plain-steps .s.nest { margin-left: 18px; color: var(--muted); }
+  .plain-steps .s .n { width: 16px; color: var(--muted); text-align: center; }
+
+  /* ---- state switching: what exists in each state ---- */
+  [data-state="today"] .only-after { display: none !important; }
+  [data-state="after"] .only-today { display: none !important; }
+  .today-marker { display: none; }
+  [data-state="today"] .today-marker { display: inline-flex; }
+  .today-marker { align-items: center; gap: 6px; font-size: 11px; color: var(--warn); border: 1px dashed currentColor; border-radius: var(--radius-pill); padding: 1px 8px; margin-left: 6px; }
+  .legend { padding: 6px 16px; font-size: 12px; color: var(--muted); background: var(--surface-2); border-bottom: 1px solid var(--border); }
+  .legend b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="mock-bar" role="toolbar" aria-label="Mockup controls">
+  <strong>Karta — research run legibility</strong>
+  <span class="sub">INR vs USD run · mockup of <code>docs/architecture/run-legibility-plan.md</code></span>
+  <div class="seg" role="group" aria-label="State">
+    <button type="button" data-set-state="today" aria-pressed="false">Today</button>
+    <button type="button" data-set-state="after" aria-pressed="true">After L1–L3</button>
+  </div>
+  <button class="theme" type="button" id="theme">Theme: dark</button>
+</div>
+
+<div class="legend only-after"><b>After L1–L3:</b> reports are collapsed cards, the answer is the only answer (real reasoning under "Thinking"); the Work tab attributes every row, the Plan ticks off, delegations carry cost, the footer totals the run. Click the (i) for the analyst's decision.</div>
+<div class="legend only-today"><b>Today:</b> sub-agent reports and the final answer look identical; the Work tab has no agent labels, no plan, no cost. Switch to "After L1–L3" above.</div>
+
+<div class="shell">
+  <!-- ======================= navigation ======================= -->
+  <nav class="nav" aria-label="Workspace navigation">
+    <div class="brand"><i></i>Karta</div>
+    <div class="item">🔍 Search</div>
+    <div class="item">💬 Quick chat</div>
+    <div class="group">Wards</div>
+    <div class="item ward">india-analysis <span class="dot"></span></div>
+    <div class="item active" style="margin-left:14px">INR vs USD pressures</div>
+    <div class="item ward">stock-analysis</div>
+    <div class="item ward">ai-agents-research</div>
+    <div class="group">Settings</div>
+    <div class="item">Providers · MCP · Skills</div>
+    <div class="item">Advanced</div>
+  </nav>
+
+  <!-- ======================= thread ======================= -->
+  <main class="thread" aria-label="Conversation">
+    <div class="thread-head">
+      <div class="thread-title">INR vs USD pressures</div>
+      <div class="analysis-chip-row">
+        <span class="analysis-chip">
+          <span aria-hidden="true">🔬</span>
+          <span class="intent">analyze-inr-usd-pressures</span>
+          <span class="badge complexity-M">M</span>
+          <span class="badge ward">📁 stock-analysis</span>
+          <button class="info-btn" type="button" id="info-btn" aria-expanded="false" aria-controls="ta-popover" aria-label="Task analysis details" title="The full decision (shipped today)">i</button>
+        </span>
+
+        <!-- The Task Analysis popover — already shipped; shown open in both states for orientation -->
+        <div class="popover only-after" id="ta-popover" role="dialog" aria-label="Task Analysis" hidden>
+          <h3>🔬 Task Analysis <span class="badge">graph</span><span class="badge complexity-M">M</span><span class="badge ward">📁 stock-analysis · use_existing</span></h3>
+          <dl>
+            <dt>Intent</dt><dd>analyze INR/USD exchange rate and research pressures on the Indian rupee</dd>
+            <dt>Budget</dt><dd>8 steps</dd>
+            <dt>Model</dt><dd>zai/glm-5.3-flash</dd>
+            <dt>Cost</dt><dd>1.9k in / 317 out · 3.9 s · 1 attempt</dd>
+            <dt>Window</dt><dd>128.0k (table)</dd>
+          </dl>
+          <section><h4>What the analyst saw</h4>
+            <ul><li>fetch current USD/INR exchange rate data and trends</li><li>identify macro factors pressuring INR (oil imports, FII outflows, trade deficit, RBI intervention, Fed policy)</li><li>synthesize findings into a coherent analysis</li></ul>
+            <p class="note">Single-domain analysis: fetch FX data via yfinance and current news via web search, then one synthesis pass.</p></section>
+          <section><h4>Solution path</h4><p class="note">Use yfinance for USD/INR data and trend context, duckduckgo search for current news on rupee pressures and RBI/Fed dynamics, then synthesize a deep-research writeup.</p></section>
+          <section><h4>Resources</h4>
+            <div class="chips"><span class="chip">yfinance-market-analysis</span><span class="chip">duckduckgo-search</span><span class="chip agent">research-agent</span><span class="chip mcp">⚙ brave-mcp</span><span class="chip dropped">brave-mcp ✕ dropped</span></div>
+          </section>
+          <p class="note">Ward — Existing stock-analysis ward covers market/currency analysis domain.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="messages">
+      <div class="user">Research the Indian rupee's exchange rate against the US dollar over the last 12 months. Identify the main pressures on the INR — oil import costs, foreign portfolio flows, the trade deficit, RBI intervention, and US Fed policy — and assess how much each has contributed. Compare with other Asian currencies, then write a briefing with charts and a 6-month outlook.</div>
+
+      <!-- ======================= TODAY ======================= -->
+      <div class="assistant only-today">
+        <div class="who"><span class="avatar sub">R</span><span class="role">Assistant</span><span class="today-marker">today: a 26 KB sub-agent report rendered as an answer</span></div>
+        <div class="body">
+          <p><b>Research report: Pressures on the Indian Rupee (2025–26)</b></p>
+          <p>1. Exchange-rate trajectory. USD/INR moved from 83.1 to 88.4 over the twelve months to November 2026, a depreciation of 6.4%, with two sharp legs in April (after the tariff announcement) and September (oil spike)…</p>
+          <p>2. Oil import costs. India imports约 85% of its crude; a $10/bbl move changes the monthly import bill by roughly $1.6bn…</p>
+          <p>3. Foreign portfolio flows. FPI outflows totalled $14bn in H1…</p>
+          <p>4. Trade deficit. The goods deficit widened to $283bn annualised…</p>
+          <p>5. RBI intervention. Net spot sales estimated at $42bn; reserves fell from $705bn to $668bn…</p>
+          <p>6. Fed policy. The 100 bp of cuts priced for 2026 narrow the rate differential…</p>
+          <p style="color:var(--muted)">… 26 KB, continues for several screens with tables and sources …</p>
+        </div>
+      </div>
+      <div class="assistant only-today">
+        <div class="who"><span class="avatar sub">B</span><span class="role">Assistant</span><span class="today-marker">today: a builder-agent summary rendered as an answer</span></div>
+        <div class="body"><p>Built two charts: USDINR_12m.png (rate series with the two depreciation legs annotated) and Peer_comparison.png (INR vs JPY, KRW, IDR, CNY normalised). Saved under reports/.</p></div>
+      </div>
+      <div class="assistant only-today">
+        <div class="who"><span class="avatar sub">B</span><span class="role">Assistant</span><span class="today-marker">today: a second builder-agent summary rendered as an answer</span></div>
+        <div class="body"><p>Wrote the briefing (brief.md, 1,450 words) with the drivers ranked by contribution and a 6-month outlook; citations inline.</p></div>
+      </div>
+
+      <!-- ======================= AFTER ======================= -->
+      <details class="report only-after">
+        <summary><span class="chev">▸</span><span class="avatar sub">👥</span><span class="kind">Sub-agent report</span><span class="agent">Research · research-agent</span><span class="meta">26 KB · 1.1k → 8.0k tok · 84 s · 0 tools</span></summary>
+        <div class="excerpt"><b>Pressures on the Indian Rupee (2025–26)</b> — exchange-rate trajectory (83.1 → 88.4, −6.4%, two sharp legs: April tariffs, September oil spike); oil imports (~85% of crude, $10/bbl ≈ $1.6bn/month); FPI outflows $14bn in H1; goods deficit $283bn annualised; RBI net spot sales ≈ $42bn, reserves $705bn → $668bn; Fed cuts priced at 100 bp… <span style="color:var(--muted)">full report attached to the root's context as a reference (report:exec-child-research-agent-…)</span></div>
+      </details>
+      <details class="report only-after">
+        <summary><span class="chev">▸</span><span class="avatar sub">👥</span><span class="kind">Sub-agent report</span><span class="agent">Build charts · builder-agent</span><span class="meta">1.9 KB · 284k → 17k tok · 6.2 min · 14 tools</span></summary>
+        <div class="excerpt">Built two charts: USDINR_12m.png (rate series with the two depreciation legs annotated) and Peer_comparison.png (INR vs JPY, KRW, IDR, CNY normalised). Saved under reports/.</div>
+      </details>
+      <details class="report only-after">
+        <summary><span class="chev">▸</span><span class="avatar sub">👥</span><span class="kind">Sub-agent report</span><span class="agent">Write brief · builder-agent</span><span class="meta">1.5 KB · 299k → 38k tok · 6.4 min · 20 tools</span></summary>
+        <div class="excerpt">Wrote the briefing (brief.md, 1,450 words) with the drivers ranked by contribution and a 6-month outlook; citations inline.</div>
+      </details>
+
+      <div class="assistant final only-after">
+        <div class="who"><span class="avatar root">✦</span><span class="role final">Final answer</span><span class="label" style="color:var(--muted)">root · 721k → 37k tok · 14 min</span></div>
+        <div class="block">
+          <div class="toolbar">
+            <span class="tag answer">The answer</span>
+            <span class="tag">narration</span>
+            <button type="button" id="think-btn" aria-expanded="false">▸ Thinking</button>
+          </div>
+          <div class="thinking" id="think">
+            <div class="t-label">Reasoning · glm-5.3 · step 26 of 26 (the real reasoning_content, captured by L2)</div>
+            <p><em>The research agent's report ranks oil and FPI flows as the dominant pressures; my own Brave searches confirm the RBI intervention figure ($42bn) but give a smaller reserve drawdown than the report. I'll lead with the ranked drivers, use the report's numbers where two sources agree, flag the one divergence, and keep the outlook conditional on the Fed path. Cite the charts the builder produced rather than restating them.</em></p>
+          </div>
+          <div class="narration"><span class="t-label">Narration</span>Verified the intervention figures against three sources, then wrote the brief around the builder's charts.</div>
+          <div class="body">
+            <p><b>Pressures on the Indian Rupee, Nov 2025 – Nov 2026</b></p>
+            <p>The rupee depreciated 6.4% against the dollar (83.1 → 88.4) in two sharp legs — April, after the tariff announcement, and September, on the oil spike. Ranked by contribution:</p>
+            <ul>
+              <li><b>Oil import costs</b> — the largest driver: ~85% imported crude, a $10/bbl move ≈ $1.6bn/month on the bill.</li>
+              <li><b>Foreign portfolio flows</b> — $14bn of FPI outflows in H1; the rate differential is the main lever.</li>
+              <li><b>Fed policy</b> — 100 bp of 2026 cuts now priced; a narrower differential is the main upside risk for INR.</li>
+              <li><b>Trade deficit</b> — $283bn annualised, structurally persistent but slow-moving.</li>
+              <li><b>RBI intervention</b> — ≈$42bn net spot sales; reserves down from $705bn to ~$668bn (sources differ on the exact drawdown — flagged).</li>
+            </ul>
+            <div class="chart">
+              <div class="box"><svg viewBox="0 0 160 90" aria-hidden="true"><polyline fill="none" stroke="#6366f1" stroke-width="2" points="4,30 30,32 45,36 55,38 62,56 90,58 112,60 118,76 156,80"/><circle cx="62" cy="56" r="2.5" fill="#ef4444"/><circle cx="118" cy="76" r="2.5" fill="#ef4444"/></svg>USDINR_12m.png</div>
+              <div class="box"><svg viewBox="0 0 160 90" aria-hidden="true"><polyline fill="none" stroke="#6366f1" stroke-width="2" points="4,40 40,42 80,50 120,58 156,62"/><polyline fill="none" stroke="#22c55e" stroke-width="1.5" points="4,44 40,46 80,48 120,52 156,54"/><polyline fill="none" stroke="#f59e0b" stroke-width="1.5" points="4,50 40,54 80,62 120,70 156,72"/></svg>Peer_comparison.png</div>
+            </div>
+            <p><b>Peer comparison.</b> INR's −6.4% sits between the yen (−5%) and the won (−8%) — a middle-of-the-pack year for Asian ex-US; the rupee's lower volatility reflects the intervention, at a reserve cost.</p>
+            <p><b>Outlook (6 months).</b> Range-bound 87–90 with a mild depreciation bias; the swing factor is the Fed path — faster cuts narrow the differential and could pull INR back toward 86. Oil above $85/bbl is the main downside risk.</p>
+            <span class="file">📄 reports/brief.md</span> <span class="file">📊 reports/USDINR_12m.png</span> <span class="file">📊 reports/Peer_comparison.png</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer"><div class="box"><span>Research question…</span><span class="send">↑</span></div></div>
+  </main>
+
+  <!-- ======================= right panel ======================= -->
+  <aside class="context" aria-label="Session context">
+    <div class="tabs" role="tablist">
+      <button class="active" role="tab" aria-selected="true">☰ Work <span class="only-after" style="color:var(--ok)">●</span></button>
+      <button role="tab" aria-selected="false">Context</button>
+    </div>
+
+    <!-- TODAY: unattributed, ordered by transcript -->
+    <div class="work only-today" role="tabpanel" aria-label="Work">
+      <div class="w-section">
+        <div class="sec-title">Turn <span class="today-marker">today: no agents · no plan · no cost</span></div>
+        <div class="plain-steps">
+          <div class="s"><span class="n">🔧</span> Enter ward india-analysis</div>
+          <div class="s"><span class="n">🔧</span> Read 6 files</div>
+          <div class="s"><span class="n">🔧</span> Shell</div>
+          <div class="s"><span class="n">👥</span> Delegate to research-agent</div>
+          <div class="s nest"><span class="n">🔧</span> (nothing nested — the research agent used no tools)</div>
+          <div class="s"><span class="n">👥</span> Delegate to builder-agent</div>
+          <div class="s nest"><span class="n">🔧</span> Read 6 files</div>
+          <div class="s nest"><span class="n">🔧</span> Shell ×3 · Write ×4</div>
+          <div class="s"><span class="n">👥</span> Delegate to builder-agent</div>
+          <div class="s nest"><span class="n">🔧</span> Read 4 files · Shell ×4 · Write ×3</div>
+          <div class="s"><span class="n">🔧</span> Brave search ×4 · Shell ×3 · Write ×4</div>
+          <div class="s"><span class="n">🔧</span> Remember memory</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AFTER: attributed by events -->
+    <div class="work only-after" role="tabpanel" aria-label="Work">
+      <div class="w-section">
+        <div class="sec-title">Analysis</div>
+        <div class="w-row"><span class="icon">🔬</span><div class="main"><b>analyze-inr-usd-pressures</b><div class="sub">started → completed · 1 attempt · zai/glm-5.3-flash</div></div><span class="cost">1.9k → 317 tok · 3.9 s</span></div>
+      </div>
+      <div class="w-section">
+        <div class="sec-title">Plan</div>
+        <div class="plan">
+          <div class="step done"><span class="n">✓</span>Pull the USD/INR 12-month series and trend context<span class="owner">root</span></div>
+          <div class="step done"><span class="n">✓</span>Research the five pressure drivers and quantify each<span class="owner">research-agent</span></div>
+          <div class="step done"><span class="n">✓</span>Compare INR with JPY, KRW, IDR, CNY<span class="owner">research-agent</span></div>
+          <div class="step done"><span class="n">✓</span>Build the two charts<span class="owner">builder-agent</span></div>
+          <div class="step done"><span class="n">✓</span>Write the briefing with a 6-month outlook<span class="owner">builder-agent</span></div>
+          <div class="step active"><span class="n">6</span>Verify figures against a second source and deliver<span class="owner">root</span></div>
+        </div>
+      </div>
+      <div class="w-section">
+        <div class="sec-title">Delegations</div>
+        <div class="w-row delegation"><span class="icon">👥</span><div class="main"><b>research-agent</b><div class="sub">Research · 0 tools · 84 s</div><div class="tools"><span>no tools</span></div></div><span class="cost">1.1k → 8.0k</span></div>
+        <div class="w-row delegation"><span class="icon">👥</span><div class="main"><b>builder-agent</b><div class="sub">Build charts · 14 tools · 6.2 min</div><div class="tools"><span>read ×6</span><span>shell ×4</span><span>write ×4</span></div></div><span class="cost">284k → 17k</span></div>
+        <div class="w-row delegation"><span class="icon">👥</span><div class="main"><b>builder-agent</b><div class="sub">Write brief · 20 tools · 6.4 min</div><div class="tools"><span>read ×4</span><span>shell ×4</span><span>write ×3</span></div></div><span class="cost">299k → 38k</span></div>
+      </div>
+      <div class="w-section">
+        <div class="sec-title">Root tools</div>
+        <div class="w-row"><span class="icon">🔧</span><div class="main"><b>57 calls</b><div class="tools"><span>ward_use</span><span>read ×8</span><span>brave_web_search ×4</span><span>shell ×6</span><span>write ×4</span><span>memory_remember</span></div></div></div>
+      </div>
+      <div class="run-foot"><span>Run: 1.3M prompt tokens · 3 delegations · 14 min</span><span>analyst 1.9k · root 721k · children 583k</span></div>
+    </div>
+  </aside>
+</div>
+
+
+<script>
+  const root = document.documentElement;
+  document.querySelectorAll('[data-set-state]').forEach((b) => b.addEventListener('click', () => {
+    root.dataset.state = b.dataset.setState;
+    document.querySelectorAll('[data-set-state]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  }));
+  document.getElementById('theme').addEventListener('click', (e) => {
+    const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next; e.currentTarget.textContent = 'Theme: ' + next;
+  });
+  const ib = document.getElementById('info-btn');
+  ib.addEventListener('click', () => {
+    const pop = document.getElementById('ta-popover');
+    const open = pop.hidden; pop.hidden = !open; ib.setAttribute('aria-expanded', String(open));
+  });
+  const tb = document.getElementById('think-btn');
+  tb.addEventListener('click', () => {
+    const t = document.getElementById('think');
+    const on = t.classList.toggle('shown');
+    tb.setAttribute('aria-expanded', String(on)); tb.textContent = (on ? '▾' : '▸') + ' Thinking';
+  });
+</script>
+</body>
+</html>
