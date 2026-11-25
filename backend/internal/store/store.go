@@ -427,6 +427,28 @@ func (s *Store) CreateChildExecution(sessionID, parentExecID, agentName string) 
 	return id, nil
 }
 
+// CreateAnalysisExecution records the intent-analyst's decision row
+// under the session's root execution, returning its id. The root row is
+// ensured first (the parent FK must resolve even for an ad-hoc goal
+// session; a missing session row is created as `research` — a goal run's
+// type). task is the goal text, bounded.
+func (s *Store) CreateAnalysisExecution(sessionID, agent, task string) (string, error) {
+	root, err := s.EnsureSession(sessionID, "research")
+	if err != nil {
+		return "", err
+	}
+	if len(task) > 512 {
+		task = task[:512]
+	}
+	id := fmt.Sprintf("exec-intent-%d", time.Now().UnixNano())
+	if _, err := s.db.Exec(`INSERT INTO executions (id, session_id, parent_id, agent, task, status, delegation, created_at)
+		VALUES (?, ?, ?, ?, ?, 'running', ?, ?)`,
+		id, sessionID, root, agent, task, agent, now()); err != nil {
+		return "", fmt.Errorf("store: create analysis execution: %w", err)
+	}
+	return id, nil
+}
+
 // QueryChildExecutions lists child executions for a session (delegation
 // tree reads).
 func QueryChildExecutions(s *Store, sessionID string) ([]string, error) {

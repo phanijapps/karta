@@ -35,9 +35,13 @@ type Failure struct {
 func (f *Failure) Error() string { return fmt.Sprintf("providers: %s: %v", f.Reason, f.Err) }
 func (f *Failure) Unwrap() error { return f.Err }
 
-// Model is one discovered model identifier.
+// Model is one discovered model identifier. ContextWindow is the
+// model's context window in tokens when the provider reports it
+// (Ollama /api/show), else 0 = unknown (the limits table or the
+// fallback apply).
 type Model struct {
-	ID string `json:"id"`
+	ID            string `json:"id"`
+	ContextWindow int    `json:"context_window,omitempty"`
 }
 
 // openAIModelList is the OpenAI-compatible list-models response shape.

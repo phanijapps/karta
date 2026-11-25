@@ -73,6 +73,23 @@ func (c *Catalog) Get(provider string) ([]Model, time.Time, bool) {
 	return list, e.refreshedAt, true
 }
 
+// Lookup finds one catalog entry (provider + model id) — the window
+// resolution's read (ok=false when the model is not catalogued).
+func (c *Catalog) Lookup(provider, id string) (Model, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.entries[provider]
+	if !ok {
+		return Model{}, false
+	}
+	for _, m := range e.models {
+		if m.ID == id {
+			return m, true
+		}
+	}
+	return Model{}, false
+}
+
 // CatalogSnapshot is an immutable read of the whole catalog: flat
 // provider+id entries in stable order (provider name, then list order)
 // plus each provider's refresh timestamp.
@@ -83,8 +100,9 @@ type CatalogSnapshot struct {
 
 // CatalogModel is one flat catalog entry.
 type CatalogModel struct {
-	Provider string
-	ID       string
+	Provider      string
+	ID            string
+	ContextWindow int // 0 = unknown
 }
 
 // Snapshot reads the whole catalog without dialing anything.
@@ -101,7 +119,7 @@ func (c *Catalog) Snapshot() CatalogSnapshot {
 		e := c.entries[name]
 		snap.RefreshedAt[name] = e.refreshedAt
 		for _, m := range e.models {
-			snap.Models = append(snap.Models, CatalogModel{Provider: name, ID: m.ID})
+			snap.Models = append(snap.Models, CatalogModel{Provider: name, ID: m.ID, ContextWindow: m.ContextWindow})
 		}
 	}
 	return snap

@@ -26,7 +26,11 @@ func (s *Server) ListModels(w http.ResponseWriter, r *http.Request) {
 		if _, ok := configured[m.Provider]; !ok {
 			continue
 		}
-		models = append(models, apigen.ModelEntry{Provider: apigen.Id(m.Provider), Id: m.ID})
+		entry := apigen.ModelEntry{Provider: apigen.Id(m.Provider), Id: m.ID}
+		if m.ContextWindow > 0 {
+			entry.ContextWindow = &m.ContextWindow
+		}
+		models = append(models, entry)
 	}
 	body := apigen.ModelCatalog{Models: models}
 	if len(snap.RefreshedAt) > 0 {
@@ -58,11 +62,21 @@ func (s *Server) RefreshProviderModels(w http.ResponseWriter, r *http.Request, n
 	if _, err := s.store.Lookup(string(name)); err == nil {
 		s.catalog.Set(string(name), models)
 	}
+	writeJSON(w, http.StatusOK, apigen.ModelList{Models: contractModels(models)})
+}
+
+// contractModels maps discovered models to the contract shape, each
+// with its context window when the provider reported one.
+func contractModels(models []providers.Model) []apigen.Model {
 	out := make([]apigen.Model, 0, len(models))
 	for _, m := range models {
-		out = append(out, apigen.Model{Id: m.ID})
+		entry := apigen.Model{Id: m.ID}
+		if m.ContextWindow > 0 {
+			entry.ContextWindow = &m.ContextWindow
+		}
+		out = append(out, entry)
 	}
-	writeJSON(w, http.StatusOK, apigen.ModelList{Models: out})
+	return out
 }
 
 // writeDiscoveryError maps discovery failures for the read/refresh

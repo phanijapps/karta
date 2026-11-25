@@ -32,11 +32,27 @@ code.
   `{base_url}/models` with a ~10s bound; the caller resolves the token.
   Failures are typed (`Failure` reasons) — map reasons, never parse
   error strings (`IsUnknown`/`ReasonOf` helpers).
+- Model limits (ollama.go + limits.go): a model's context window is the
+  model's own limit. `Client.DiscoverWindows` runs inside every refresh:
+  the OpenAI base minus `/v1` is Ollama's native root; `GET
+  /api/version` gates one `POST /api/show` per model, whose
+  `model_info.*.context_length` (suffix match — every family) fills
+  `Model.ContextWindow`; a non-Ollama provider costs one probe and a
+  per-model failure leaves the window absent (never fails a refresh).
+  `ResolveWindow(model, limits)` is the ONE chain — discovered → table
+  → `FallbackContextWindow` (32k) — returning the source alongside.
+  The table is `limits.go`: a tiny built-in plus the user-editable
+  `config/providers/model_limits.yaml` (`models: {"glm-5.3*": 128000}`;
+  strict decode, longest prefix wins, loaded in `Store.reloadLocked` and
+  hot-reloaded; a broken file keeps the last good table). The file's stem
+  is reserved (`LimitsStem`) and skipped by the provider loader.
 - Catalog: `Catalog` (catalog.go) is the in-memory model catalog —
-  per-provider lists + refresh timestamps, nothing persisted, empty at
-  startup. Manual-refresh semantics: only `Set` (the refresh endpoint and
+  per-provider lists (ids + windows) + refresh timestamps, restored from
+  the store at startup and persisted through `OnSet` on every refresh.
+  Manual-refresh semantics: only `Set` (the refresh endpoint and
   successful discovery share that path) populates it; reads are instant
-  snapshot reads that never dial a provider.
+  snapshot reads that never dial a provider; `Lookup(provider, id)` is
+  the limits resolution's read.
 - Chat completions live with the engine change; this package stays
   discovery + lifecycle only.
 - Unit tests run against in-memory fakes (`fakeSecrets`) and in-process

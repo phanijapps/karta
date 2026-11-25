@@ -7,17 +7,24 @@ import (
 	"time"
 )
 
+// CatalogModel is one persisted catalog entry: the model id plus its
+// context window when the provider reported it (0 = unknown).
+type CatalogModel struct {
+	ID            string `json:"id"`
+	ContextWindow int    `json:"context_window,omitempty"`
+}
+
 // CatalogEntry is one provider's persisted model list.
 type CatalogEntry struct {
 	Provider    string
-	ModelIDs    []string
+	Models      []CatalogModel
 	RefreshedAt time.Time
 }
 
 // SaveCatalogEntry upserts one provider's model list (called by the
 // Catalog's persistence hook after every successful refresh).
-func (s *Store) SaveCatalogEntry(provider string, modelIDs []string, refreshedAt time.Time) error {
-	raw, err := json.Marshal(modelIDs)
+func (s *Store) SaveCatalogEntry(provider string, models []CatalogModel, refreshedAt time.Time) error {
+	raw, err := json.Marshal(models)
 	if err != nil {
 		return fmt.Errorf("store: marshal catalog: %w", err)
 	}
@@ -32,6 +39,8 @@ func (s *Store) SaveCatalogEntry(provider string, modelIDs []string, refreshedAt
 
 // LoadCatalog returns every persisted catalog entry (called once at
 // daemon startup to warm the in-memory catalog — no provider requests).
+// Rows written before windows existed hold a plain string list; both
+// shapes decode.
 func (s *Store) LoadCatalog() ([]CatalogEntry, error) {
 	rows, err := s.db.Query(`SELECT provider, model_ids, refreshed_at FROM model_catalog`)
 	if err != nil {
@@ -45,11 +54,29 @@ func (s *Store) LoadCatalog() ([]CatalogEntry, error) {
 		if err := rows.Scan(&e.Provider, &idsJSON, &refreshed); err != nil {
 			return nil, fmt.Errorf("store: catalog scan: %w", err)
 		}
-		_ = json.Unmarshal([]byte(idsJSON), &e.ModelIDs)
+		e.Models = decodeCatalogModels(idsJSON)
 		e.RefreshedAt, _ = time.Parse(time.RFC3339Nano, refreshed)
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// decodeCatalogModels reads the persisted shape: [{id, context_window}]
+// or the legacy ["id", ...].
+func decodeCatalogModels(raw string) []CatalogModel {
+	var models []CatalogModel
+	if json.Unmarshal([]byte(raw), &models) == nil {
+		return models
+	}
+	var ids []string
+	if json.Unmarshal([]byte(raw), &ids) != nil {
+		return nil
+	}
+	models = make([]CatalogModel, 0, len(ids))
+	for _, id := range ids {
+		models = append(models, CatalogModel{ID: id})
+	}
+	return models
 }
 
 var _ = sql.ErrNoRows

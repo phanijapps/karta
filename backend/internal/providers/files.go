@@ -53,6 +53,9 @@ func loadProviderFiles(dir string) ([]Provider, []error) {
 			continue
 		}
 		stem := strings.TrimSuffix(e.Name(), ".yaml")
+		if stem == LimitsStem {
+			continue // the limits table shares the directory, not the namespace
+		}
 		p, err := loadProviderFile(filepath.Join(dir, e.Name()), stem)
 		if err != nil {
 			errs = append(errs, err)

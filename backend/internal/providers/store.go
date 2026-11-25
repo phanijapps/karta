@@ -28,6 +28,7 @@ type Store struct {
 	mu       sync.Mutex // serializes mutations and reloads
 	snap     atomic.Pointer[Set]
 	lastErr  atomic.Pointer[error]
+	limits   atomic.Pointer[Limits] // the model-limits table (built-in + file)
 	fw       *fsnotify.Watcher
 	stopOnce sync.Once
 	quit     chan struct{}
@@ -59,6 +60,7 @@ type CredentialInput struct {
 // a broken startup state must not serve a partial set silently.
 func NewStore(paths config.Paths, cfg config.Config, secrets SecretStore) (*Store, error) {
 	s := &Store{dir: paths.ProvidersDir, cfg: cfg, secrets: secrets, quit: make(chan struct{})}
+	s.limits.Store(BuiltinLimits())
 	if err := s.Reload(); err != nil {
 		return nil, err
 	}
@@ -118,8 +120,29 @@ func (s *Store) reloadLocked() error {
 			return err
 		}
 	}
+	s.reloadLimitsLocked()
 	s.publish(byName, names)
 	return nil
+}
+
+// reloadLimitsLocked re-reads the limits table (hot-reloaded with the
+// directory). A broken table keeps the last good one serving and is
+// logged — unlike a broken provider file it never blocks the set.
+func (s *Store) reloadLimitsLocked() {
+	file, err := LoadLimitsFile(s.dir)
+	if err != nil {
+		log.Printf("providers: %s: %v (last good limits table serving)", LimitsFileName, err)
+		return
+	}
+	s.limits.Store(NewLimits(builtinLimits, file))
+}
+
+// Limits returns the current model-limits table (never nil).
+func (s *Store) Limits() *Limits {
+	if l := s.limits.Load(); l != nil {
+		return l
+	}
+	return BuiltinLimits()
 }
 
 // addLocked merges one file entry, rejecting duplicates and overflow.

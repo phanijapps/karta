@@ -41,7 +41,13 @@ func (s *Server) discoverModels(ctx context.Context, name string) ([]providers.M
 	if err != nil {
 		return nil, err // unknown provider or keyring-unavailable
 	}
-	return s.client.ListModels(ctx, p, token)
+	models, err := s.client.ListModels(ctx, p, token)
+	if err != nil {
+		return nil, err
+	}
+	// Windows join the entries here (Ollama /api/show; a no-op for
+	// every other provider) — one discovery path, every surface in sync.
+	return s.client.DiscoverWindows(ctx, p, token, models), nil
 }
 
 // ListProviderModels proxies OpenAI-compatible model discovery for one
@@ -56,11 +62,7 @@ func (s *Server) ListProviderModels(w http.ResponseWriter, r *http.Request, name
 		return
 	}
 	s.catalog.Set(string(name), models)
-	out := make([]apigen.Model, 0, len(models))
-	for _, m := range models {
-		out = append(out, apigen.Model{Id: m.ID})
-	}
-	writeJSON(w, http.StatusOK, apigen.ModelList{Models: out})
+	writeJSON(w, http.StatusOK, apigen.ModelList{Models: contractModels(models)})
 }
 
 // CreateProvider writes a new daemon-managed provider file.

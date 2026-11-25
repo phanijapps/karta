@@ -13,25 +13,26 @@ import (
 )
 
 // restoreCatalog builds the model catalog over the store's persisted
-// entries (warm restarts; zero provider traffic).
+// entries (warm restarts; zero provider traffic). Windows persist with
+// the entries, so a restarted daemon resolves limits before any refresh.
 func restoreCatalog(db *zbotstore.Store) *providers.Catalog {
 	catalog := providers.NewCatalog()
 	if entries, err := db.LoadCatalog(); err == nil {
 		for _, e := range entries {
-			models := make([]providers.Model, 0, len(e.ModelIDs))
-			for _, id := range e.ModelIDs {
-				models = append(models, providers.Model{ID: id})
+			models := make([]providers.Model, 0, len(e.Models))
+			for _, m := range e.Models {
+				models = append(models, providers.Model{ID: m.ID, ContextWindow: m.ContextWindow})
 			}
 			catalog.LoadEntry(e.Provider, models, e.RefreshedAt)
 		}
 		log.Printf("zbotd: model catalog restored (%d provider(s) from last refresh)", len(entries))
 	}
 	catalog.OnSet(func(provider string, models []providers.Model, refreshedAt time.Time) {
-		ids := make([]string, 0, len(models))
+		entries := make([]zbotstore.CatalogModel, 0, len(models))
 		for _, m := range models {
-			ids = append(ids, m.ID)
+			entries = append(entries, zbotstore.CatalogModel{ID: m.ID, ContextWindow: m.ContextWindow})
 		}
-		if err := db.SaveCatalogEntry(provider, ids, refreshedAt); err != nil {
+		if err := db.SaveCatalogEntry(provider, entries, refreshedAt); err != nil {
 			log.Printf("zbotd: catalog persist for %q failed: %v", provider, err)
 		}
 	})

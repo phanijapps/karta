@@ -26,3 +26,14 @@ observability, persisted before volatile notification).
 
 - `SetSessionTitleIfUntitled` (sessions.go) is the auto-titling write:
   a conditional UPDATE that never overwrites a user title.
+- Executions: `CreateChildExecution` records a delegated sub-agent run;
+  `CreateAnalysisExecution` records the intent-analyst's decision row
+  (`exec-intent-<nano>`, parented under the root, `agent` = `delegation`
+  = the analyst name, `task` = the goal) — the root row is ensured first
+  (FK). `FinishExecution` is the one terminal write and rolls request
+  token usage in. `ActiveRuns`/`ExecutionResult` read root outcomes.
+- `LatestEventOfKind(sid, kinds...)` reads the newest event of any of
+  the kinds (the session-state surface's latest TERMINAL analysis).
+- `model_catalog` (catalog.go): per-provider `[{id, context_window}]`
+  JSON + refresh time; rows from before windows existed hold a plain
+  string list and still decode (`decodeCatalogModels`).

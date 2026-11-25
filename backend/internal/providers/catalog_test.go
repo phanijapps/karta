@@ -26,7 +26,7 @@ func TestCatalogSetGetSnapshot(t *testing.T) {
 
 	snap := c.Snapshot()
 	// Stable order: provider name first, then the provider's list order.
-	want := []CatalogModel{{"ollama", "b"}, {"ollama", "a"}, {"zai", "glm"}}
+	want := []CatalogModel{{Provider: "ollama", ID: "b"}, {Provider: "ollama", ID: "a"}, {Provider: "zai", ID: "glm"}}
 	if len(snap.Models) != 3 {
 		t.Fatalf("want 3 entries, got %+v", snap.Models)
 	}
@@ -55,4 +55,35 @@ func TestCatalogConcurrentAccess(t *testing.T) {
 		go func() { defer wg.Done(); _ = c.Snapshot() }()
 	}
 	wg.Wait()
+}
+
+// Windows ride the entries: Set carries them, Snapshot reads them, and
+// Lookup finds one entry for the limits resolution.
+func TestCatalogCarriesWindows(t *testing.T) {
+	c := NewCatalog()
+	c.Set("ollama", []Model{{ID: "glm5", ContextWindow: 1048576}, {ID: "qwen3", ContextWindow: 40960}})
+	c.Set("zai", []Model{{ID: "glm-5.3-flash"}})
+	m, ok := c.Lookup("ollama", "qwen3")
+	if !ok || m.ContextWindow != 40960 {
+		t.Fatalf("Lookup: %+v %v", m, ok)
+	}
+	if _, ok := c.Lookup("ollama", "nope"); ok {
+		t.Fatal("unknown model must miss")
+	}
+	if _, ok := c.Lookup("never", "x"); ok {
+		t.Fatal("unknown provider must miss")
+	}
+	snap := c.Snapshot()
+	for _, cm := range snap.Models {
+		switch cm.ID {
+		case "glm5":
+			if cm.ContextWindow != 1048576 {
+				t.Fatalf("snapshot window: %+v", cm)
+			}
+		case "glm-5.3-flash":
+			if cm.ContextWindow != 0 {
+				t.Fatalf("no window stays 0: %+v", cm)
+			}
+		}
+	}
 }
