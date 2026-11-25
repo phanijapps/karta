@@ -147,6 +147,19 @@ test('delegations are pills; the slideout shows the agent\'s calls and report; t
   await bdialog.getByRole('button', { name: 'Close delegation' }).click();
   await expect(bdialog).toHaveCount(0);
   await expect(builder).toBeFocused();
+  // Modal by behaviour: focus enters the dialog, Tab wraps inside it
+  // (last → first, first → last with Shift), and never reaches the page.
+  await builder.click();
+  await expect(bdialog).toBeVisible();
+  await expect(bdialog).toBeFocused();
+  const focusables = bdialog.locator('button:visible');
+  await focusables.last().focus();
+  await page.keyboard.press('Tab');
+  await expect(focusables.first()).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(focusables.last()).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(bdialog).toHaveCount(0);
 });
 
 test('thinking is the final step\'s reasoning', async ({ page }) => {

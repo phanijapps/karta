@@ -288,23 +288,34 @@ export function delegationGroups(rows: ChatMessage[]): DelegationGroup[] {
       if (isDelegateIntent) continue; // the root's intent row is not a child row
     }
     if (m.role === "tool" && m.tool_name === "delegate_agent") {
-      // The result row: by call id, else (legacy rows without ids) the
-      // first group still waiting for its answer.
-      const g = (m.tool_call_id && byCall.get(m.tool_call_id)) || groups.find((x) => !x.done);
+      // The result row: by its call id when supplied (an unknown id
+      // matches nothing — never another delegation's result); legacy
+      // rows without ids take the most recent group still waiting.
+      const g = m.tool_call_id ? byCall.get(m.tool_call_id) : [...groups].reverse().find((x) => !x.done);
       if (g) {
         g.report = m.content ?? "";
         g.done = true;
       }
       continue;
     }
-    // A child's row: attributed (non-root agent) → its execution's
-    // group; legacy → the nearest open (not yet answered) group.
-    if (m.role === "user" || m.role === "assistant" || m.role === "tool") {
-      const attributed = m.agent && m.agent !== "root" ? groups.find((g) => !g.done && g.agent === m.agent && (g.executionId === "" || g.executionId === m.execution_id)) : undefined;
-      if (attributed && m.execution_id && !attributed.executionId) attributed.executionId = m.execution_id;
-      const open = attributed ?? groups.find((g) => !g.done);
-      if (open && (m.agent ? m.agent !== "root" : true)) open.rows.push(m);
+    if (m.role !== "user" && m.role !== "assistant" && m.role !== "tool") continue;
+    if (m.agent === "root") continue; // the root's own rows never join a delegation
+    if (m.agent || m.execution_id) {
+      // ATTRIBUTED: only an exact agent match (and execution match once
+      // bound) joins — a mismatched row is left out rather than shown
+      // under another agent's pill.
+      const g = groups.find((x) => x.agent === m.agent && (x.executionId === "" || x.executionId === m.execution_id) && !x.done)
+        ?? groups.find((x) => x.agent === m.agent && x.executionId === m.execution_id);
+      if (!g) continue;
+      if (!g.executionId && m.execution_id) g.executionId = m.execution_id;
+      g.rows.push(m);
+      continue;
     }
+    // LEGACY (no agent, no execution): adjacency — the most recent
+    // group still waiting for its result. Overlapping legacy
+    // delegations cannot be told apart beyond this.
+    const open = [...groups].reverse().find((x) => !x.done);
+    if (open) open.rows.push(m);
   }
   return groups;
 }

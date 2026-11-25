@@ -101,10 +101,10 @@
   // nests them instead of breaking the view.
   // A turn's dialogue roles: the ROOT's tool-free assistant rows are
   // answers (the last one is THE answer); any other agent's tool-free
-  // row is a sub-agent report — rendered as a collapsed card, never in
-  // the answer style (run-legibility). Rows without an agent predate
-  // attribution and read as root.
-  type Turn = { key: string; user: ChatMessage | null; rows: ChatMessage[]; answers: ChatMessage[]; reports: ChatMessage[]; live: boolean };
+  // row is a sub-agent report — never in the answer style; it rides
+  // the rows and surfaces through the delegation pills' slideout.
+  // Rows without an agent predate attribution and read as root.
+  type Turn = { key: string; user: ChatMessage | null; rows: ChatMessage[]; answers: ChatMessage[]; groups: DelegationGroup[]; live: boolean };
   const turns = $derived.by<Turn[]>(() => {
     const out: Turn[] = [];
     let cur: Turn | null = null;
@@ -120,16 +120,16 @@
           cur.rows.push(m);
           continue;
         }
-        cur = { key: m.id, user: m, rows: [], answers: [], reports: [], live: false };
+        cur = { key: m.id, user: m, rows: [], answers: [], groups: [], live: false };
         out.push(cur);
         continue;
       }
       if (!cur) continue;
-      if (m.role === 'assistant' && !m.tool_calls && (m.content || '').trim() !== '') {
-        if (m.agent && m.agent !== 'root') cur.reports.push(m);
-        else cur.answers.push(m);
-      } else cur.rows.push(m);
+      if (m.role === 'assistant' && !m.tool_calls && (m.content || '').trim() !== '' && (!m.agent || m.agent === 'root')) cur.answers.push(m);
+      else cur.rows.push(m); // tool rows, intents, and sub-agent reports (shown via the delegation pills)
     }
+    // Delegation groups are derived once per turn here (not per render).
+    for (const t of out) t.groups = delegationGroups(t.rows);
     if (out.length) out[out.length - 1].live = sending && sessions.activeId === sendSessionId;
     return out;
   });
@@ -141,7 +141,7 @@
     if (!openDelegation) return null;
     const want = openDelegation;
     const turn = turns.find((t) => t.key === want.turn);
-    return turn ? delegationGroups(turn.rows).find((g) => g.callId === want.callId) ?? null : null;
+    return turn ? turn.groups.find((g) => g.callId === want.callId) ?? null : null;
   });
   function showDelegation(turnKey: string, g: DelegationGroup, el: HTMLButtonElement) {
     pillTrigger = el;
@@ -415,13 +415,12 @@
         {#if turn.user}
           <article class="bubble user" aria-label="Your message">{turn.user.content}</article>
         {/if}
-        {@const groups = delegationGroups(turn.rows)}
-        {#if groups.length}
+        {#if turn.groups.length}
           <!-- One pill per delegation (from the root's delegate_agent
                intents — legacy sessions too); the slideout shows the
                agent's calls and report. -->
           <div class="delegation-pills" aria-label="Delegations">
-            {#each groups as g (g.callId)}
+            {#each turn.groups as g (g.callId)}
               <button
                 type="button"
                 class="delegation-pill"

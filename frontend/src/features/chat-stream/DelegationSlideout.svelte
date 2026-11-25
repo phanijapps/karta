@@ -58,10 +58,31 @@
     bind:this={panel}
     onclick={(e) => e.stopPropagation()}
     onkeydown={(e) => {
-      // Escape closes (handled here: focus lives inside the panel);
-      // other keys stay inside the dialog.
-      if (e.key === 'Escape') onclose();
-      e.stopPropagation();
+      // Escape closes (handled here: focus lives inside the panel).
+      if (e.key === 'Escape') {
+        onclose();
+        return;
+      }
+      // Modal by declaration, modal by behaviour: Tab wraps inside the
+      // panel so focus never leaves the drawer while it is open.
+      if (e.key === 'Tab' && panel) {
+        const focusables = [...panel.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+          .filter((el) => !el.hasAttribute('disabled') && el.offsetParent !== null);
+        if (focusables.length === 0) {
+          e.preventDefault();
+          return;
+        }
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement as HTMLElement | null;
+        if (e.shiftKey && (active === first || active === panel)) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     }}
   >
     <header class="head">
@@ -77,7 +98,7 @@
       {#if group.rows.some((r) => r.role === 'assistant' && r.tool_calls)}
         <WorkSteps messages={group.rows} />
       {:else}
-        <p class="muted small">No tool calls — the agent answered directly.</p>
+        <p class="muted small">{group.done ? 'No tool calls — the agent answered directly.' : 'No tool calls yet.'}</p>
       {/if}
     </section>
     <section class="report" aria-label="Report">

@@ -133,7 +133,7 @@
                   <!-- The child's report is already the thread's report card;
                        the tool result is the same text (stored twice by
                        design) — a reference, not a second copy. -->
-                  <p class="result ref">Report returned — see the sub-agent report card in the thread.</p>
+                  <p class="result ref">Report returned — open the agent's delegation pill in the thread to read it.</p>
                 {:else if isMarkdownRead(c, o)}
                   <!-- A ward doc / wiki entry / report read back: prose,
                        rendered; still the sanitizer's output. -->
