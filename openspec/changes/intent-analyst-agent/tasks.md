@@ -123,6 +123,6 @@
   scope (contract, backend, frontend, the five boundaries); fix every
   P0/P1; fix P2s or record them in `findings.md`. Verify: reviewer
   report has zero open P0/P1.
-- [ ] 9.2 Stop the dev stack (`pkill -f "air -c"; pkill -f tmp/air/zbotd;
+- [x] 9.2 Stop the dev stack (`pkill -f "air -c"; pkill -f tmp/air/zbotd;
   pkill -f vite`), then `CONTRACT_CHANGE=1 task verify` green after the
   final edit; restart the stack. Verify: verify exits zero.
