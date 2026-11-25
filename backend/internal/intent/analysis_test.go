@@ -282,3 +282,50 @@ func TestPacketExcludesSystemAgents(t *testing.T) {
 		t.Fatal("workers and root stay valid")
 	}
 }
+
+// An agent-named run whose request names no model analyzes on that
+// agent's own model — the same resolution the engine applies, so the
+// analysis never falls behind the run it precedes.
+func TestAnalysisTargetNamedAgentModel(t *testing.T) {
+	snap := wrapSnap()
+	snap.Agents["research-agent"] = registry.AgentSpec{Name: "research-agent", Description: "gathers evidence", Model: "prov/agent-model"}
+	fc := &fakeCompleter{responses: []string{wrapperContract, wrapperContract, wrapperContract}}
+	w := newWrapper(fc, snap, []WardInfo{{Name: "stock-analysis"}})
+	var seen string
+	w.Analyzer = &Analyzer{Completer: &recordingCompleter{inner: fc, onCall: func(_, m string) { seen = m }}}
+	evs, err := w.RunGoal(context.Background(), domain.GoalRequest{SessionID: "s", Goal: "research task", Agent: "research-agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range evs {
+	}
+	if seen != "agent-model" {
+		t.Fatalf("analysis must use the named agent's model: %q", seen)
+	}
+}
+
+// The disabled kill-switch still emits analysis_bypassed AND still lets
+// the ward's orchestrator model run the session — the wrapper is
+// always installed; only analysis turns off.
+func TestDisabledKeepsOrchestratorAndEmitsBypass(t *testing.T) {
+	log := &eventLog{}
+	w := newWrapper(&fakeCompleter{}, wrapSnap(), nil)
+	w.Cfg.Enabled = false
+	w.Cfg.Emit = log.emit
+	w.Cfg.OrchestratorModel = func(string) string { return "ollama/qwen3" }
+	evs, err := w.RunGoal(context.Background(), domain.GoalRequest{SessionID: "s-ward", Goal: "research task", Model: "zai/glm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range evs {
+	}
+	if got := log.kinds(); len(got) != 1 || got[0] != domain.EventAnalysisBypassed {
+		t.Fatalf("trail: %v", got)
+	}
+	eng := w.Engine.(*fakeEngine)
+	eng.mu.Lock()
+	defer eng.mu.Unlock()
+	if eng.lastReq.Model != "ollama/qwen3" {
+		t.Fatalf("the ward's model must still orchestrate a disabled run: %q", eng.lastReq.Model)
+	}
+}

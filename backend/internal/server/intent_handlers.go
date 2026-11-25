@@ -140,6 +140,12 @@ func (s *Server) PutIntentAnalysis(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "unknown_provider", "provider "+*body.Provider+" is not configured")
 		return
 	}
+	// The contract's declared bounds, enforced at the handler (the file
+	// is editable by hand, but the API never writes an absurd value).
+	if msg := validateIntentSettings(body); msg != "" {
+		writeError(w, http.StatusBadRequest, "invalid_settings", msg)
+		return
+	}
 	// Partial update: read-modify-write so omitted fields persist.
 	settings := intent.ReadSettings(filepath.Dir(s.intentSettingsPath()))
 	settings.Provider, settings.Model = *body.Provider, *body.Model
@@ -157,6 +163,27 @@ func (s *Server) PutIntentAnalysis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.intentStatus(r.Context()))
+}
+
+// validateIntentSettings enforces the IntentAnalysisSettings schema's
+// bounds ("" = valid); they mirror the contract's min/max/maxLength.
+func validateIntentSettings(body apigen.IntentAnalysisSettings) string {
+	if len(*body.Provider) > 128 {
+		return "provider is too long (max 128)"
+	}
+	if len(*body.Model) > 256 {
+		return "model is too long (max 256)"
+	}
+	if body.ReasoningEffort != nil && len(*body.ReasoningEffort) > 16 {
+		return "reasoning_effort is too long (max 16)"
+	}
+	if body.DeadlineSeconds != nil && (*body.DeadlineSeconds < 1 || *body.DeadlineSeconds > 600) {
+		return "deadline_seconds must be between 1 and 600"
+	}
+	if body.MaxAttempts != nil && (*body.MaxAttempts < 1 || *body.MaxAttempts > 5) {
+		return "max_attempts must be between 1 and 5"
+	}
+	return ""
 }
 
 // TestIntentAnalysis — TestIntentAnalysis runs one real analysis (contract POST).

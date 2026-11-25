@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"text/template"
 	"time"
@@ -97,6 +96,9 @@ type Decision struct {
 	MaxTokensDropped bool
 	// Packet is the packet the decision actually saw.
 	Packet Packet
+	// Window is the limits the decision ran under (filled even when the
+	// decision fails, so the failure still reports them).
+	Window Limits
 }
 
 // AnalysisUnavailable is the typed non-fatal degradation: the run
@@ -183,10 +185,11 @@ func (a *Analyzer) extraBody(provider, model string) map[string]any {
 // wrapper's Sanitize remains the belt-and-braces guard.
 func (a *Analyzer) Analyze(ctx context.Context, goal string, pkt Packet, provider, model string, lim Limits) (Decision, error) {
 	prompt, user, used, trimmed, err := a.compose(pkt, goal, lim)
+	d := Decision{Packet: used, Trimmed: trimmed, PromptChars: len(prompt) + len(user), Window: lim}
 	if err != nil {
-		return Decision{}, err // prompt unusable: degrade (embedded fallback already tried)
+		return d, err // prompt unusable or window too small: degrade (embedded fallback already tried)
 	}
-	d := Decision{Packet: used, Trimmed: trimmed, PromptChars: len(prompt) + len(user)}
+	budget := lim.Budget()
 	ctx, cancel := context.WithTimeout(ctx, a.deadline())
 	defer cancel()
 	extra := a.extraBody(provider, model)
@@ -199,6 +202,12 @@ func (a *Analyzer) Analyze(ctx context.Context, goal string, pkt Packet, provide
 		msg := user
 		if attempt > 0 {
 			msg = CorrectionBlock(lastCodes) + "\n\n" + user
+		}
+		if budget > 0 && estimateTokens(len(prompt)+len(msg)) > budget {
+			// Nothing left to shrink (the rubric and the request's floor
+			// exceed the window): a typed failure beats an oversized
+			// prompt the provider would truncate or refuse.
+			return d, &AnalysisUnavailable{Reason: fmt.Sprintf("prompt exceeds the model's window (%d tokens > %d budget) even after trimming", estimateTokens(len(prompt)+len(msg)), budget)}
 		}
 		body := extra
 		if maxTokens > 0 {
@@ -214,9 +223,9 @@ func (a *Analyzer) Analyze(ctx context.Context, goal string, pkt Packet, provide
 				continue
 			}
 			if ctx.Err() != nil {
-				return Decision{}, &AnalysisUnavailable{Reason: fmt.Sprintf("deadline exceeded (%s)", a.deadline())}
+				return d, &AnalysisUnavailable{Reason: fmt.Sprintf("deadline exceeded (%s)", a.deadline())}
 			}
-			return Decision{}, &AnalysisUnavailable{Reason: "model call failed: " + err.Error()}
+			return d, &AnalysisUnavailable{Reason: "model call failed: " + err.Error()}
 		}
 		d.Attempts++
 		d.TokensIn += usage.PromptTokens
@@ -244,7 +253,7 @@ func (a *Analyzer) Analyze(ctx context.Context, goal string, pkt Packet, provide
 		d.Analysis = lastParsed
 		return d, nil
 	}
-	return Decision{}, &AnalysisUnavailable{Reason: fmt.Sprintf("decision failed validation %dx: %v", a.attempts(), lastErr)}
+	return d, &AnalysisUnavailable{Reason: fmt.Sprintf("decision failed validation %dx: %v", a.attempts(), lastErr)}
 }
 
 // complete routes through the richest seam the completer offers.
@@ -271,10 +280,6 @@ func withMaxTokens(extra map[string]any, window int) map[string]any {
 	return body
 }
 
-// estimateTokens is the deliberate ~4 chars/token approximation used
-// only to decide whether the valve fires (never reported as usage).
-func estimateTokens(chars int) int { return (chars + 3) / 4 }
-
 // compose renders the rubric + request block under the limits. The
 // default packet goes first; when the estimate exceeds window −
 // reserve, the per-kind caps shrink (ranked heads stay — the packet is
@@ -287,23 +292,40 @@ func (a *Analyzer) compose(pkt Packet, goal string, lim Limits) (prompt, user st
 	}
 	user = RequestBlock(goal)
 	budget := lim.Budget()
-	if budget <= 0 || estimateTokens(len(prompt)+len(user)) <= budget {
+	// Correction retries prepend the feedback block: reserve its size so
+	// a retry never tips a prompt that fit over the budget.
+	correction := 0
+	if a.attempts() > 1 {
+		correction = len(CorrectionBlock([]string{"unknown_skill:x"}))
+	}
+	size := func() int { return estimateTokens(len(prompt) + len(user) + correction) }
+	if lim.ContextWindow > 0 && budget <= 0 {
+		// A known window smaller than the reserve cannot hold any
+		// decision: typed failure, never an oversized prompt.
+		return "", "", pkt, false, &AnalysisUnavailable{Reason: fmt.Sprintf("model window %d is too small for analysis (reserve %d)", lim.ContextWindow, OutputReserve)}
+	}
+	if budget <= 0 || size() <= budget {
 		return prompt, user, pkt, false, nil
 	}
 	caps := DefaultCaps()
 	for {
-		caps = caps.Shrink(estimateTokens(len(prompt)+len(user)), budget)
+		caps = caps.Shrink(size(), budget)
 		used = pkt.Capped(caps)
 		if prompt, err = a.renderPacketPrompt(used); err != nil {
 			return "", "", used, true, err
 		}
-		if est := estimateTokens(len(prompt) + len(user)); est <= budget || caps.AtFloors() {
+		if est := size(); est <= budget || caps.AtFloors() {
 			if est > budget {
 				// The floors are hit and it still does not fit: the
-				// request echo gives way (never the rubric).
-				allow := (budget - estimateTokens(len(prompt))) * 4
+				// request echo gives way (never the rubric) — and when
+				// even the rubric alone exceeds the budget that is a
+				// typed failure, not a prompt the provider must truncate.
+				// Chars-based so rounding can never tip it over: the
+				// budget in chars minus the rubric, the correction
+				// reserve, and a little slack.
+				allow := budget*4 - len(prompt) - correction - 8
 				if allow < 256 {
-					allow = 256
+					return "", "", used, true, &AnalysisUnavailable{Reason: fmt.Sprintf("rubric alone (%d tokens) exceeds the prompt budget %d", estimateTokens(len(prompt)), budget)}
 				}
 				user = RequestBlockLimited(goal, allow)
 			}
@@ -431,44 +453,3 @@ func extractJSON(raw string) string {
 	}
 	return strings.TrimSpace(raw)
 }
-
-// floorCaps are the valve's minimums — a packet below these cannot
-// carry a decision, so the request echo gives way instead.
-var floorCaps = Caps{Skills: 2, Agents: 2, MCPs: 2, Wards: 4}
-
-// Caps are the packet's per-kind bounds.
-type Caps struct{ Skills, Agents, MCPs, Wards int }
-
-// DefaultCaps returns the shipped packet caps (agentzero's catalog
-// numbers — bounded per kind so the prompt stays small regardless of
-// roster size; wards the widest, ward selection being the packet's
-// highest-stakes decision).
-func DefaultCaps() Caps {
-	return Caps{Skills: PacketCapSkills, Agents: PacketCapAgents, MCPs: PacketCapMCPs, Wards: PacketCapWards}
-}
-
-// Shrink scales every cap toward budget/est, always making progress
-// (a ratio near 1 still halves), never below the floors.
-func (c Caps) Shrink(est, budget int) Caps {
-	ratio := float64(budget) / float64(est)
-	if ratio <= 0 || math.IsNaN(ratio) {
-		ratio = 0.5
-	}
-	next := func(cap, floor int) int {
-		n := int(float64(cap) * ratio)
-		if n >= cap {
-			n = cap / 2
-		}
-		if n < floor {
-			n = floor
-		}
-		return n
-	}
-	return Caps{
-		Skills: next(c.Skills, floorCaps.Skills), Agents: next(c.Agents, floorCaps.Agents),
-		MCPs: next(c.MCPs, floorCaps.MCPs), Wards: next(c.Wards, floorCaps.Wards),
-	}
-}
-
-// AtFloors reports whether every cap sits at its floor.
-func (c Caps) AtFloors() bool { return c == floorCaps }

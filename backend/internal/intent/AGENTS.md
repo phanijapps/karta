@@ -37,10 +37,14 @@ reasoning_effort=low (an explicit setting goes to every model).
 resolved by the daemon through providers.ResolveWindow: Ollama-discovered
 → limits table → 32k). The request carries `max_tokens = window`. The
 composed prompt is measured (~4 chars/token) and the per-kind packet
-caps (`DefaultCaps` 20/20/20/64) shrink ONLY when it would exceed
-`window − OutputReserve(4k)` — `Caps.Shrink` scales proportionally to
-the floors, then the request echo gives way; `Decision.Trimmed` records
-it. One robustness exception: a provider 4xx (`ErrRequestRejected`)
+caps (`DefaultCaps` 20/20/20/64, caps.go) shrink ONLY when it would
+exceed `window − OutputReserve(4k)` — `Caps.Shrink` scales
+proportionally to the floors, then the request echo gives way;
+`Decision.Trimmed` records it. A known window ≤ the reserve, or a rubric
+that alone exceeds the budget, is a typed failure before any call; the
+correction block's size is reserved up front and every attempt
+re-measures. A failure after billed attempts still returns the spent
+`Decision` (tokens/attempts ride the failed event and the row). One robustness exception: a provider 4xx (`ErrRequestRejected`)
 retries the SAME attempt once without max_tokens (`MaxTokensDropped`)
 — a provider whose output cap is below the window would otherwise lose
 analysis entirely. Usage rides the optional `UsageCompleter` seam (the
@@ -48,11 +52,13 @@ daemon's llmCaller); plain fakes read as zero.
 
 ## The wrapper (wrapper.go + analysis.go)
 
-`RunGoal`: ward orchestrator model (`applyOrchestrator`, returned) →
+`RunGoal` (the wrapper is ALWAYS installed — the kill-switch only
+disables analysis): ward orchestrator model (`applyOrchestrator`, returned) →
 persona → analysis or bypass → sanitize → composed prompt → engine.
 Model precedence (`analysisTarget`) is ONE chain: the ward's model when
 a ward orchestrates, else the Settings card → agent spec `model` →
-config.yaml `intent_analysis.model` → the run's model. Events go
+config.yaml `intent_analysis.model` → the run's model → a named agent's
+own `model`. Events go
 through `Config.Emit` (the daemon's durable-first path):
 `analysis_started` then exactly one terminal kind —
 `analysis_completed{contract, tokens, ms, attempts, trimmed}`,

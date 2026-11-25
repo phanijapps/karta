@@ -2,6 +2,7 @@ package intent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -215,6 +216,79 @@ func TestEstimateTokens(t *testing.T) {
 	for chars, want := range map[int]int{0: 0, 1: 1, 4: 1, 5: 2, 4000: 1000} {
 		if got := estimateTokens(chars); got != want {
 			t.Errorf("estimateTokens(%d) = %d want %d", chars, got, want)
+		}
+	}
+}
+
+// A failure after billed attempts keeps what was spent: the failed event
+// and the execution row report the tokens and attempts, never zeros.
+func TestFailedDecisionKeepsSpentUsage(t *testing.T) {
+	// Attempt 1 is billed but names an unknown resource; attempt 2's
+	// provider call fails.
+	fc := &fakeCompleter{
+		responses: []string{validContract}, errs: []error{nil, errors.New("provider down")},
+		usage: []Usage{{PromptTokens: 400, CompletionTokens: 40}},
+	}
+	a := Analyzer{Completer: fc, Snapshot: noopSnap()}
+	d, err := a.Analyze(context.Background(), "goal", Packet{}, "p", "m", Limits{})
+	var du *AnalysisUnavailable
+	if !errors.As(err, &du) || !strings.Contains(du.Reason, "provider down") {
+		t.Fatalf("typed failure: %v", err)
+	}
+	if d.Attempts != 1 || d.TokensIn != 400 || d.TokensOut != 40 {
+		t.Fatalf("spent usage must ride the failure: %+v", d)
+	}
+	// Exhausted invalid output: three billed attempts, summed.
+	fc2 := &fakeCompleter{
+		responses: []string{"nope", "nope", "nope"},
+		usage:     []Usage{{PromptTokens: 100, CompletionTokens: 5}, {PromptTokens: 100, CompletionTokens: 5}, {PromptTokens: 100, CompletionTokens: 5}},
+	}
+	a2 := Analyzer{Completer: fc2, Snapshot: noopSnap()}
+	d, err = a2.Analyze(context.Background(), "goal", Packet{}, "p", "m", Limits{})
+	if !errors.As(err, &du) || d.Attempts != 3 || d.TokensIn != 300 || d.TokensOut != 15 || d.Analysis.PrimaryIntent != "" {
+		t.Fatalf("exhausted: %+v %v", d, err)
+	}
+}
+
+// A window at or below the reserve cannot hold a decision — typed
+// failure, no prompt sent; a rubric that alone exceeds the budget is the
+// same failure after the valve has done its work.
+func TestValveTinyWindowTypedFailure(t *testing.T) {
+	for _, window := range []int{4000, 2000} {
+		fc := &fakeCompleter{responses: []string{bareContract}}
+		a := Analyzer{Completer: fc, Snapshot: noopSnap()}
+		_, err := a.Analyze(context.Background(), "goal", smallPacket(), "p", "m", Limits{ContextWindow: window})
+		var du *AnalysisUnavailable
+		if !errors.As(err, &du) || !strings.Contains(du.Reason, "too small") || fc.calls != 0 {
+			t.Fatalf("window %d: %v (calls %d)", window, err, fc.calls)
+		}
+	}
+	// An oversized user rubric on a small window: the floors are hit and
+	// the rubric alone still exceeds the budget → typed, nothing sent.
+	snap := registry.Snapshot{}
+	snap.Prompts = map[string]registry.Prompt{"intent-analysis": {Raw: strings.Repeat("rule ", 8000) + " s={{.Skills}} a={{.Agents}} m={{.MCPs}} w={{.Wards}}"}}
+	fc := &fakeCompleter{responses: []string{bareContract}}
+	a := Analyzer{Completer: fc, Snapshot: func() registry.Snapshot { return snap }}
+	_, err := a.Analyze(context.Background(), "goal", smallPacket(), "p", "m", Limits{ContextWindow: 8000})
+	var du *AnalysisUnavailable
+	if !errors.As(err, &du) || !strings.Contains(du.Reason, "rubric alone") || fc.calls != 0 {
+		t.Fatalf("oversized rubric: %v (calls %d)", err, fc.calls)
+	}
+}
+
+// Correction feedback is reserved up front: a retry never tips a prompt
+// that fit over the budget.
+func TestValveReservesCorrectionRoom(t *testing.T) {
+	fc := &fakeCompleter{responses: []string{"garbage", bareContract}, usage: []Usage{{PromptTokens: 1}, {PromptTokens: 1}}}
+	a := Analyzer{Completer: fc, Snapshot: noopSnap()} // 3 attempts → correction reserved
+	pkt := bigPacket(20)
+	d, err := a.Analyze(context.Background(), "goal", pkt, "p", "m", Limits{ContextWindow: 8000})
+	if err != nil || !d.Trimmed || fc.calls != 2 {
+		t.Fatalf("retry must run on a fitted prompt: %+v %v calls=%d", d, err, fc.calls)
+	}
+	for _, body := range []string{fc.lastSystem + fc.lastUser} {
+		if estimateTokens(len(body)) > 8000-OutputReserve {
+			t.Fatalf("the retried prompt (with correction) exceeds the budget: %d > %d", estimateTokens(len(body)), 8000-OutputReserve)
 		}
 	}
 }

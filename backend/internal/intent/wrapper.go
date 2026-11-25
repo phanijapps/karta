@@ -266,11 +266,17 @@ func (w *Wrapper) analystSpec() registry.AgentSpec {
 
 // analysisTarget resolves the analysis call's provider/model — ONE
 // documented chain: the ward's orchestrator model when a ward
-// orchestrates; otherwise the Settings card, the agent spec's model,
-// config.yaml's intent_analysis.model, then the run's model (""
-// = the completer's default).
+// orchestrates; otherwise the Settings card, the analyst spec's model,
+// config.yaml's intent_analysis.model, the run's model, and — for an
+// agent-named run whose request names none — that agent's own model
+// (the engine resolves the same way; analysis must not fall behind the
+// run it precedes). "" = the completer's default.
 func (w *Wrapper) analysisTarget(req domain.GoalRequest, wardModel string, spec registry.AgentSpec) (provider, model string) {
-	for _, q := range []string{wardModel, w.settings().Qualified(), spec.Model, w.Cfg.AnalysisModel, req.Model} {
+	runModel := req.Model
+	if runModel == "" && req.Agent != "" {
+		runModel = w.snapshot().Agents[req.Agent].Model
+	}
+	for _, q := range []string{wardModel, w.settings().Qualified(), spec.Model, w.Cfg.AnalysisModel, runModel} {
 		if p, m := cutQualified(q); p != "" && m != "" {
 			return p, m
 		}

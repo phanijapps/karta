@@ -1508,7 +1508,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/IntentAnalysisStatus'
         "400":
-          description: Unknown provider or empty model
+          description: Unknown provider, empty model, or a field outside
+            its declared bounds (deadline 1–600s, attempts 1–5, effort
+            ≤16 chars)
           content:
             application/json:
               schema:
@@ -1534,6 +1536,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IntentAnalysisTestResult'
+        "400":
+          description: Malformed JSON body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         "503":
           description: Analysis is not wired (disabled daemon build)
           content:

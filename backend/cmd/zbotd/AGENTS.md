@@ -41,7 +41,9 @@ the durable-first `analysis_*` event emission, the per-run Settings
 read (`intent.ReadSettings`), and the model-derived limits seam
 (`analysisWindow`: `catalog.ModelOrID` → `providers.ResolveWindow`).
 `catalog.go` restores/persists the model catalog (ids + context
-windows) around the wrapper. Disabled by config → the plain engine.
+windows) around the wrapper. The wrapper is ALWAYS installed: the
+config.yaml kill-switch only disables analysis (`analysis_bypassed`
+still fires; the ward orchestrator model still applies).
 
 ## Intentionally thin (test-floor exemption)
 

@@ -55,6 +55,9 @@ func (w *Wrapper) completedEvent(sessionID string, a domain.IntentAnalysis, drop
 	if payload.Trimmed {
 		text += " · packet trimmed to fit the window"
 	}
+	if d.MaxTokensDropped {
+		text += " · provider rejected max_tokens; ran without it"
+	}
 	return &domain.TimelineEvent{
 		ID: eventID(), SessionID: sessionID, Kind: domain.EventAnalysisCompleted, Timestamp: time.Now().UTC(),
 		Text: text, IntentAnalysis: payload,

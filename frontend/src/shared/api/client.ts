@@ -967,7 +967,9 @@ export async function putDistillation(
 }
 
 export type ModelCatalog = {
-  models: { id: string; provider: string }[];
+  /** context_window rides an entry when the provider or the limits
+   *  table reported it (absent = unknown; clients assume 32k). */
+  models: { id: string; provider: string; context_window?: number }[];
   refreshed_at: Record<string, string>;
 };
 
@@ -976,6 +978,92 @@ export async function getModelCatalog(): Promise<ModelCatalog> {
   if (!res.ok) throw new Error(`models GET: ${res.status}`);
   return res.json();
 }
+
+// --- Intent analysis settings (Settings → Advanced → Intent Analysis) ---
+
+/** The daemon-managed intent-analysis.json. No token knobs — limits
+ *  derive from the selected model (see IntentAnalysisEffective). */
+export type IntentAnalysisSettings = {
+  provider?: string;
+  model?: string;
+  reasoning_effort?: string;
+  deadline_seconds?: number;
+  max_attempts?: number;
+};
+
+/** The read-only derivation for the selected model. */
+export type IntentAnalysisEffective = {
+  model: string;
+  enabled: boolean;
+  context_window?: number;
+  window_source?: 'ollama' | 'table' | 'fallback';
+  output_reserve: number;
+  packet_tokens: number;
+  trimming: boolean;
+};
+
+export type IntentAnalysisStatus = {
+  settings: IntentAnalysisSettings;
+  effective: IntentAnalysisEffective;
+};
+
+export async function getIntentAnalysis(): Promise<IntentAnalysisStatus> {
+  const res = await fetch("/api/intent-analysis");
+  if (!res.ok) throw new Error(`intent-analysis GET: ${res.status}`);
+  return res.json();
+}
+
+/** Persists the model selection (applies to the next analysis without a
+ *  restart). Omitted fields keep their saved values. */
+export async function putIntentAnalysis(
+  body: Partial<IntentAnalysisSettings>,
+): Promise<IntentAnalysisStatus> {
+  const res = await fetch("/api/intent-analysis", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message ?? `intent-analysis PUT: ${res.status}`);
+  }
+  return res.json();
+}
+
+/** One Test-analysis probe: the real decision with its cost. A failed
+ *  analysis resolves (status "failed" + reason) rather than rejecting. */
+export type IntentAnalysisTestResult = {
+  status: 'analyzed' | 'failed';
+  reason?: string;
+  model?: string;
+  context_window?: number;
+  window_source?: 'ollama' | 'table' | 'fallback';
+  attempts: number;
+  tokens_in: number;
+  tokens_out: number;
+  duration_ms: number;
+  trimmed: boolean;
+  packet_tokens: number;
+  analysis?: IntentAnalysisPayload;
+};
+
+export async function testIntentAnalysis(goal?: string): Promise<IntentAnalysisTestResult> {
+  const res = await fetch("/api/intent-analysis/test", {
+    method: "POST",
+    // JSON content type even without a body: the daemon's mutation guard requires it.
+    headers: { "Content-Type": "application/json" },
+    body: goal ? JSON.stringify({ goal }) : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message ?? `intent-analysis test: ${res.status}`);
+  }
+  return res.json();
+}
+
+/** The terminal analysis kinds (the card renders these; `analysis_started`
+ *  only feeds the work stream). */
+export const ANALYSIS_TERMINAL_KINDS = ['analysis_completed', 'analysis_bypassed', 'analysis_failed'] as const;
 
 /** One streamed chat fragment (volatile — the terminal exchange is the truth). */
 export interface ChatStreamDelta {

@@ -81,7 +81,10 @@ export function createTimeline() {
       "hook_decision",
       "compaction_triggered",
       "chitta_tool_invoked",
-      "intent_analysis",
+      "analysis_started",
+      "analysis_completed",
+      "analysis_bypassed",
+      "analysis_failed",
       "ward_entered",
       "ward_created",
     ];

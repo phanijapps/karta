@@ -34,7 +34,7 @@
   persists `[{id, context_window}]` and decodes legacy string lists.
   Verify: `TestCatalogCarriesWindows`, `TestCatalogPersistsWindowsRoundTrip`,
   `TestCatalogLoadLegacyStringIDs`.
-- [ ] 2.4 Docs: `providers/AGENTS.md` (limits file + discovery),
+- [x] 2.4 Docs: `providers/AGENTS.md` (limits file + discovery),
   `store/AGENTS.md` (catalog shape, analysis row). Phase gate
   (gpt-6.1-terra): fix P0/P1. Verify: `go test ./internal/providers/...
   ./internal/store/...` green.
@@ -49,14 +49,14 @@
   intent-analysis; body = override note) under marker
   `.intent-analyst-seeded` in `seedExamples`. Verify:
   `TestSeedIntentAnalystOnce`, seed parses under the strict loader.
-- [ ] 3.3 Docs: `registry/AGENTS.md`, `engine/eino/AGENTS.md`,
+- [x] 3.3 Docs: `registry/AGENTS.md`, `engine/eino/AGENTS.md`,
   `config/AGENTS.md`. Phase gate (gpt-6.1-terra): fix P0/P1. Verify:
   `go test ./internal/config/... ./internal/registry/...
   ./internal/engine/eino/...` green.
 
 ## 4. Analyzer: decision, usage, limits
 
-- [ ] 4.1 `Analyzer.Analyze` returns `Decision{Analysis, Attempts,
+- [x] 4.1 `Analyzer.Analyze` returns `Decision{Analysis, Attempts,
   TokensIn/Out, PromptChars, Trimmed, MaxTokensDropped}`; optional
   `UsageCompleter` seam; `Window` field drives `max_tokens` + the valve
   (`Packet.Ranked` with `Caps`, estimate chars/4, budget window−4k,
@@ -64,7 +64,7 @@
   `TestAnalyzeSendsMaxTokensWindow`, `TestValveShrinksCapsOnTinyWindow`,
   `TestValveSilentOnNormalWindow`, `TestMaxTokensDroppedOn400`,
   `TestDecisionAccountsUsageAcrossAttempts`.
-- [ ] 4.2 Analyst binding (`analyst.go`): `AnalystAgentName`, spec
+- [x] 4.2 Analyst binding (`analyst.go`): `AnalystAgentName`, spec
   lookup, rubric resolution (body-with-slots → spec.Prompt →
   intent-analysis → embedded), `resolveTarget` precedence (ward → card
   → spec → config → run); drop dead `Analyzer.Provider/Model`. Verify:
@@ -72,28 +72,28 @@
 
 ## 5. Wrapper: execution row, events, settings, test
 
-- [ ] 5.1 `store.CreateAnalysisExecution` (EnsureSession root, id
+- [x] 5.1 `store.CreateAnalysisExecution` (EnsureSession root, id
   `exec-intent-<nano>`, agent + delegation = analyst, task = goal);
   wrapper seams `BeginAnalysis/FinishAnalysis`; emit started + terminal
   before the run (empty-session fallback keeps the terminal-after-first-
   event path); `Config.Emit` replaces `Persist`; `Config.Settings`
   read per run. Verify: `TestWrapperEmitsStartedThenTerminal`,
   `TestWrapperBypassEmitsNoRow`, `TestWrapperExecutionRowTokens`.
-- [ ] 5.2 `Wrapper.TestAnalysis(ctx, goal)` (real packet + decision,
+- [x] 5.2 `Wrapper.TestAnalysis(ctx, goal)` (real packet + decision,
   accounting, no row/events) and `intent.Settings` +
   `ReadSettings(dir)` with defaults. Verify:
   `TestTestAnalysisReportsCost`, `TestSettingsDefaults`.
-- [ ] 5.3 Docs: `intent/AGENTS.md`. Phase gate (gpt-6.1-terra): fix
+- [x] 5.3 Docs: `intent/AGENTS.md`. Phase gate (gpt-6.1-terra): fix
   P0/P1. Verify: `go test ./internal/intent/...` green.
 
 ## 6. Daemon wiring and endpoints
 
-- [ ] 6.1 `cmd/zbotd`: `llmCaller.CompleteUsage`; wire `Window`,
+- [x] 6.1 `cmd/zbotd`: `llmCaller.CompleteUsage`; wire `Window`,
   `Settings`, `BeginAnalysis/FinishAnalysis`, `Emit`; remove the dead
   analysisProvider/analysisModel; `SetIntentTester`. Verify: daemon
   builds; a research send against the dev stack shows started → completed
   with tokens on the Timeline and an `exec-intent-*` row.
-- [ ] 6.2 Handlers: `GET/PUT /api/intent-analysis` (effective block via
+- [x] 6.2 Handlers: `GET/PUT /api/intent-analysis` (effective block via
   `ResolveWindow` + packet estimate; PUT validates provider/model,
   atomic write) and `POST /api/intent-analysis/test`. Verify:
   `TestIntentAnalysisHandlers` (GET defaults, PUT persists + rejects

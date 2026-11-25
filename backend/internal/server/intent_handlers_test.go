@@ -127,6 +127,37 @@ func TestIntentAnalysisHandlers(t *testing.T) {
 		}
 	})
 
+	t.Run("PUT enforces the declared bounds", func(t *testing.T) {
+		for _, tc := range []struct {
+			body string
+			code int
+			id   string
+		}{
+			{`{"provider":"zai","model":"m","deadline_seconds":601}`, http.StatusBadRequest, "invalid_settings"},
+			{`{"provider":"zai","model":"m","deadline_seconds":0}`, http.StatusBadRequest, "invalid_settings"},
+			{`{"provider":"zai","model":"m","max_attempts":6}`, http.StatusBadRequest, "invalid_settings"},
+			{`{"provider":"zai","model":"m","max_attempts":0}`, http.StatusBadRequest, "invalid_settings"},
+			{`{"provider":"zai","model":"m","reasoning_effort":"` + strings.Repeat("x", 17) + `"}`, http.StatusBadRequest, "invalid_settings"},
+			{`{"provider":"zai","model":"m","deadline_seconds":600,"max_attempts":5}`, http.StatusOK, ""},
+		} {
+			res := doJSON(t, http.MethodPut, srv.URL+"/api/intent-analysis", tc.body)
+			var e struct{ Code string }
+			_ = json.NewDecoder(res.Body).Decode(&e)
+			res.Body.Close()
+			if res.StatusCode != tc.code || e.Code != tc.id {
+				t.Fatalf("%s: %d %s", tc.body[:40], res.StatusCode, e.Code)
+			}
+		}
+		// A malformed POST test body is a typed 400.
+		res := doJSON(t, http.MethodPost, srv.URL+"/api/intent-analysis/test", "{not json")
+		var e struct{ Code string }
+		_ = json.NewDecoder(res.Body).Decode(&e)
+		res.Body.Close()
+		if res.StatusCode != http.StatusBadRequest || e.Code != "invalid_body" {
+			t.Fatalf("malformed test body: %d %s", res.StatusCode, e.Code)
+		}
+	})
+
 	t.Run("PUT persists and derives the window through the chain", func(t *testing.T) {
 		// ollama is a configured provider too for the discovered case.
 		res := doJSON(t, http.MethodPut, srv.URL+"/api/intent-analysis", `{"provider":"zai","model":"glm-5.3-flash","deadline_seconds":30}`)

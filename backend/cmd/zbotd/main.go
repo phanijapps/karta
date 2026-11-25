@@ -381,8 +381,11 @@ func (l llmCaller) CompleteUsage(ctx context.Context, provider, model, system, u
 	}
 	resp, err := l.client.ChatCompletionWithBody(ctx, p, model, token, messages, nil, extra)
 	if err != nil {
+		// Only a 400 (the body the provider refused) is the rejection the
+		// analyzer retries without max_tokens; auth/rate-limit 4xx are
+		// plain failures.
 		var failure *providers.Failure
-		if errors.As(err, &failure) && failure.Status >= 400 && failure.Status < 500 {
+		if errors.As(err, &failure) && failure.Status == http.StatusBadRequest {
 			return "", intent.Usage{}, fmt.Errorf("%w (%d): %w", intent.ErrRequestRejected, failure.Status, err)
 		}
 		return "", intent.Usage{}, err

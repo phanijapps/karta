@@ -3574,7 +3574,7 @@ export interface operations {
                     "application/json": components["schemas"]["IntentAnalysisStatus"];
                 };
             };
-            /** @description Unknown provider or empty model */
+            /** @description Unknown provider, empty model, or a field outside its declared bounds (deadline 1–600s, attempts 1–5, effort ≤16 chars) */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3605,6 +3605,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IntentAnalysisTestResult"];
+                };
+            };
+            /** @description Malformed JSON body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description Analysis is not wired (disabled daemon build) */
