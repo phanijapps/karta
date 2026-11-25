@@ -832,9 +832,11 @@ export interface paths {
          * @description The session-model state surface: the session row plus the
          *     session's LATEST terminal intent analysis (read from the persisted
          *     analysis_completed / analysis_bypassed / analysis_failed events —
-         *     status, reason, primary intent, complexity, budget, approach, ward
-         *     recommendation, provisioned skills/agents, dropped names, and the
-         *     decision's model, tokens, duration and attempts). The chat
+         *     status, reason, the FULL contract: primary intent, hidden intents,
+         *     solution path, complexity, budget, approach and explanation, ward
+         *     action/name/archetype/reason, recommended skills/agents/MCP tools,
+         *     dropped names, and the decision's model, tokens, duration and
+         *     attempts). The chat
          *     surface's Task Analysis card and the context panel render from
          *     THIS, never by parsing transcript rows. Sessions without an
          *     analysis (chat sessions, fresh shells) carry no intent_analysis

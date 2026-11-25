@@ -39,7 +39,7 @@ func (w *Wrapper) startedEvent(sessionID, provider, model string, lim Limits) *d
 	}
 }
 
-// completedEvent: the contract summary plus the decision's cost.
+// completedEvent: the whole decision plus its cost.
 func (w *Wrapper) completedEvent(sessionID string, a domain.IntentAnalysis, drops []string, d Decision, budget int, took time.Duration, provider, model string, lim Limits) *domain.TimelineEvent {
 	payload := contractPayload(a, budget)
 	payload.Dropped = drops
@@ -84,8 +84,8 @@ func (w *Wrapper) bypassEvent(sessionID, reason string) *domain.TimelineEvent {
 	}
 }
 
-// contractPayload is the sanitized contract's summary (the session-state
-// block and the card render from it).
+// contractPayload is the sanitized contract — the whole decision the
+// analyst made (the session-state block and the card render from it).
 func contractPayload(a domain.IntentAnalysis, budget int) *domain.IntentAnalysisPayload {
 	return &domain.IntentAnalysisPayload{
 		Status: domain.IntentStatusAnalyzed, PrimaryIntent: a.PrimaryIntent, Complexity: a.Complexity, StepBudget: budget,

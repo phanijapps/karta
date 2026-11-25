@@ -400,6 +400,7 @@ func TestSessionState(t *testing.T) {
 			"status": "analyzed", "primary_intent": intent, "complexity": "M",
 			"step_budget": 8, "approach": "graph", "tokens_in": 900,
 			"recommended_skills": []string{"pdf"}, "recommended_agents": []string{"research-agent"},
+			"hidden_intents": []string{"unstated expectation"}, "solution_path": "step one, step two", "explanation": "why",
 		}})
 		if err := db.AppendEvent(store.Event{ID: "evt-test-" + id, SessionID: sid, Kind: kind, Payload: string(payload)}); err != nil {
 			t.Fatal(err)
@@ -418,6 +419,10 @@ func TestSessionState(t *testing.T) {
 	}
 	if ia["tokens_in"] != float64(900) {
 		t.Fatalf("cost fields ride the state block: %v", ia)
+	}
+	// The full v1 contract rides the state block (intent-analysis-detail).
+	if hi, _ := ia["hidden_intents"].([]any); len(hi) != 1 || ia["solution_path"] != "step one, step two" || ia["explanation"] != "why" {
+		t.Fatalf("the analyst's full decision must reach session state: %v", ia)
 	}
 	skills, _ := ia["recommended_skills"].([]any)
 	if len(skills) != 1 || skills[0] != "pdf" {

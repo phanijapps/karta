@@ -25,9 +25,10 @@ dialog.
   before it, so `recommended_mcp_tools` is the surviving set and
   `dropped` names the rest.
 - **D3** The popover groups the new fields under their question: "What
-  the analyst saw" (hidden intents, explanation), "Plan" (solution
-  path), "Resources" (agents, MCP tools — marked advisory until S3
-  mounts them), "Ward" (reason). Empty sections are omitted.
+  the analyst saw" (hidden intents, explanation), "Solution path",
+  "Resources" (skills, agents, MCP tools — a visible note marks the MCP
+  tools advisory until S3 mounts them), and an inline "Ward — <reason>
+  (<archetype> archetype)" note. Empty sections are omitted.
 
 ## Risks / Trade-offs
 

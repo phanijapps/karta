@@ -128,7 +128,7 @@
   const analysisCost = $derived(costText((sessions.analysis ?? {}) as Partial<IntentAnalysisPayload>));
   // The analyst's full decision (hidden intents, solution path, resources,
   // ward reason, explanation) for the popover's detail sections.
-  const ia = $derived((sessions.analysis ?? {}) as Record<string, any>);
+  const ia = $derived((sessions.analysis ?? {}) as Partial<IntentAnalysisPayload>);
   $effect(() => {
     if (analysisOpen) void tick().then(() => document.getElementById('analysis-popover')?.focus());
   });
