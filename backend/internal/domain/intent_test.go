@@ -3,6 +3,7 @@ package domain
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestParseIntentAnalysis(t *testing.T) {
@@ -156,4 +157,16 @@ func TestSanitize(t *testing.T) {
 			t.Fatalf("fallbacks: %+v", got)
 		}
 	})
+}
+
+// Clamps cut on rune boundaries: a multi-byte character is never split.
+func TestClampLenRuneBoundary(t *testing.T) {
+	s := strings.Repeat("é", 100) // 2 bytes each
+	got := clampLen(s, 51)
+	if len(got) != 50 || !utf8.ValidString(got) {
+		t.Fatalf("clamp must cut on a rune boundary: len=%d valid=%v", len(got), utf8.ValidString(got))
+	}
+	if clampLen("short", 10) != "short" {
+		t.Fatal("short strings pass through")
+	}
 }

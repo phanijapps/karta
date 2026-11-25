@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // IntentAnalysis is the typed contract one pre-execution intent call
@@ -167,19 +168,21 @@ func clampList(in []string, maxItems, maxLen int) []string {
 		in = in[:maxItems]
 	}
 	for i, s := range in {
-		if len(s) > maxLen {
-			in[i] = s[:maxLen]
-		}
+		in[i] = clampLen(s, maxLen)
 	}
 	return in
 }
 
-// clampLen bounds a string's length.
+// clampLen bounds a string's byte length, cutting on a rune boundary so
+// a multi-byte character is never split into an invalid sequence.
 func clampLen(s string, maxLen int) string {
-	if len(s) > maxLen {
-		return s[:maxLen]
+	if len(s) <= maxLen {
+		return s
 	}
-	return s
+	for maxLen > 0 && !utf8.RuneStart(s[maxLen]) {
+		maxLen--
+	}
+	return s[:maxLen]
 }
 
 // Sanitize clamps the contract to values the runtime can act on:
