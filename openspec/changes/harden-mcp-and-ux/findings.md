@@ -187,6 +187,13 @@ javascript:/onclick gone); axe 0/0 both themes. Bundle +34KB gzip
 on the operator's AMD brief: bold lead-ins, numbered overhangs,
 blockquoted provenance with inline code.
 
+**Markdown in the Work tab (operator go):** a `read`/`ward_read` of a
+`.md` file (ward doc, wiki entry, report) renders as prose through the
+SAME sanitizer; every other tool output — JSON, listings, shell — and
+every error stays raw evidence in `<pre>`. Playwright pins: markdown
+read → `.md` prose with the script stripped; JSON read keeps literal
+`**`; a missing-`.md` error stays raw. 96 Playwright green.
+
 **task verify: exit 0** — gates + codegen zero drift + lint 0 +
 full suites + budget gates OK (suite 27.3s / 28s — the hardening
 tests' cost trimmed honestly: the echo server builds once per test

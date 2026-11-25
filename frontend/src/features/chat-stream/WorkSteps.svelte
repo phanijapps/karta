@@ -6,6 +6,7 @@
   // the thinking (the brain) — never at the top level.
   import { Brain, ChevronDown, Wrench, Users } from '@lucide/svelte';
   import { buildSteps, describeCall, outcomeHint, type Step } from './steps';
+  import { renderMarkdown } from '../../shared/markdown/render';
   import type { ChatMessage } from '../../shared/api/client';
 
   let { messages, liveTurnId = undefined }: { messages: ChatMessage[]; liveTurnId?: string } = $props();
@@ -38,6 +39,22 @@
     if (next.has(key)) next.delete(key);
     else next.add(key);
     open = next;
+  }
+
+  const OUT_CAP = 600;
+
+  function clampOut(s: string): string {
+    return s.length > OUT_CAP ? s.slice(0, OUT_CAP) + '\n…' : s;
+  }
+
+  /** A read of a markdown file (ward docs, wiki entries, reports)
+   * renders as prose; tool output of any other kind — and every
+   * error — stays raw evidence in a <pre>. */
+  function isMarkdownRead(call: { name: string; args: Record<string, unknown> }, outcome: { isError: boolean }): boolean {
+    if (outcome.isError) return false;
+    if (call.name !== 'read' && call.name !== 'ward_read') return false;
+    const path = String(call.args.path ?? call.args.file ?? '');
+    return /\.md$/i.test(path);
   }
 
   /** Top-level label: verb + object, deduped across merged calls. */
@@ -111,7 +128,13 @@
                 <span class="call-args">{JSON.stringify(c.args).slice(0, 160)}{JSON.stringify(c.args).length > 160 ? '…' : ''}</span>
               </div>
               {#each outs as o (o.callId + i)}
-                <pre class="result" class:err={o.isError}>{o.output.slice(0, 600)}{o.output.length > 600 ? '\n…' : ''}</pre>
+                {#if isMarkdownRead(c, o)}
+                  <!-- A ward doc / wiki entry / report read back: prose,
+                       rendered; still the sanitizer's output. -->
+                  <div class="result md">{@html renderMarkdown(clampOut(o.output))}</div>
+                {:else}
+                  <pre class="result" class:err={o.isError}>{clampOut(o.output)}</pre>
+                {/if}
               {/each}
             </div>
           {/each}
@@ -168,6 +191,16 @@
   .raw { font-family: ui-monospace, monospace; font-size: .68rem; color: var(--ds-color-text, #eee); }
   .call-args { font-family: ui-monospace, monospace; font-size: .66rem; color: var(--ds-color-muted, #888); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .result { margin: 0; max-height: 8rem; overflow: auto; padding: .3rem .5rem; border-radius: 4px; background: var(--ds-color-field, #1a1a1a); font-size: .68rem; white-space: pre-wrap; color: var(--ds-color-muted, #aaa); }
+  /* A rendered markdown read: prose typography, compact */
+  .result.md { white-space: normal; line-height: 1.5; font-size: .72rem; color: var(--ds-color-text, #eee); }
+  .result.md :global(> :first-child) { margin-top: 0; }
+  .result.md :global(> :last-child) { margin-bottom: 0; }
+  .result.md :global(p) { margin: .3rem 0; }
+  .result.md :global(h1), .result.md :global(h2), .result.md :global(h3) { margin: .5rem 0 .2rem; font-size: .8rem; font-weight: 600; }
+  .result.md :global(ul), .result.md :global(ol) { margin: .3rem 0; padding-left: 1.1rem; }
+  .result.md :global(code) { font-family: ui-monospace, monospace; font-size: .9em; padding: 0 .2rem; border-radius: 3px; background: var(--ds-color-hover, #2a2a2a); }
+  .result.md :global(pre) { padding: .3rem .5rem; border-radius: 4px; }
+  .result.md :global(a) { color: var(--accent, var(--ds-color-primary, #6366f1)); }
   .result.err { color: var(--ds-color-text, #eee); border-left: 2px solid var(--ds-color-danger, #e5484d); }
   .children { display: grid; gap: 2px; margin-top: .2rem; padding-left: .6rem; border-left: 1px solid var(--ds-color-border, #333); }
   .step.child { display: flex; align-items: center; gap: .4rem; padding: .15rem .2rem; font-size: .74rem; }
