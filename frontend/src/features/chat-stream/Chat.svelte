@@ -71,9 +71,16 @@
       }
     }
   });
-  // Session switch / unmount: drop the stream.
+  // Research sessions hold the stream from the moment they open: the
+  // durable replay of PREVIOUS runs is handled now, before any send — so
+  // a send-time reconnect cannot mistake a replayed old terminal event
+  // for this run's decision (the handled set skips it). Session switch /
+  // unmount drops the stream; chat sessions never connect.
   $effect(() => {
-    sessions.activeId;
+    const id = sessions.activeId;
+    const research = sessions.isResearch;
+    if (!research) return () => timeline.close();
+    timeline.connect(id);
     return () => timeline.close();
   });
   // Research sessions show their work in the right sidebar: open it
@@ -137,7 +144,9 @@
     const text = draft.trim();
     if (!text || sending) return;
     sending = true;
-    if (isResearch) analysisPending = true;
+    // Unconditional: the session's type may still be resolving — the chip
+    // (research only) must never flash the previous decision during a run.
+    analysisPending = true;
     streaming = true;
     reasoning = '';
     content = '';
@@ -153,16 +162,15 @@
       if (isResearch) {
         // Research sessions complete as units — the LIVE work streams as
         // Timeline events (steps, tools, delegations) while the run
-        // works; the roster re-lists periodically so sidebar badges
-        // (● working) follow the run.
-        timeline.connect(sessionId);
+        // works (the stream is already connected for the session; the
+        // roster re-lists periodically so sidebar badges (● working)
+        // follow the run).
         const rosterTick = setInterval(() => void sessions.loadRoster(), 4000);
         try {
           result = await sendChatMessage(text, sessions.model, sessionId);
         } finally {
           clearInterval(rosterTick);
         }
-        timeline.close();
       } else {
         try {
           result = await streamChatMessage(text, sessions.model, (d) => {

@@ -428,16 +428,22 @@ test('a live research run shows its latest thinking in the thread; the analysis 
     return new Promise(() => {});
   });
   await page.route((url) => url.pathname === '/api/sessions/r-stock/events', (route) => {
-    // The intent-analyst trail: started (work-stream row only — never the
-    // chip) then completed (the chip lands from the terminal event).
-    const frames = [
+    // Before the send the stream carries only the PREVIOUS run's events
+    // (durable replay); once the send starts the new run's events arrive
+    // live: started (work-stream row only — never the chip) then
+    // completed (the chip lands from the terminal event).
+    const past = [
+      'event: analysis_completed\ndata: ' + JSON.stringify({ id: 'p1', kind: 'analysis_completed', text: 't', intent_analysis: { status: 'analyzed', primary_intent: 'prior-run', complexity: 'S', step_budget: 4, approach: 'simple' } }),
+    ];
+    const frames = sendStarted ? [
+      ...past,
       'event: analysis_started\ndata: ' + JSON.stringify({ id: 'e0', kind: 'analysis_started', text: 'Intent analysis started — zai/glm-5.3-flash (window 128000, table)', intent_analysis: { status: 'started', model: 'zai/glm-5.3-flash', context_window: 128000, window_source: 'table' } }),
       'event: analysis_completed\ndata: ' + JSON.stringify({ id: 'e1', kind: 'analysis_completed', text: 't', intent_analysis: { status: 'analyzed', primary_intent: 'nvda-check', complexity: 'M', step_budget: 8, approach: 'graph', recommended_skills: ['pdf'], tokens_in: 1200, tokens_out: 180, duration_ms: 900, attempts: 1, model: 'zai/glm-5.3-flash', context_window: 128000, window_source: 'table' } }),
       'event: agent_step\ndata: ' + JSON.stringify({ id: 'e2', kind: 'agent_step', text: 'Entering the ward and staging the search.' }),
       'event: agent_step\ndata: ' + JSON.stringify({ id: 'e3', kind: 'agent_step', text: 'Reading the prior brief before searching.' }),
       'event: tool_call\ndata: ' + JSON.stringify({ id: 'e4', kind: 'tool_call', text: 'mcp_brave-mcp_brave_web_search' }),
-    ].join('\n\n') + '\n\n';
-    return route.fulfill({ status: 200, contentType: 'text/event-stream', body: frames });
+    ] : past;
+    return route.fulfill({ status: 200, contentType: 'text/event-stream', body: frames.join('\n\n') + '\n\n' });
   });
   await page.goto('/');
   await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
@@ -471,16 +477,20 @@ test('a second run in an analyzed session shows Analyzing… instead of the stal
   await mockStates(page); // the session state carries the previous analysis
   await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
     if (route.request().method() === 'GET') return route.fallback();
+    sendStarted = true;
     return new Promise(() => {}); // the run never completes
   });
-  // The replayed stream carries the OLD terminal event (durable replay) and
-  // then the NEW run's started event — never the new decision.
+  // The stream carries the OLD terminal event (durable replay) and, once
+  // the run starts, the NEW run's started event — never the new decision.
+  let sendStarted = false;
   await page.route((url) => url.pathname === '/api/sessions/r-stock/events', (route) => {
     const frames = [
       'event: analysis_completed\ndata: ' + JSON.stringify({ id: 'old', kind: 'analysis_completed', text: 't', intent_analysis: { status: 'analyzed', primary_intent: 'comparative-research', complexity: 'M', step_budget: 8, approach: 'graph' } }),
-      'event: analysis_started\ndata: ' + JSON.stringify({ id: 'new', kind: 'analysis_started', text: 's', intent_analysis: { status: 'started', model: 'zai/glm-5.3-flash' } }),
-    ].join('\n\n') + '\n\n';
-    return route.fulfill({ status: 200, contentType: 'text/event-stream', body: frames });
+    ];
+    if (sendStarted) {
+      frames.push('event: analysis_started\ndata: ' + JSON.stringify({ id: 'new', kind: 'analysis_started', text: 's', intent_analysis: { status: 'started', model: 'zai/glm-5.3-flash' } }));
+    }
+    return route.fulfill({ status: 200, contentType: 'text/event-stream', body: frames.join('\n\n') + '\n\n' });
   });
   await page.goto('/');
   await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
@@ -617,4 +627,5 @@ test('work tab groups consecutive same-tool turns and nests a delegation\'s work
   await expect(work.locator('.children')).toContainText('Searched the web');
   await expect(page.getByRole('main').getByLabel('Assistant message')).toContainText('Here is the brief.');
 });
+
 
