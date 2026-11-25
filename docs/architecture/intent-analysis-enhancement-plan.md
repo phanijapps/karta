@@ -145,24 +145,49 @@ Three options were on the table (Study B §4). The right one, given the framing 
 - **Injection budget** (G8): `## Skills` bodies are capped (total chars, per-skill truncation with a marker, largest-first by recommendation order); the composed prompt's size is measured and emitted with `analysis_completed` so the Settings card can show it.
 - Unrecalled entries sort by **description length then id** (short, generic descriptions first) — or better, by a stable relevance proxy (last_used from the resource index) — so cap truncation is not alphabetical luck (G10). MCP entries gain descriptions from the probe (G11).
 
-### 3.4 Token configuration — Settings card + daemon-managed file (G1)
+### 3.4 Token configuration — the SELECTED MODEL's defaults, with a fallback (G1)
 
-The distillation pattern exactly (`GET/PUT /api/distillation` → `~/.zbot/config/distillation.json`, atomic write, applied without restart, `DistillationCard.svelte`):
+**Operator decision (2026-11-24):** no token knobs on the card. The
+card has the model picker only; input and output token limits derive
+from the selected model — simple by default, a safe fallback when the
+model's limits are unknown.
 
-- `GET/PUT /api/intent-analysis` → `~/.zbot/config/intent-analysis.json`:
-  ```yaml
-  provider: zai
-  model: glm-5.3-flash
-  max_output_tokens: 4096      # the decision's cap (agentzero default 4096; the operator's old set: 5000)
-  max_input_tokens: 8192       # bounds the PACKET: skills/agents/mcps/wards descriptions are
-                               # trimmed to fit (a real knob, not agentzero's dead one)
-  reasoning_effort: low        # per-provider; "low" default for glm-5.3* per the rig-preflight evidence
-  deadline_seconds: 45
-  max_attempts: 3
-  ```
-- `max_input_tokens` **does work**: the packet builder estimates tokens (~4 chars/token) and shrinks per-kind caps proportionally until it fits; emits `packet_tokens` in `analysis_completed`.
-- Card UI: provider/model pickers (the catalog), the four numeric knobs with sane ranges (output 256–16384; input 1024–65536; deadline 10–120s; attempts 1–3), reasoning_effort select, a **"Test analysis"** button (runs the analyst on a sample request, shows tokens + ms + the contract — the operator's latency question from the handoff, finally measurable), and the last-run stats (tokens/ms/mode) from the most recent `analysis_completed`.
-- contract-first: the endpoint + schema in `openapi.yaml`, codegen, handler, client, card.
+Where the limits come from, in order:
+
+1. **Discoverable** — Ollama's `/api/show` returns `model_info` with
+   the context length (and the model's declared parameter limits) per
+   model; the daemon already talks to Ollama for the catalog. Local
+   models: read it once per model at catalog-refresh time and cache it
+   on the `Model` entry (`context_length`, `max_output`).
+2. **Built-in table** for cloud providers whose list-models API
+   carries no limits (z.ai, OpenAI-compatible endpoints): a small
+   `model_limits.yaml` seed under `~/.zbot/config/providers/` keyed by
+   model-id prefix (`glm-5.3*: {context: 128k, max_output: 16k}`,
+   `deepseek-v4*: …`) — user-editable, hot-reloaded like the rest of
+   the config tree.
+3. **Fallback** — unknown model: `{context: 32k, max_output: 4096}`
+   (agentzero's 4096 default; conservative enough for every provider).
+
+Derived (never configured):
+
+| Knob | Derivation | Why |
+|---|---|---|
+| analyst **max_output_tokens** | `min(model.max_output, 4096)` | a classification decision never needs more than 4096; a model with a smaller output cap wins |
+| analyst **max_input_tokens** (the packet budget) | `model.context − max_output − persona_reserve(4k)`, capped at **8k** for the analyst | the packet is a slice of the catalog, never the window; 8k keeps the decision fast |
+| packet trimming | per-kind caps shrink proportionally to fit the input budget | a real knob — unlike agentzero's dead `maxInputTokens` |
+
+The daemon resolves the limits when the card saves a model and
+**shows them on the card read-only** ("glm-5.3-flash · context 128k ·
+output 16k · analyst: 8k in / 4k out · source: table") so the operator
+sees what will happen without configuring it. A **"Test analysis"**
+button runs the analyst on a sample and shows tokens + ms + the
+contract — the latency question from the handoff, measurable.
+
+`intent-analysis.json` (the daemon-managed file the card writes) holds
+only: `provider`, `model`, `reasoning_effort` (default `low` for
+glm-5.3*, `medium` otherwise — the rig-preflight evidence),
+`deadline_seconds` (45), `max_attempts` (3). Advanced fields are
+editable in the file; the card stays a picker plus a read-only summary.
 
 ### 3.5 Provider-aware output modes (G13)
 
@@ -187,7 +212,7 @@ A `use_existing` recommendation must match exactly one real ward directory; else
 
 | Slice | Covers | Size | Why this order |
 |---|---|---|---|
-| **S1 — Analyst agent + token settings** | G1, G2, G17, §3.2, §3.4 | M | Your two gaps; the Settings card makes latency visible |
+| **S1 — Analyst agent + model-derived limits** | G1, G2, G17, §3.2, §3.4 | M | Your two gaps; limits from the selected model + fallback; the card shows them + a Test button |
 | **S2 — Contract v2 + the packet handed over** | G3–G6, G12, §3.1, §3.3 (packet + Plan + events) | L | The biggest quality lift: the orchestrator finally gets what the analyst saw |
 | **S3 — Orchestrator wiring** | G7–G11, G15, G16, §3.3 (MCP grants, budget, ward canonicalization, warm-ward path) | M | Depends on S2's contract |
 | **S4 — Provider modes + adaptive confidence** | G13, G14, §3.5, adaptive half of §3.7 | S | When a local analyst model is in play |
@@ -197,7 +222,7 @@ S1 can start immediately (no contract dependency). S2 is contract-first (`Intent
 ## 5. Decisions to confirm before S1
 
 1. **Agent shape**: registry `AgentSpec` + dedicated execution row + events (§3.2) — confirm you're happy that it stays a *validated single decision*, not a tool loop (§0 explains why).
-2. **Token defaults**: output 4096 (agentzero) or 5000 (your old settings.json)? input 8192?
+2. ~~Token defaults~~ — **decided**: no knobs; the selected model's limits (Ollama `model_info` → built-in table → fallback 32k/4k); analyst derives 8k in / ≤4k out; the card shows the derivation read-only.
 3. **Model precedence**: Settings card > agent spec > `intent_analysis.model` > ward > run model — or should the ward orchestrator model win over the card when a ward orchestrates?
 4. **Plan tracking**: do you want plan steps as Timeline events (Work tab shows "step 2/5: …") in S2, or is the rendered `## Plan` enough for now?
 
