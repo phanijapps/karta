@@ -321,7 +321,7 @@ test('switching sessions mid-send does not leak live output; returning reconcile
   // exchange never arrived; reconciliation is the daemon's truth).
   await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click({ force: true });
   await expect(page.getByLabel('Your message')).toContainText('AMD vs NVIDIA?');
-  await expect(page.getByLabel('Assistant message').last()).toContainText('NVIDIA holds 90-98%');
+  await expect(page.getByLabel('Final answer').last()).toContainText('NVIDIA holds 90-98%');
 });
 
 test('the draft clears the instant a send starts (not on completion)', async ({ page }) => {
@@ -571,10 +571,12 @@ test('the thread is dialogue only; tool history with friendly verbs lives in the
   // MAIN THREAD: your message + the answer. Nothing else.
   const main = page.getByRole('main');
   await expect(main.getByLabel('Your message')).toHaveCount(1);
-  await expect(main.getByLabel('Assistant message')).toHaveCount(1);
-  await expect(main.getByLabel('Assistant message')).toContainText('Done — it printed hi.');
-  await expect(main.getByText('Announcing, then executing')).toHaveCount(0);
-  await expect(main.getByText('Hmm — every call')).toHaveCount(0);
+  await expect(main.getByLabel('Final answer')).toHaveCount(1);
+  await expect(main.getByLabel('Final answer')).toContainText('Done — it printed hi.');
+  // The root's narration before the answer is dialogue, shown under its
+  // label (run-legibility); the model's reasoning stays collapsed.
+  await expect(main.locator('.narration')).toContainText('Announcing, then executing');
+  await expect(main.getByText('Hmm — every call')).toBeHidden();
   // SIDEBAR: the turn grouped under its user message, a friendly-verb
   // step with the outcome; narration + brain folded until expanded.
   const work = await workTab(page);
@@ -635,7 +637,7 @@ test('work tab groups consecutive same-tool turns and nests a delegation\'s work
   const delegated = work.getByRole('button', { name: /Delegated research-agent/ });
   await delegated.click();
   await expect(work.locator('.children')).toContainText('Searched the web');
-  await expect(page.getByRole('main').getByLabel('Assistant message')).toContainText('Here is the brief.');
+  await expect(page.getByRole('main').getByLabel('Final answer')).toContainText('Here is the brief.');
 });
 
 

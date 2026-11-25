@@ -4,7 +4,8 @@
   import type { Sessions } from '../entities/session/session.svelte';
   import WorkSteps from '../features/chat-stream/WorkSteps.svelte';
   import { createTimeline } from '../shared/sse/timeline.svelte';
-  import { analysisText, isAnalysisKind } from '../entities/timeline-event/analysisText';
+  import { analysisText, fmtTokens, isAnalysisKind } from '../entities/timeline-event/analysisText';
+  import { fmtDuration } from '../entities/timeline-event/duration';
 
   // FSD note: the app layer composes features — importing the step view
   // here is app → features (allowed), not a cross-feature import.
@@ -37,6 +38,43 @@
     }
     return out;
   });
+  // Delegations as cards, live from the stream: one per child execution
+  // (started carries agent + task; completed adds tokens, time, status).
+  const delegations = $derived.by<DelegationCard[]>(() => {
+    const byExec = new Map<string, DelegationCard>();
+    for (const ev of live.events) {
+      const d = ev.delegation;
+      if (!d || !d.execution_id) continue;
+      const card = byExec.get(d.execution_id) ?? { execId: d.execution_id, agent: d.child_agent, task: d.task ?? '', status: 'running', tokensIn: 0, tokensOut: 0, durationMs: 0 };
+      if (ev.kind === 'delegation_started') {
+        card.agent = d.child_agent;
+        card.task = d.task ?? card.task;
+      } else if (ev.kind === 'delegation_completed') {
+        card.status = d.status || 'completed';
+        card.tokensIn = d.tokens_in ?? 0;
+        card.tokensOut = d.tokens_out ?? 0;
+        card.durationMs = d.duration_ms ?? 0;
+      }
+      byExec.set(d.execution_id, card);
+    }
+    // Replay shows the whole trail; the state surface fills what the
+    // stream has not (a session opened after its runs).
+    for (const e of sessions.executions) {
+      if (e.role !== 'delegated') continue;
+      if (!byExec.has(e.id)) byExec.set(e.id, { execId: e.id, agent: e.agent, task: '', status: e.status === 'running' ? 'running' : e.status, tokensIn: e.tokens_in, tokensOut: e.tokens_out, durationMs: e.started_at && e.finished_at ? Date.parse(e.finished_at) - Date.parse(e.started_at) : 0 });
+    }
+    return [...byExec.values()];
+  });
+  // The run footer: every execution's cost (root, analyst, children).
+  const runCost = $derived.by(() => {
+    const ex = sessions.executions;
+    const sum = (k: 'tokens_in' | 'tokens_out') => ex.reduce((n, e) => n + (e[k] ?? 0), 0);
+    const started = ex.length ? Math.min(...ex.map((e) => Date.parse(e.started_at))) : NaN;
+    const finished = ex.filter((e) => e.finished_at).map((e) => Date.parse(e.finished_at ?? ''));
+    const elapsed = Number.isNaN(started) || !finished.length ? 0 : Math.max(...finished) - started;
+    return { tokensIn: sum('tokens_in'), tokensOut: sum('tokens_out'), delegations: ex.filter((e) => e.role === 'delegated').length, elapsedMs: elapsed, count: ex.length };
+  });
+  type DelegationCard = { execId: string; agent: string; task: string; status: string; tokensIn: number; tokensOut: number; durationMs: number };
   // The intent analyst's trail (analysis_started → one terminal event,
   // with the decision's cost) — the run's first observable steps.
   const analysisLines = $derived.by(() => {
@@ -181,12 +219,33 @@
             {/each}
           </section>
         {/if}
+        {#if delegations.length}
+          <section class="work-turn" aria-label="Delegations">
+            <p class="ctx-title"><Users size={12} aria-hidden="true" /> Delegations</p>
+            {#each delegations as d (d.execId)}
+              <div class="delegation-card" class:running={d.status === 'running'} class:failed={d.status === 'failed' || d.status === 'cancelled'}>
+                <span class="del-agent">{d.agent}</span>
+                {#if d.task}<span class="del-task" title={d.task}>{d.task.slice(0, 90)}{d.task.length > 90 ? '…' : ''}</span>{/if}
+                <span class="del-cost">
+                  {#if d.status === 'running'}<span class="pulse" aria-label="working"></span> running{:else}{d.status}{/if}
+                  {#if d.tokensIn || d.tokensOut} · {fmtTokens(d.tokensIn)} → {fmtTokens(d.tokensOut)}{/if}
+                  {#if d.durationMs} · {fmtDuration(d.durationMs)}{/if}
+                </span>
+              </div>
+            {/each}
+          </section>
+        {/if}
         {#if wardLines.length}
           <section class="work-turn" aria-label="Ward transitions">
             {#each wardLines as w (w.id)}
               <p class="ward-line"><FolderOpen size={12} aria-hidden="true" /> {w.text}</p>
             {/each}
           </section>
+        {/if}
+        {#if runCost.count > 1 || runCost.tokensIn}
+          <footer class="run-foot" aria-label="Run cost">
+            <span>Run: {fmtTokens(runCost.tokensIn)} prompt · {fmtTokens(runCost.tokensOut)} completion tokens{runCost.delegations ? ` · ${runCost.delegations} delegation${runCost.delegations > 1 ? 's' : ''}` : ''}{runCost.elapsedMs ? ` · ${fmtDuration(runCost.elapsedMs)}` : ''}</span>
+          </footer>
         {/if}
       {/if}
     </div>
@@ -271,6 +330,14 @@
   @keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
   .context-body.work { padding: var(--ds-space-3); gap: var(--ds-space-4); }
   .work-turn { display: grid; gap: .25rem; }
+  .delegation-card { display: grid; grid-template-columns: max-content 1fr max-content; gap: .15rem .6rem; align-items: baseline; padding: .4rem .6rem; margin: .2rem 0; border: 1px solid color-mix(in oklab, var(--ds-color-primary, #3b82f6) 45%, transparent); border-radius: 8px; background: var(--ds-color-surface, #1e1e1e); font-size: .78rem; }
+  .delegation-card .del-agent { font-weight: 600; }
+  .delegation-card .del-task { color: var(--ds-color-muted, #888); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .delegation-card .del-cost { color: var(--ds-color-muted, #888); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .delegation-card.failed .del-cost { color: var(--ds-color-danger, #ef4444); }
+  .delegation-card .pulse { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ds-color-success, #22c55e); margin-right: .3rem; }
+  .run-foot { margin-top: .6rem; padding-top: .5rem; border-top: 1px solid var(--ds-color-border, #333); color: var(--ds-color-muted, #888); font-size: .74rem; font-variant-numeric: tabular-nums; }
+
   .ward-line { display: flex; align-items: center; gap: .35rem; margin: 0; font-size: .76rem; color: var(--ds-color-success, #22c55e); }
   .turn-user { margin: 0 0 .15rem; font-size: .72rem; color: var(--ds-color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 2px solid var(--ds-color-primary, #6366f1); padding-left: .4rem; }
   header { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: var(--ds-space-2) var(--ds-space-3); border-bottom: 1px solid var(--ds-color-border); }

@@ -162,8 +162,8 @@ func (w *Wrapper) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 		pkt := w.buildPacket(ctx, req.Goal)
 		ap, am := w.analysisTarget(req, wardModel, w.analystSpec())
 		lim := w.limits(ap, am)
-		started = w.startedEvent(req.SessionID, ap, am, lim)
-		execID := w.beginAnalysis(req.SessionID, req.Goal, started.IntentAnalysis.Model)
+		execID := w.beginAnalysis(req.SessionID, req.Goal, qualified(ap, am))
+		started = w.startedEvent(req.SessionID, execID, ap, am, lim)
 		w.emit(*started)
 		a := *w.Analyzer // per-run copy: the settings' bounds apply to this decision
 		w.settings().ApplyTo(&a)
@@ -171,14 +171,14 @@ func (w *Wrapper) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 		d, err := a.Analyze(ctx, req.Goal, pkt, ap, am, lim)
 		w.finishAnalysis(execID, d, err)
 		if err != nil {
-			terminal = w.failedEvent(req.SessionID, err.Error(), d, time.Since(t0), ap, am, lim)
+			terminal = w.failedEvent(req.SessionID, execID, err.Error(), d, time.Since(t0), ap, am, lim)
 			break
 		}
 		analysis, drops = d.Analysis.Sanitize(w.knownSkills(), w.knownAgents(), w.knownMCP(), w.knownWards())
 		if b, err := analysis.Complexity.StepBudget(); err == nil {
 			budget = b
 		}
-		terminal = w.completedEvent(req.SessionID, analysis, drops, d, budget, time.Since(t0), ap, am, lim)
+		terminal = w.completedEvent(req.SessionID, execID, analysis, drops, d, budget, time.Since(t0), ap, am, lim)
 	}
 	// A known session gets its trail BEFORE the run (started → terminal
 	// → run steps); an ad-hoc run's terminal event waits for the

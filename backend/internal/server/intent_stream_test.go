@@ -170,15 +170,43 @@ func TestSSEFramesAttributed(t *testing.T) {
 	} else if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), "context deadline exceeded") {
 		t.Fatalf("GET events: %v", err)
 	}
-	body := sb.String()
-	for _, want := range []string{
-		`"agent":"research-agent"`, `"execution_id":"` + child + `"`, // legacy row via the join
-		`"agent":"root"`, `"execution_id":"` + root + `"`, // payload agent + the live root frame
-		`"child_agent":"research-agent"`, `"tokens_in":1102`, `"status":"completed"`, // delegation payload
-		"research-agent finished",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("SSE body missing %v:\n%s", want, body)
+	// Decode every frame independently: each must name its agent and
+	// execution; the lifecycle frame carries its payload.
+	type frame struct {
+		ID          string                    `json:"id"`
+		Kind        string                    `json:"kind"`
+		Agent       string                    `json:"agent"`
+		ExecutionID string                    `json:"execution_id"`
+		Delegation  *domain.DelegationPayload `json:"delegation"`
+	}
+	byID := map[string]frame{}
+	for _, line := range strings.Split(sb.String(), "\n") {
+		if !strings.HasPrefix(line, "data:") {
+			continue
 		}
+		var f frame
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data:")), &f); err != nil {
+			t.Fatalf("frame: %v (%s)", err, line)
+		}
+		byID[f.ID] = f
+	}
+	want := map[string]frame{
+		"evt-legacy":     {Kind: "tool_call", Agent: "research-agent", ExecutionID: child}, // legacy row via the join
+		"evt-cur":        {Kind: "agent_step", Agent: "root", ExecutionID: root},           // payload agent
+		"evt-done":       {Kind: "delegation_completed", Agent: "research-agent", ExecutionID: child},
+		"evt-live":       {Kind: "tool_call", Agent: "root", ExecutionID: root},             // live root
+		"evt-live-child": {Kind: "delegation", Agent: "research-agent", ExecutionID: child}, // live child
+	}
+	for id, w := range want {
+		f, ok := byID[id]
+		if !ok {
+			t.Fatalf("frame %s missing; have %v", id, byID)
+		}
+		if f.Kind != w.Kind || f.Agent != w.Agent || f.ExecutionID != w.ExecutionID {
+			t.Fatalf("frame %s: got %+v want %+v", id, f, w)
+		}
+	}
+	if d := byID["evt-done"].Delegation; d == nil || d.TokensIn != 1102 || d.Status != "completed" || d.ChildAgent != "research-agent" {
+		t.Fatalf("delegation payload: %+v", byID["evt-done"].Delegation)
 	}
 }

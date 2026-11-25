@@ -11,13 +11,20 @@ import type { IntentAnalysisPayload } from "../api/client";
 export type TimelineEventKind = components["schemas"]["TimelineEventKind"];
 /** The contract's ward transition payload (ward_entered/ward_created). */
 export type WardEventPayload = components["schemas"]["WardEventPayload"];
+/** The contract's delegation lifecycle payload (delegation_started/completed). */
+export type DelegationPayload = components["schemas"]["DelegationPayload"];
 
 export type TimelineEvent = {
   id: string;
   kind: TimelineEventKind | string;
   text: string;
+  /** The acting agent ("root", a sub-agent's name, "intent-analyst") and
+   *  its execution — every frame, replayed or live. */
+  agent?: string;
+  executionId?: string;
   intentAnalysis?: IntentAnalysisPayload | Record<string, unknown>;
   ward?: WardEventPayload;
+  delegation?: DelegationPayload;
   receivedAt: number;
 };
 
@@ -58,15 +65,21 @@ export function createTimeline() {
           id?: string;
           kind?: string;
           text?: string;
+          agent?: string;
+          execution_id?: string;
           intent_analysis?: IntentAnalysisPayload;
           ward?: WardEventPayload;
+          delegation?: DelegationPayload;
         };
         push({
           id: raw.id ?? `${kind}-${msg.lastEventId || Math.random()}`,
           kind: raw.kind ?? kind,
           text: raw.text ?? "",
+          agent: raw.agent,
+          executionId: raw.execution_id,
           intentAnalysis: raw.intent_analysis,
           ward: raw.ward,
+          delegation: raw.delegation,
           receivedAt: Date.now(),
         });
       } catch {
@@ -78,6 +91,8 @@ export function createTimeline() {
       "agent_step",
       "tool_call",
       "delegation",
+      "delegation_started",
+      "delegation_completed",
       "hook_decision",
       "compaction_triggered",
       "chitta_tool_invoked",

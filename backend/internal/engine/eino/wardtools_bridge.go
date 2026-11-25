@@ -88,15 +88,42 @@ func (a *Adapter) emitWardEvent(sessionID string, tr wardtools.Transition) {
 		kind, text = domain.EventWardCreated, "created ward "+tr.Ward
 	}
 	payload := &domain.WardEventPayload{Ward: tr.Ward, Archetype: tr.Archetype, Previous: tr.Previous, Digest: tr.Digest}
+	// Attributed to the run that triggered the transition (set at every
+	// run's start; a session has one live run at a time).
+	agent, execID := a.runAttribution(sessionID)
 	evt := domain.TimelineEvent{
-		ID: a.idGen(), SessionID: sessionID, Kind: kind, Text: text, Ward: payload,
+		ID: a.idGen(), SessionID: sessionID, ExecutionID: execID, Kind: kind, Agent: agent, Text: text, Ward: payload,
 		Timestamp: time.Now().UTC(),
 	}
-	raw, _ := json.Marshal(map[string]any{"text": text, "ward": payload})
-	_ = a.st.AppendEvent(store.Event{ID: evt.ID, SessionID: sessionID, Kind: string(kind), Payload: string(raw)}) //nolint:errcheck // attempted-durable-first (F-15 posture)
+	raw, _ := json.Marshal(map[string]any{"text": text, "agent": agent, "ward": payload})
+	_ = a.st.AppendEvent(store.Event{ID: evt.ID, SessionID: sessionID, ExecutionID: execID, Kind: string(kind), Payload: string(raw)}) //nolint:errcheck // attempted-durable-first (F-15 posture)
 	if a.bus != nil {
 		_ = a.bus.Publish(context.Background(), evt) //nolint:errcheck // fire-and-forget emit (F-15) // ctx-ok: F-15
 	}
+}
+
+// runAttribution remembers the run currently executing in a session
+// (agent + execution) so host-level events raised without a runInput —
+// ward transitions — still carry attribution (run-legibility).
+type runAttribution struct{ agent, execID string }
+
+// setRunAttribution is called at every run's start (root or child).
+func (a *Adapter) setRunAttribution(sessionID string, in runInput) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.runAttr == nil {
+		a.runAttr = map[string]runAttribution{}
+	}
+	a.runAttr[sessionID] = runAttribution{agent: in.agent(), execID: in.execID}
+}
+
+func (a *Adapter) runAttribution(sessionID string) (agent, execID string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if r, ok := a.runAttr[sessionID]; ok {
+		return r.agent, r.execID
+	}
+	return domain.AgentRoot, ""
 }
 
 // filterWardTools applies an agent's tool allowlist to a mounted

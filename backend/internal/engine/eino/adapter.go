@@ -67,6 +67,10 @@ type Adapter struct {
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc // sessionID → cancel
+	// runAttr remembers the run currently executing per session (agent +
+	// execution) — attribution for host-level events raised without a
+	// runInput, i.e. ward transitions (run-legibility).
+	runAttr map[string]runAttribution
 	// wardBinder observes ward enters per session (session-row binding;
 	// nil = no binding updates).
 	wardBinder func(sessionID, ward string)
@@ -193,30 +197,17 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 	return events, nil
 }
 
-// run is the ROOT wrapper: cleanup, cancellation registration, channel
-// close. Children bypass it (no cancels-map entry, no channel close).
-func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events chan domain.TimelineEvent, in runInput) {
-	defer func() {
-		cancel()
-		a.mu.Lock()
-		delete(a.cancels, in.sessionID)
-		a.mu.Unlock()
-		close(events)
-	}()
-	// Root run: the answer was already emitted as the final agent step;
-	// runLoop's error variants emit their own failure events (the caller
-	// observes the stream, not the return value).
-	if _, err := a.runLoop(ctx, events, in); err != nil {
-		// Nothing further to do at the root: the failure event and
-		// execution status were already recorded inside the loop.
-		_ = err
-	}
-}
-
 // runLoop is the ONE bounded loop for roots and children: returns the
 // final answer text ("" on failure/cancellation). Children reuse it via
 // the delegate tool with their own execution record and wiring.
 func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent, in runInput) (string, error) {
+	// Attribution for this run: host-level events (ward transitions)
+	// and — for the root — the execution row's agent column (rows are
+	// created before the run knows its agent).
+	a.setRunAttribution(in.sessionID, in)
+	if !in.isChild {
+		_ = a.st.SetExecutionAgent(in.execID, in.agent()) //nolint:errcheck // provenance only; attribution still rides the events
+	}
 
 	emit := func(kind domain.TimelineEventKind, text string) {
 		chanKind, agent := kind, in.agent()

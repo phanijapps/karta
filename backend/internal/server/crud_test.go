@@ -451,22 +451,34 @@ func TestSessionState(t *testing.T) {
 	analyst, _ := db.CreateAnalysisExecution(sid, "intent-analyst", "analyze")
 	child, _ := db.CreateChildExecution(sid, root, "research-agent")
 	_ = db.FinishExecution(child, "completed", "", 1102, 7961)
+	child2, _ := db.CreateChildExecution(sid, root, "builder-agent")
+	_ = db.FinishExecution(child2, "completed", "", 284089, 16814)
+	_ = db.SetExecutionAgent(root, "root") // what the engine writes at the run's start
 	code, body = mutate(t, "GET", url+"/api/sessions/"+sid+"/state", nil)
 	if code != http.StatusOK {
 		t.Fatalf("state with executions: %d", code)
 	}
 	execs, _ := body["executions"].([]any)
-	if len(execs) != 3 {
+	if len(execs) != 4 {
 		t.Fatalf("executions: %v", body["executions"])
 	}
 	_ = analyst
 	byRole := map[string]map[string]any{}
+	delegated := map[string]map[string]any{}
 	for _, e := range execs {
 		m := e.(map[string]any)
+		if m["role"] == "delegated" {
+			delegated[m["agent"].(string)] = m
+			continue
+		}
 		byRole[m["role"].(string)] = m
 	}
-	if byRole["root"]["id"] != root || byRole["analyst"]["agent"] != "intent-analyst" || byRole["delegated"]["agent"] != "research-agent" {
+	if byRole["root"]["id"] != root || byRole["analyst"]["agent"] != "intent-analyst" || delegated["research-agent"] == nil || delegated["builder-agent"] == nil {
 		t.Fatalf("execution roles: %v", execs)
+	}
+	byRole["delegated"] = delegated["research-agent"]
+	if byRole["root"]["agent"] != "root" || byRole["root"]["id"] != root {
+		t.Fatalf("root execution: %v", byRole["root"])
 	}
 	if byRole["delegated"]["tokens_in"] != float64(1102) || byRole["delegated"]["tokens_out"] != float64(7961) || byRole["delegated"]["status"] != "completed" || byRole["delegated"]["parent_id"] != root {
 		t.Fatalf("child execution: %v", byRole["delegated"])

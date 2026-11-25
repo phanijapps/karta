@@ -22,6 +22,8 @@ export type Step = {
   key: string;
   /** Tool name (raw) — the friendly verb derives from it. */
   tool: string;
+  /** The acting agent ("root" or a sub-agent's name) — attribution. */
+  agent: string;
   calls: ToolCall[];
   outcomes: CallOutcome[];
   /** Plan narration the model attached to the turn (folded detail). */
@@ -169,6 +171,7 @@ export function buildSteps(messages: ChatMessage[], liveTurnId?: string): Step[]
       const step: Step = {
         key: m.id,
         tool,
+        agent: m.agent ?? "root",
         calls,
         outcomes: calls.flatMap((c) => byCall.get(c.id) ?? []),
         narration: m.content ?? "",
@@ -177,10 +180,14 @@ export function buildSteps(messages: ChatMessage[], liveTurnId?: string): Step[]
         merged: 1,
         live: m.id === liveTurnId,
       };
-      // Nest under an open delegation until its result lands.
-      if (delegate && delegate.tool === "delegate_agent" && pendingDelegateResultIds.length > 0) {
-        delegate.children.push(step);
-      } else if (steps.length > 0 && steps[steps.length - 1].tool === step.tool && !steps[steps.length - 1].live) {
+      // Nest under an open delegation until its result lands — or, with
+      // attribution, under the turn's latest delegation whenever the row
+      // is a child's (order-independent).
+      const lastDelegate = [...steps].reverse().find((x) => x.tool === "delegate_agent");
+      if ((delegate && delegate.tool === "delegate_agent" && pendingDelegateResultIds.length > 0) || (step.agent !== "root" && lastDelegate)) {
+        (delegate && delegate.tool === "delegate_agent" && pendingDelegateResultIds.length > 0 ? delegate : lastDelegate)!.children.push(step);
+      } else if (step.tool !== "delegate_agent" && steps.length > 0 && steps[steps.length - 1].tool === step.tool && steps[steps.length - 1].agent === step.agent && !steps[steps.length - 1].live) {
+        // (Delegations never merge: each is its own step with its children.)
         const prev = steps[steps.length - 1];
         prev.calls.push(...step.calls);
         prev.outcomes.push(...step.outcomes);

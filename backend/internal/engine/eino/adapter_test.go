@@ -739,15 +739,16 @@ func (g *routingGenerator) Generate(_ context.Context, msgs []*schema.Message, _
 		idx = len(script) - 1
 	}
 	step := script[idx]
+	usage := &schema.ResponseMeta{Usage: &schema.TokenUsage{PromptTokens: 100, CompletionTokens: 10}}
 	if step.toolCall != "" {
-		msg := &schema.Message{Role: schema.Assistant, ReasoningContent: step.reasoning}
+		msg := &schema.Message{Role: schema.Assistant, ReasoningContent: step.reasoning, ResponseMeta: usage}
 		msg.ToolCalls = []schema.ToolCall{{
 			ID: fmt.Sprintf("call-%d", nextFakeCallID.Add(1)), Type: "function",
 			Function: schema.FunctionCall{Name: step.toolCall, Arguments: step.args},
 		}}
 		return msg, nil
 	}
-	return &schema.Message{Role: schema.Assistant, Content: step.content, ReasoningContent: step.reasoning}, nil
+	return &schema.Message{Role: schema.Assistant, Content: step.content, ReasoningContent: step.reasoning, ResponseMeta: usage}, nil
 }
 
 var nextFakeCallID atomic.Int64
@@ -1262,7 +1263,8 @@ func TestEngineRowsAndEventsAttributed(t *testing.T) {
 			t.Fatalf("row agent: %+v", m)
 		}
 	}
-	// Reasoning rides every assistant row the model reasoned on.
+	// Reasoning rides every assistant row the model reasoned on — and
+	// survives a restart (read back through a fresh handle).
 	var sawReasoning int
 	for _, m := range msgs {
 		if m.Role == "assistant" && m.Reasoning != "" {
@@ -1271,6 +1273,21 @@ func TestEngineRowsAndEventsAttributed(t *testing.T) {
 	}
 	if sawReasoning != 2 {
 		t.Fatalf("reasoning on assistant rows: %d (%+v)", sawReasoning, msgs)
+	}
+	reopened, err := store.Open(a.st.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reopened.Close() }()
+	again, _ := reopened.Replay("attrib", 0, 20)
+	sawReasoning = 0
+	for _, m := range again {
+		if m.Role == "assistant" && m.Reasoning != "" && m.Agent == domain.AgentRoot {
+			sawReasoning++
+		}
+	}
+	if sawReasoning != 2 {
+		t.Fatalf("reasoning + agent after restart: %d (%+v)", sawReasoning, again)
 	}
 }
 
@@ -1294,24 +1311,38 @@ func TestDelegationLifecycleEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var collected []domain.TimelineEvent
+	for evt := range ch {
+		collected = append(collected, evt)
+	}
 	var started, completed domain.TimelineEvent
 	var sawStarted, sawCompleted bool
-	i := 0
-	for evt := range ch {
+	var idxStarted, idxCompleted, idxFirstChild, idxLastChild = -1, -1, -1, -1
+	for i, evt := range collected {
 		switch evt.Kind {
 		case domain.EventDelegationStarted:
-			started, sawStarted = evt, true
+			started, sawStarted, idxStarted = evt, true, i
 		case domain.EventDelegationCompleted:
-			completed, sawCompleted = evt, true
+			completed, sawCompleted, idxCompleted = evt, true, i
 		case domain.EventDelegation:
 			if evt.Agent != "researcher" {
 				t.Fatalf("child step attribution: %+v", evt)
 			}
+			if idxFirstChild < 0 {
+				idxFirstChild = i
+			}
+			idxLastChild = i
 		}
-		i++
 	}
 	if !sawStarted || !sawCompleted {
 		t.Fatal("delegation lifecycle events missing")
+	}
+	// Order: started before the child's steps, completed after them.
+	if idxStarted >= idxFirstChild || idxLastChild >= idxCompleted {
+		t.Fatalf("lifecycle order: started %d, child %d..%d, completed %d", idxStarted, idxFirstChild, idxLastChild, idxCompleted)
+	}
+	if completed.Delegation.TokensIn <= 0 || completed.Delegation.TokensOut <= 0 {
+		t.Fatalf("the completed event carries the child's usage: %+v", completed.Delegation)
 	}
 	if started.Delegation.ChildAgent != "researcher" || started.Delegation.ExecutionID == "" || !strings.Contains(started.Delegation.Task, "research X") {
 		t.Fatalf("started payload: %+v", started.Delegation)

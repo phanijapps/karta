@@ -101,6 +101,7 @@
         <span class="step-text">
           <span class="verb">{l.verb}</span>
           {#if l.object}<span class="object">{l.object}</span>{/if}
+          {#if s.agent && s.agent !== 'root'}<span class="agent" title="The agent that took this step">· {s.agent}</span>{/if}
         </span>
         <span class="step-meta">
           {#if s.live}<span class="pulse" aria-label="working"></span>{:else if isMerge}<span class="count">{count(s)} calls</span>{/if}
@@ -145,7 +146,7 @@
                 {@const ch = outcomeHint(child.tool, child.outcomes)}
                 <div class="step child">
                   <span class="step-icon" aria-hidden="true"><Wrench size={12} /></span>
-                  <span class="step-text"><span class="verb">{cl.verb}</span> {#if cl.object}<span class="object">{cl.object}</span>{/if}</span>
+                  <span class="step-text"><span class="verb">{cl.verb}</span> {#if cl.object}<span class="object">{cl.object}</span>{/if}{#if child.agent && child.agent !== 'root'}<span class="agent">· {child.agent}</span>{/if}</span>
                   {#if count(child) > 1}<span class="count">{count(child)} calls</span>{/if}
                   {#if ch}<span class="hint" class:err={ch.includes('error')}>{ch}</span>{/if}
                 </div>
@@ -183,6 +184,7 @@
   @keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
   .step-detail { margin: .1rem 0 .35rem 1.4rem; padding: .35rem .6rem; border-left: 1px solid var(--ds-color-border, #333); display: grid; gap: .35rem; }
   .narration { margin: 0; font-size: .74rem; color: var(--ds-color-muted, #888); }
+  .step-text .agent { font-size: .68rem; color: var(--ds-color-primary, #3b82f6); margin-left: .3rem; white-space: nowrap; }
   .narration-label { font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-color-muted, #888); border: 1px solid var(--ds-color-border, #333); border-radius: 999px; padding: 0 .4rem; margin-right: .2rem; }
   .thinking summary { cursor: pointer; display: inline-flex; gap: .3rem; align-items: center; list-style: none; font-size: .74rem; color: var(--ds-color-muted, #888); }
   .thinking p { margin: .2rem 0 0; padding: .3rem .5rem; border-left: 2px solid var(--ds-color-border, #333); border-radius: 4px; background: var(--ds-color-field, #1a1a1a); font-size: .72rem; max-height: 10rem; overflow: auto; }

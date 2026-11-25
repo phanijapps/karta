@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { ArrowUp, Brain, Sparkles, Microscope, FolderOpen, RefreshCw, Info, X } from '@lucide/svelte';
+  import { ArrowUp, Brain, Sparkles, Microscope, FolderOpen, RefreshCw, Info, X, Users } from '@lucide/svelte';
   import { sendChatMessage, streamChatMessage, continueSession } from '../../shared/api/client';
   import { costText, fmtTokens, isTerminalAnalysisKind } from '../../entities/timeline-event/analysisText';
   import { createTimeline } from '../../shared/sse/timeline.svelte';
@@ -96,7 +96,12 @@
   // content → answers). Children's injected user rows (delegation
   // context) are absorbed into the preceding turn so the step tree
   // nests them instead of breaking the view.
-  type Turn = { key: string; user: ChatMessage | null; rows: ChatMessage[]; answers: ChatMessage[]; live: boolean };
+  // A turn's dialogue roles: the ROOT's tool-free assistant rows are
+  // answers (the last one is THE answer); any other agent's tool-free
+  // row is a sub-agent report — rendered as a collapsed card, never in
+  // the answer style (run-legibility). Rows without an agent predate
+  // attribution and read as root.
+  type Turn = { key: string; user: ChatMessage | null; rows: ChatMessage[]; answers: ChatMessage[]; reports: ChatMessage[]; live: boolean };
   const turns = $derived.by<Turn[]>(() => {
     const out: Turn[] = [];
     let cur: Turn | null = null;
@@ -109,13 +114,15 @@
           cur.rows.push(m);
           continue;
         }
-        cur = { key: m.id, user: m, rows: [], answers: [], live: false };
+        cur = { key: m.id, user: m, rows: [], answers: [], reports: [], live: false };
         out.push(cur);
         continue;
       }
       if (!cur) continue;
-      if (m.role === 'assistant' && !m.tool_calls && (m.content || '').trim() !== '') cur.answers.push(m);
-      else cur.rows.push(m);
+      if (m.role === 'assistant' && !m.tool_calls && (m.content || '').trim() !== '') {
+        if (m.agent && m.agent !== 'root') cur.reports.push(m);
+        else cur.answers.push(m);
+      } else cur.rows.push(m);
     }
     if (out.length) out[out.length - 1].live = sending && sessions.activeId === sendSessionId;
     return out;
@@ -138,6 +145,22 @@
     analysisTrigger?.focus();
   }
   const ward = $derived(sessions.activeWard);
+
+  /** The root's last narration before the answer: the latest row of the
+   *  turn that carried tool calls and said something. */
+  function narration(turn: Turn): string {
+    for (let i = turn.rows.length - 1; i >= 0; i--) {
+      const r = turn.rows[i];
+      if (r.role === 'assistant' && r.tool_calls && (r.content ?? '').trim() !== '' && (!r.agent || r.agent === 'root')) return (r.content ?? '').trim();
+    }
+    return '';
+  }
+
+  /** 26,466 → "26 KB"; 1,921 → "1.9 KB" — report sizes stay short. */
+  function fmtSize(chars: number): string {
+    if (chars >= 1024) return `${(chars / 1024).toFixed(1)} KB`;
+    return `${chars} chars`;
+  }
 
   async function send() {
     const text = draft.trim();
@@ -374,9 +397,44 @@
         {#if turn.user}
           <article class="bubble user" aria-label="Your message">{turn.user.content}</article>
         {/if}
-        {#each turn.answers as m (m.id)}
-          <article class="bubble assistant" aria-label="Assistant message">
-            {#if m.reasoning}
+        {#each turn.reports as r (r.id)}
+          <!-- A sub-agent's report: collapsed, attributed, never the answer style. -->
+          <details class="report">
+            <summary>
+              <Users size={14} aria-hidden="true" />
+              <span class="report-kind">Sub-agent report</span>
+              <span class="report-agent">{r.agent}</span>
+              <span class="report-meta">{fmtSize((r.content ?? '').length)}</span>
+            </summary>
+            <div class="report-body">
+              {#if r.reasoning}
+                <details class="thinking">
+                  <summary><Brain size={13} aria-hidden="true" /> Thinking</summary>
+                  <p class="muted">{r.reasoning}</p>
+                </details>
+              {/if}
+              {@html renderMarkdown(r.content ?? '')}
+            </div>
+          </details>
+        {/each}
+        {#each turn.answers as m, ai (m.id)}
+          {@const isFinal = isResearch && ai === turn.answers.length - 1}
+          <article class="bubble assistant" class:final-answer={isFinal} aria-label={isFinal ? 'Final answer' : 'Assistant message'}>
+            {#if isFinal}
+              <div class="answer-head">
+                <span class="answer-tag">The answer</span>
+                <span class="answer-meta">{m.agent && m.agent !== 'root' ? m.agent : 'root'}</span>
+                {#if m.reasoning}
+                  <details class="thinking answer-thinking">
+                    <summary><Brain size={13} aria-hidden="true" /> Thinking</summary>
+                    <p class="muted">{m.reasoning}</p>
+                  </details>
+                {/if}
+              </div>
+              {#if narration(turn)}
+                <p class="narration"><span class="narration-label">Narration</span> {narration(turn)}</p>
+              {/if}
+            {:else if m.reasoning}
               <details class="thinking">
                 <summary><Brain size={13} aria-hidden="true" /> Thinking</summary>
                 <p class="muted">{m.reasoning}</p>
@@ -480,6 +538,23 @@
   .bubble { max-width: min(48rem, 90%); padding: .7rem 1rem; border-radius: 14px; line-height: 1.55; overflow-wrap: break-word; }
   .bubble.user { white-space: pre-wrap; }
   /* Rendered markdown inside assistant bubbles */
+  /* Sub-agent reports: collapsed cards, attributed (run-legibility). */
+  .report { align-self: flex-start; max-width: 92%; border: 1px solid color-mix(in oklab, var(--ds-color-primary, #3b82f6) 45%, transparent); border-radius: 12px; background: color-mix(in oklab, var(--ds-color-primary, #3b82f6) 7%, var(--ds-color-surface, #1e1e1e)); }
+  .report > summary { list-style: none; display: flex; align-items: center; gap: .5rem; padding: .45rem .8rem; cursor: pointer; font-size: .8125rem; }
+  .report > summary::-webkit-details-marker { display: none; }
+  .report-kind { font-size: .62rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-color-primary, #3b82f6); font-weight: 600; }
+  .report-agent { font-weight: 600; }
+  .report-meta { margin-left: auto; color: var(--ds-color-muted, #888); font-size: .74rem; font-variant-numeric: tabular-nums; }
+  .report-body { padding: .5rem .9rem .7rem; border-top: 1px dashed var(--ds-color-border, #333); font-size: .9rem; }
+  .report-body :global(> :first-child) { margin-top: 0; }
+  /* THE answer: the root's last assistant row, tagged, with its narration. */
+  .bubble.assistant.final-answer { border-color: color-mix(in oklab, var(--ds-color-success, #22c55e) 45%, transparent); }
+  .answer-head { display: flex; align-items: center; gap: .5rem; margin-bottom: .35rem; }
+  .answer-tag { font-size: .62rem; text-transform: uppercase; letter-spacing: .06em; padding: .05rem .5rem; border-radius: 999px; border: 1px solid var(--ds-color-success, #22c55e); color: var(--ds-color-success, #22c55e); font-weight: 600; }
+  .answer-meta { font-size: .7rem; color: var(--ds-color-muted, #888); }
+  .answer-head .answer-thinking { margin-left: auto; }
+  .narration { margin: 0 0 .5rem; font-size: .78rem; color: var(--ds-color-muted, #888); }
+  .narration-label { font-size: .6rem; text-transform: uppercase; letter-spacing: .05em; border: 1px solid var(--ds-color-border, #333); border-radius: 999px; padding: 0 .4rem; margin-right: .3rem; }
   .bubble.assistant :global(> :first-child), .bubble.assistant .stream-text :global(> :first-child) { margin-top: 0; }
   .bubble.assistant :global(> :last-child), .bubble.assistant .stream-text :global(> :last-child) { margin-bottom: 0; }
   .bubble.assistant :global(p), .bubble.assistant .stream-text :global(p) { margin: .45rem 0; }

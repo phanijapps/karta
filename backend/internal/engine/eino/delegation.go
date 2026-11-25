@@ -165,8 +165,10 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 		&domain.DelegationPayload{ChildAgent: spec.Name, Task: args.Task, ExecutionID: childExec},
 		fmt.Sprintf("Delegated to %s: %s", spec.Name, firstLine(args.Task)))
 	answer, err := d.adapter.runLoop(d.ctx, d.events, child)
+	// The stored terminal status wins (a cancelled child reads
+	// "cancelled"); "failed" only when no reliable status exists.
 	tokensIn, tokensOut, status, uerr := d.adapter.st.ExecutionUsage(childExec)
-	if err != nil || uerr != nil {
+	if uerr != nil || status == "running" {
 		status = "failed"
 	}
 	done := &domain.DelegationPayload{ChildAgent: spec.Name, Task: args.Task, ExecutionID: childExec,

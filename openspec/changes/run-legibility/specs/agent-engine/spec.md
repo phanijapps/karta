@@ -4,7 +4,7 @@
 
 ### Requirement: Runs stream durable-first timeline events
 
-Every run step SHALL emit timeline events (agent steps, tool calls, session lifecycle) that are persisted durably before live notification, in order, for the run's session — the same durable-first contract as chat. Every event — durable row and live frame alike — SHALL carry the acting agent ("root" or the sub-agent's name) and the execution it belongs to, so a replayed timeline is as attributed as the live one.
+Every run step SHALL emit timeline events (agent steps, tool calls, session lifecycle) for the run's session, in order, each ATTEMPTED durable-first: the durable row is written before the live notification, and a failed write does not suppress the live event (the engine's recorded posture, pinned by its characterization tests and owned by the follow-up backend-engine-run-ownership). Every event — durable row and live frame alike — SHALL carry the acting agent ("root" or the sub-agent's name) and the execution it belongs to, so a replayed timeline is as attributed as the live one.
 
 #### Scenario: Event order matches execution
 

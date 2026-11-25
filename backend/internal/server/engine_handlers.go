@@ -427,15 +427,21 @@ func (s *Server) GetSessionState(w http.ResponseWriter, r *http.Request, session
 	state := apigen.SessionState{Session: s.sessionView(sess, latest > 0, time.Time{})}
 	// The run's shape and cost: every execution row (root, the analyst,
 	// delegated children) with its token usage — run-legibility.
-	if execs, err := s.db.SessionExecutions(sid); err == nil && len(execs) > 0 {
+	if execs, err := s.db.SessionExecutions(sid); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	} else if len(execs) > 0 {
 		state.Executions = &[]apigen.SessionExecution{}
 		for _, e := range execs {
 			view := apigen.SessionExecution{
 				Id: apigen.Id(e.ID), Agent: e.Agent, Role: apigen.SessionExecutionRole(e.Role()),
 				Status: e.Status, TokensIn: int(e.TokensIn), TokensOut: int(e.TokensOut), StartedAt: e.StartedAt,
 			}
-			if e.Delegation != "root" && e.Delegation != "" {
-				view.Agent = e.Delegation // the delegated agent's name (the executions.agent column carries it too)
+			switch {
+			case e.Delegation != "root" && e.Delegation != "":
+				view.Agent = e.Delegation // the delegated agent's name
+			case e.Agent == "" || e.Agent == "default":
+				view.Agent = domain.AgentRoot // rows created before the agent column was written
 			}
 			if e.ParentID != "" {
 				view.ParentId = (*apigen.Id)(&e.ParentID)

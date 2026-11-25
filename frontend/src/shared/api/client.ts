@@ -329,6 +329,8 @@ export type SessionAnalysis =
 export type SessionStateResponse =
   operations["getSessionState"]["responses"][200]["content"]["application/json"];
 export const SESSION_STATE_ROUTE = "/api/sessions/{sessionId}/state" as const satisfies keyof paths;
+/** One execution row on the state surface (root, analyst, or a delegated child) — run-legibility. */
+export type SessionExecution = components["schemas"]["SessionExecution"];
 
 export async function getSessionState(
   sessionId: string,

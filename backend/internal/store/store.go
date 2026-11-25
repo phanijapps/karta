@@ -132,8 +132,12 @@ PRAGMA user_version = %d;
 // Store is the local database handle. One writer connection keeps
 // SQLite's locking simple; reads share it (SQLite serializes).
 type Store struct {
-	db *sql.DB
+	db   *sql.DB
+	path string
 }
+
+// Path is the database file (reopen after a "restart" in tests).
+func (s *Store) Path() string { return s.path }
 
 // Open opens (creating if absent) the database at path with WAL mode,
 // a busy timeout, and idempotent schema bootstrap.
@@ -249,7 +253,7 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, path: path}, nil
 }
 
 // Close closes the database.
@@ -440,9 +444,9 @@ func (s *Store) ClearSession(sessionID string) error {
 // columns carry the tree.
 func (s *Store) CreateChildExecution(sessionID, parentExecID, agentName string) (string, error) {
 	id := fmt.Sprintf("exec-child-%s-%d", agentName, time.Now().UnixNano())
-	if _, err := s.db.Exec(`INSERT INTO executions (id, session_id, parent_id, status, delegation, created_at)
-		VALUES (?, ?, ?, 'running', ?, ?)`,
-		id, sessionID, parentExecID, agentName, now()); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO executions (id, session_id, parent_id, agent, status, delegation, created_at)
+		VALUES (?, ?, ?, ?, 'running', ?, ?)`,
+		id, sessionID, parentExecID, agentName, agentName, now()); err != nil {
 		return "", fmt.Errorf("store: create child execution: %w", err)
 	}
 	return id, nil

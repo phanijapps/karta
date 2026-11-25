@@ -35,6 +35,16 @@ func (e ExecutionInfo) Role() string {
 	}
 }
 
+// SetExecutionAgent records the acting agent on an execution row (the
+// root row is created before the run knows its agent; rows created
+// before this existed carry the schema default "default").
+func (s *Store) SetExecutionAgent(execID, agent string) error {
+	if _, err := s.db.Exec(`UPDATE executions SET agent = ? WHERE id = ?`, agent, execID); err != nil {
+		return fmt.Errorf("store: set execution agent: %w", err)
+	}
+	return nil
+}
+
 // ExecutionUsage reads one execution's terminal usage (the child's
 // tokens are rolled in by FinishExecution before this is called).
 func (s *Store) ExecutionUsage(execID string) (tokensIn, tokensOut int64, status string, err error) {
@@ -46,12 +56,17 @@ func (s *Store) ExecutionUsage(execID string) (tokensIn, tokensOut int64, status
 	return e.TokensIn, e.TokensOut, e.Status, nil
 }
 
+// MaxSessionExecutions bounds the state surface's execution list (the
+// contract's maxItems); a session never approaches it (one run = root +
+// analyst + a few children).
+const MaxSessionExecutions = 256
+
 // SessionExecutions lists the session's execution tree in creation
-// order (root first by convention).
+// order (root first by convention), bounded.
 func (s *Store) SessionExecutions(sessionID string) ([]ExecutionInfo, error) {
 	rows, err := s.db.Query(`SELECT id, COALESCE(parent_id,''), agent, delegation, COALESCE(task,''), status,
 		tokens_in, tokens_out, created_at, COALESCE(finished_at,'')
-		FROM executions WHERE session_id = ? ORDER BY rowid`, sessionID)
+		FROM executions WHERE session_id = ? ORDER BY rowid LIMIT ?`, sessionID, MaxSessionExecutions)
 	if err != nil {
 		return nil, fmt.Errorf("store: session executions: %w", err)
 	}

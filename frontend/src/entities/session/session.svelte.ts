@@ -13,6 +13,7 @@ import {
   syncChatMessages,
   type ChatMessage,
   type SessionAnalysis,
+  type SessionExecution,
   type SessionView,
 } from '../../shared/api/client';
 
@@ -50,6 +51,9 @@ export function createSessions() {
   // the analysis card and the context panel render from this, never
   // from transcript parsing).
   let analysis = $state<SessionAnalysis | null>(null);
+  // The session's execution rows (root, analyst, children) with their
+  // cost — the Work tab's run footer (run-legibility).
+  let executions = $state<SessionExecution[]>([]);
   // Analysis generation: only the LATEST request's response may land
   // (switching sessions mid-fetch must not leak another session's
   // analysis into the active card/panel).
@@ -186,7 +190,12 @@ export function createSessions() {
   async function loadAnalysis(sessionId: string) {
     const mine = ++analysisGeneration;
     const state = await getSessionState(sessionId);
-    if (mine !== analysisGeneration || sessionId !== activeId) return; // stale
+    if (sessionId !== activeId) return; // switched away
+    // The cost always applies (a live analysis event cannot invalidate
+    // it); the analysis itself yields to a live event that landed while
+    // this fetch was in flight.
+    executions = state?.executions ?? [];
+    if (mine !== analysisGeneration) return; // a live analysis won
     analysis = state?.intent_analysis ?? null;
   }
 
@@ -196,6 +205,7 @@ export function createSessions() {
     activeId = sessionId;
     sendError = '';
     analysis = null;
+    executions = [];
     analysisGeneration++; // pending state fetches for the old session are stale
     if (!(sessionId in transcripts)) {
       try {
@@ -308,6 +318,7 @@ export function createSessions() {
     get loading() { return loading; },
     get rosterError() { return rosterError; },
     get analysis() { return analysis; },
+    get executions() { return executions; },
     applyLiveAnalysis,
     get expandedWard() { return expandedWard; },
     isRunning(id: string) {

@@ -27,20 +27,20 @@ func eventID() string { return fmt.Sprintf("evt-intent-%d", time.Now().UnixNano(
 
 // startedEvent: the intent-analyst's call is going out under these
 // limits.
-func (w *Wrapper) startedEvent(sessionID, provider, model string, lim Limits) *domain.TimelineEvent {
+func (w *Wrapper) startedEvent(sessionID, execID, provider, model string, lim Limits) *domain.TimelineEvent {
 	p := &domain.IntentAnalysisPayload{
 		Status: domain.IntentStatusStarted, Model: qualified(provider, model), Mode: ModeTextJSON,
 		ContextWindow: lim.ContextWindow, WindowSource: lim.Source,
 	}
 	return &domain.TimelineEvent{
-		ID: eventID(), SessionID: sessionID, Kind: domain.EventAnalysisStarted, Timestamp: time.Now().UTC(),
+		ID: eventID(), SessionID: sessionID, ExecutionID: execID, Agent: AnalystAgentName, Kind: domain.EventAnalysisStarted, Timestamp: time.Now().UTC(),
 		Text:           fmt.Sprintf("Intent analysis started — %s (window %s)", p.Model, windowLabel(lim)),
 		IntentAnalysis: p,
 	}
 }
 
 // completedEvent: the whole decision plus its cost.
-func (w *Wrapper) completedEvent(sessionID string, a domain.IntentAnalysis, drops []string, d Decision, budget int, took time.Duration, provider, model string, lim Limits) *domain.TimelineEvent {
+func (w *Wrapper) completedEvent(sessionID, execID string, a domain.IntentAnalysis, drops []string, d Decision, budget int, took time.Duration, provider, model string, lim Limits) *domain.TimelineEvent {
 	payload := contractPayload(a, budget)
 	payload.Dropped = drops
 	fillCost(payload, d, took, provider, model, lim)
@@ -59,17 +59,17 @@ func (w *Wrapper) completedEvent(sessionID string, a domain.IntentAnalysis, drop
 		text += " · provider rejected max_tokens; ran without it"
 	}
 	return &domain.TimelineEvent{
-		ID: eventID(), SessionID: sessionID, Kind: domain.EventAnalysisCompleted, Timestamp: time.Now().UTC(),
+		ID: eventID(), SessionID: sessionID, ExecutionID: execID, Agent: AnalystAgentName, Kind: domain.EventAnalysisCompleted, Timestamp: time.Now().UTC(),
 		Text: text, IntentAnalysis: payload,
 	}
 }
 
 // failedEvent: the run proceeds; the reason and the attempts ride along.
-func (w *Wrapper) failedEvent(sessionID, reason string, d Decision, took time.Duration, provider, model string, lim Limits) *domain.TimelineEvent {
+func (w *Wrapper) failedEvent(sessionID, execID, reason string, d Decision, took time.Duration, provider, model string, lim Limits) *domain.TimelineEvent {
 	payload := &domain.IntentAnalysisPayload{Status: domain.IntentStatusFailed, Reason: reason}
 	fillCost(payload, d, took, provider, model, lim)
 	return &domain.TimelineEvent{
-		ID: eventID(), SessionID: sessionID, Kind: domain.EventAnalysisFailed, Timestamp: time.Now().UTC(),
+		ID: eventID(), SessionID: sessionID, ExecutionID: execID, Agent: AnalystAgentName, Kind: domain.EventAnalysisFailed, Timestamp: time.Now().UTC(),
 		Text:           fmt.Sprintf("Pre-execution intent analysis failed — %s (after %d attempt(s))", reason, payload.Attempts),
 		IntentAnalysis: payload,
 	}
@@ -77,8 +77,10 @@ func (w *Wrapper) failedEvent(sessionID, reason string, d Decision, took time.Du
 
 // bypassEvent: the router or the kill-switch skipped analysis.
 func (w *Wrapper) bypassEvent(sessionID, reason string) *domain.TimelineEvent {
+	// A bypass is the wrapper's decision about the ROOT run (no analyst
+	// execution exists) — attributed to root under the root execution id.
 	return &domain.TimelineEvent{
-		ID: eventID(), SessionID: sessionID, Kind: domain.EventAnalysisBypassed, Timestamp: time.Now().UTC(),
+		ID: eventID(), SessionID: sessionID, ExecutionID: "exec-root-" + sessionID, Agent: domain.AgentRoot, Kind: domain.EventAnalysisBypassed, Timestamp: time.Now().UTC(),
 		Text:           "Pre-execution intent analysis bypassed — " + reason,
 		IntentAnalysis: &domain.IntentAnalysisPayload{Status: domain.IntentStatusBypassed, Reason: reason},
 	}
