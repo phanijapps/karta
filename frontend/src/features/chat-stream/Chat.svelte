@@ -80,6 +80,7 @@
     const id = sessions.activeId;
     const research = sessions.isResearch;
     if (!research) return () => timeline.close();
+    analysisPending = false; // nothing of ours is pending at open
     timeline.connect(id);
     return () => timeline.close();
   });
@@ -135,11 +136,6 @@
   }
   const ward = $derived(sessions.activeWard);
 
-  /** Delegations from assistant tool-call intents: agent + task pairs
-   * (the delegation roster; results close them). */
-
-
-
   async function send() {
     const text = draft.trim();
     if (!text || sending) return;
@@ -171,6 +167,10 @@
         } finally {
           clearInterval(rosterTick);
         }
+        // A run that never reached its analysis (persona failure,
+        // transport error) emits no terminal event: release the pending
+        // state so the previous decision shows again.
+        if (!result?.ok) analysisPending = false;
       } else {
         try {
           result = await streamChatMessage(text, sessions.model, (d) => {

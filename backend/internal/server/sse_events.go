@@ -41,11 +41,7 @@ func isAnalysisKind(kind domain.TimelineEventKind) bool {
 	return false
 }
 
-// analysisKindFor maps a persisted event's kind to the streamed kind: a
-// legacy `intent_analysis` row becomes the terminal analysis kind its
-// recorded status names, so pre-upgrade sessions keep rendering their
-// analysis card.
-
+// writeSSE emits one SSE frame (the kind is the event name).
 func writeSSE(w http.ResponseWriter, e sseEvent) {
 	body := map[string]any{
 		"id": e.ID, "session_id": e.SessionID, "kind": e.Kind, "text": e.Text,
@@ -60,6 +56,10 @@ func writeSSE(w http.ResponseWriter, e sseEvent) {
 	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Kind, data)
 }
 
+// dbSessionEvents maps persisted rows to frames: a legacy
+// `intent_analysis` row becomes the terminal analysis kind its recorded
+// status names, so pre-upgrade sessions keep rendering their analysis
+// card.
 func (s *Server) dbSessionEvents(sessionID, afterID string, limit int) ([]sseEvent, error) {
 	storeEvents, err := s.db.Events(sessionID, afterID, limit)
 	if err != nil {

@@ -967,8 +967,9 @@ export async function putDistillation(
 }
 
 export type ModelCatalog = {
-  /** context_window rides an entry when the provider or the limits
-   *  table reported it (absent = unknown; clients assume 32k). */
+  /** context_window rides an entry when the provider reported it at
+   *  refresh (absent = unknown; the intent-analysis derivation resolves
+   *  the limits table and the 32k fallback). */
   models: { id: string; provider: string; context_window?: number }[];
   refreshed_at: Record<string, string>;
 };

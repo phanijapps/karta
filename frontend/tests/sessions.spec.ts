@@ -475,14 +475,15 @@ test('a second run in an analyzed session shows Analyzing… instead of the stal
   await mockSessions(page);
   await mockTranscripts(page);
   await mockStates(page); // the session state carries the previous analysis
+  let sendStarted = false;
   await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
     if (route.request().method() === 'GET') return route.fallback();
     sendStarted = true;
     return new Promise(() => {}); // the run never completes
   });
-  // The stream carries the OLD terminal event (durable replay) and, once
-  // the run starts, the NEW run's started event — never the new decision.
-  let sendStarted = false;
+  // The stream (open since the session opened) carries the OLD terminal
+  // event and, once the run starts, the NEW run's started event — never
+  // the new decision.
   await page.route((url) => url.pathname === '/api/sessions/r-stock/events', (route) => {
     const frames = [
       'event: analysis_completed\ndata: ' + JSON.stringify({ id: 'old', kind: 'analysis_completed', text: 't', intent_analysis: { status: 'analyzed', primary_intent: 'comparative-research', complexity: 'M', step_budget: 8, approach: 'graph' } }),
@@ -497,8 +498,7 @@ test('a second run in an analyzed session shows Analyzing… instead of the stal
   await expect(page.locator('.analysis-chip')).toContainText('comparative-research');
   await page.getByLabel('Research question').fill('second run');
   await page.getByLabel('Research question').press('Enter');
-  // The stale decision hides behind the pending state for the whole run —
-  // even though the replay re-delivers the OLD terminal event.
+  // The stale decision hides behind the pending state for the whole run.
   await expect(page.locator('.analysis-chip')).toContainText('Analyzing');
   await expect(page.locator('.analysis-chip')).not.toContainText('comparative-research');
 });

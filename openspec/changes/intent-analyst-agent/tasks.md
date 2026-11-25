@@ -12,10 +12,10 @@
   commit. Verify: codegen zero drift.
 - [x] 1.2 Domain kinds + payload (`EventAnalysisStarted/Completed/
   Bypassed/Failed`, `IntentStatusStarted`, accounting fields); store
-  `LatestEventOfKinds`; server replay translates legacy rows by status;
+  `LatestEventOfKind(sid, kinds...)`; server replay translates legacy rows by status;
   `GetSessionState` reads the latest terminal kind. Verify:
   domain/server tests (`TestReplayTranslatesLegacyIntentAnalysis`,
-  `TestSessionStateLatestTerminalAnalysis`).
+  `TestSessionState`).
 
 ## 2. Model limits (providers + store)
 
@@ -44,7 +44,7 @@
 - [x] 3.1 `registry.IsSystemAgent` (reserved `intent-analyst`); engine
   `delegateDescription` + `Exec` skip system agents (typed
   `ErrNotDelegatable`). Verify: `TestDelegateSkipsSystemAgents`.
-- [x] 3.2 Seed `seedassets/agents/intent-analyst.md` (frontmatter: name,
+- [x] 3.2 Seed `seedassets/system-agents/intent-analyst.md` (frontmatter: name,
   description, display_name, model "", tools [], max_depth 0, prompt
   intent-analysis; body = override note) under marker
   `.intent-analyst-seeded` in `seedExamples`. Verify:
@@ -82,7 +82,7 @@
 - [x] 5.2 `Wrapper.TestAnalysis(ctx, goal)` (real packet + decision,
   accounting, no row/events) and `intent.Settings` +
   `ReadSettings(dir)` with defaults. Verify:
-  `TestTestAnalysisReportsCost`, `TestSettingsDefaults`.
+  `TestTestAnalysisReportsCost`, `TestSettingsFile`.
 - [x] 5.3 Docs: `intent/AGENTS.md`. Phase gate (gpt-6.1-terra): fix
   P0/P1. Verify: `go test ./internal/intent/...` green.
 
@@ -119,7 +119,7 @@
 
 ## 9. Review and hardening
 
-- [ ] 9.1 Run the read-only `zbot-reviewer` subagent over the change
+- [x] 9.1 Run the read-only `zbot-reviewer` subagent over the change
   scope (contract, backend, frontend, the five boundaries); fix every
   P0/P1; fix P2s or record them in `findings.md`. Verify: reviewer
   report has zero open P0/P1.

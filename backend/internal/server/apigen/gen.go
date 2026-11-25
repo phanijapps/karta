@@ -1550,7 +1550,7 @@ type IntentAnalysisSettings struct {
 	Model       *string `json:"model,omitempty"`
 	Provider    *string `json:"provider,omitempty"`
 
-	// ReasoningEffort Default `low` for glm-5.3* models, else `medium`.
+	// ReasoningEffort Sent to every model when set. Unset — `low` for glm-5.3* models (the rig-preflight evidence); other models send nothing and keep their provider default.
 	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
 }
 
@@ -1749,7 +1749,7 @@ type MessageRole string
 
 // Model defines model for Model.
 type Model struct {
-	// ContextWindow The model's context window in tokens when the provider reports it (Ollama `/api/show` `*.context_length`); absent when unknown.
+	// ContextWindow The model's context window in tokens when the provider reports it (Ollama `/api/show` `*.context_length`); absent when unknown (the limits table and the 32k fallback apply only when a limit is resolved, not here).
 	ContextWindow *int   `json:"context_window,omitempty"`
 	Id            string `json:"id"`
 }
@@ -1765,7 +1765,7 @@ type ModelCatalog struct {
 
 // ModelEntry defines model for ModelEntry.
 type ModelEntry struct {
-	// ContextWindow The model's context window in tokens when known (discovered from the provider at refresh, or the limits table); absent when unknown — clients fall back to the 32,000 default.
+	// ContextWindow The model's context window in tokens when the provider reported it at refresh (Ollama); absent when unknown — the limits table and the 32k fallback apply when a limit is resolved (the intent-analysis derivation), not in this listing.
 	ContextWindow *int   `json:"context_window,omitempty"`
 	Id            string `json:"id"`
 	Provider      Id     `json:"provider"`

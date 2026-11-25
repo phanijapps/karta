@@ -115,11 +115,14 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 	if !ok {
 		return tools.Result{Err: fmt.Errorf("delegate_agent: %w %q (configured: %s)", ErrUnknownAgent, args.Agent, agentList(d.snap))}
 	}
-	if spec.Description == "" || registry.IsSystemAgent(args.Agent) {
+	if registry.IsSystemAgent(args.Agent) {
+		// A system-role agent (the intent analyst) is a host-run step,
+		// never a worker — whatever its description says.
+		return tools.Result{Err: fmt.Errorf("delegate_agent: %w %q (system agent; run by the host, not delegatable)", ErrNotDelegatable, args.Agent)}
+	}
+	if spec.Description == "" {
 		// Not offered for delegation: the description IS the eligibility
-		// contract (routing table and invocation agree); a system-role
-		// agent (the intent analyst) is a host-run step whatever its
-		// description says.
+		// contract (routing table and invocation agree).
 		return tools.Result{Err: fmt.Errorf("delegate_agent: %w %q (no description; usable via goal requests only)", ErrNotDelegatable, args.Agent)}
 	}
 	child := runInput{

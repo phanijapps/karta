@@ -40,6 +40,14 @@ No P0/P1. Seven P2s, all fixed:
 | 6 | A failed reload left a stale selection in the collapsed card beside "Daemon unreachable". | **Fixed**: the summary shows only a daemon-confirmed, non-dirty selection; Test/save gated on `connected`. |
 | 7 | The four new API types were hand-written duplicates of contract schemas. | **Fixed**: `components["schemas"][...]` aliases in client.ts. |
 
-## Final reviewer pass
+## Final reviewer pass (zbot-reviewer, HEAD 0a1b93d → fixes at the archive commit) — no P0/P1
 
-Pending.
+| # | Sev | Finding | Resolution |
+|---|---|---|---|
+| 1 | P2 | `analysisPending` set on every send, cleared only by a new terminal event — a chat send then a return to a viewed research session, or a research send failing before analysis, hid a real decision. | **Fixed**: reset at session open (before the stream connects) and when a run ends without `ok` (no terminal event). Playwright "a second run in an analyzed session…" pins the pending path. |
+| 2 | P2 | Contract/plan said `reasoning_effort` "else `medium`" and `context_window` "or the limits table"; the code sends nothing for non-glm models and lists discovered windows only. | **Fixed**: texts amended (contract descriptions, `ModelCatalog` doc, plan §3.4) — unset effort = the provider's default; the limits table applies at resolution, not in the listing. Codegen regenerated (`CONTRACT_CHANGE=1`). |
+| 3 | P2 | Valve truncation's `allow` ignored the request block's 61-char wrapper → a correction retry on that path failed typed. | **Fixed**: the wrapper is reserved; `TestValveTruncationSurvivesCorrectionRetry` (garbage then valid on the truncation path). |
+| 4 | P2 | Nits: orphaned `analysisKindFor` comment, delegation refusal text for system agents, duplicate `fmtTokens`, stale spec comment + `sendStarted` order, tasks/design name drift (`LatestEventOfKinds`, test names, `seedassets/agents`, `Packet.Ranked`). | **Fixed**: all of them. |
+| 5 | P2 | `GET /api/intent-analysis` runs the packet build per read; a failed estimate read as 0 ("packet ~0 tokens"). | **Recorded (design D10)**: an operator-facing read, local-only; the card renders "packet size unknown" for 0 instead of a misleading number. |
+
+Reviewer could not run tests (read-only session); the mechanical gates ran green via `task verify` after the final edit (below).

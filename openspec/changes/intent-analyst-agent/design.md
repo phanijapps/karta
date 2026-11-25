@@ -91,7 +91,8 @@ DeepSeek's 8k) would lose analysis entirely.
 ### D6 — The one safety valve
 `estimateTokens(chars) = ceil(chars/4)`. The analyzer composes the
 system rubric + the user block for the default packet; if the estimate
-exceeds `window − 4000`, `Packet.Ranked` is re-run with scaled caps
+exceeds `window − 4000`, `Packet.Capped` re-bounds the (already ranked)
+packet with scaled caps
 (`Caps{Skills, Agents, MCPs, Wards}`; ratio = budget/estimate, floors
 2/2/2/4) and re-measured until it fits or the floors are hit; `Trimmed`
 is reported. Catalog caps are otherwise untouched (20/20/20/64).

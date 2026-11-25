@@ -1079,7 +1079,7 @@ export interface components {
         };
         Model: {
             id: string;
-            /** @description The model's context window in tokens when the provider reports it (Ollama `/api/show` `*.context_length`); absent when unknown. */
+            /** @description The model's context window in tokens when the provider reports it (Ollama `/api/show` `*.context_length`); absent when unknown (the limits table and the 32k fallback apply only when a limit is resolved, not here). */
             context_window?: number;
         };
         ModelList: {
@@ -1088,7 +1088,7 @@ export interface components {
         ModelEntry: {
             provider: components["schemas"]["Id"];
             id: string;
-            /** @description The model's context window in tokens when known (discovered from the provider at refresh, or the limits table); absent when unknown — clients fall back to the 32,000 default. */
+            /** @description The model's context window in tokens when the provider reported it at refresh (Ollama); absent when unknown — the limits table and the 32k fallback apply when a limit is resolved (the intent-analysis derivation), not in this listing. */
             context_window?: number;
         };
         ModelCatalog: {
@@ -1354,7 +1354,7 @@ export interface components {
         IntentAnalysisSettings: {
             provider?: string;
             model?: string;
-            /** @description Default `low` for glm-5.3* models, else `medium`. */
+            /** @description Sent to every model when set. Unset — `low` for glm-5.3* models (the rig-preflight evidence); other models send nothing and keep their provider default. */
             reasoning_effort?: string;
             /** @description The whole decision's bound (default 45). */
             deadline_seconds?: number;

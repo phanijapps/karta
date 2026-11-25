@@ -8,6 +8,7 @@
     getModelCatalog,
   } from '../../../shared/api/client';
   import type { IntentAnalysisStatus, IntentAnalysisTestResult } from '../../../shared/api/client';
+  import { fmtTokens } from '../../../entities/timeline-event/analysisText';
 
   type CatalogEntry = { id: string; context_window?: number };
   type Catalog = Record<string, CatalogEntry[]>;
@@ -62,18 +63,11 @@
     if (!eff.enabled) return 'Analysis is disabled (config.yaml → intent_analysis.enabled: false).';
     if (!eff.model) return 'No model selected — defaults apply: the analyst agent file, config.yaml, the run\u2019s model (a ward\u2019s orchestrator model wins whenever a ward hosts the session).';
     const window = eff.context_window ? `${fmtTokens(eff.context_window)} (${sourceLabel(eff.window_source)})` : 'unknown';
-    return `${eff.model} · window ${window} · analyst: full window · packet ~${fmtTokens(eff.packet_tokens)} tokens · ${
+    return `${eff.model} · window ${window} · analyst: full window · ${eff.packet_tokens ? `packet ~${fmtTokens(eff.packet_tokens)} tokens` : 'packet size unknown'} · ${
       eff.trimming ? 'packet would be trimmed to fit' : 'no trimming'
     }`;
   });
 
-  function fmtTokens(n: number | undefined | null): string {
-    const v = Number(n ?? 0);
-    if (!v) return '0';
-    if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-    if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
-    return String(v);
-  }
   function sourceLabel(s: string | undefined): string {
     switch (s) {
       case 'ollama': return 'reported by Ollama';
@@ -229,7 +223,7 @@
             <div><dt>Tokens</dt><dd>{fmtTokens(testResult.tokens_in)} in / {fmtTokens(testResult.tokens_out)} out</dd></div>
             <div><dt>Duration</dt><dd>{testResult.duration_ms} ms</dd></div>
             <div><dt>Attempts</dt><dd>{testResult.attempts}</dd></div>
-            <div><dt>Prompt</dt><dd>~{fmtTokens(testResult.packet_tokens)} tokens · {testResult.trimmed ? 'trimmed to fit' : 'no trimming'}</dd></div>
+            <div><dt>Prompt</dt><dd>{testResult.packet_tokens ? `~${fmtTokens(testResult.packet_tokens)} tokens` : 'size unknown'} · {testResult.trimmed ? 'trimmed to fit' : 'no trimming'}</dd></div>
             {#if testResult.analysis?.primary_intent}
               <div><dt>Decision</dt><dd>{testResult.analysis.primary_intent}{testResult.analysis.complexity ? ` · ${testResult.analysis.complexity}` : ''}{testResult.analysis.approach ? ` · ${testResult.analysis.approach}` : ''}{testResult.analysis.ward_name ? ` · ward ${testResult.analysis.ward_name}` : ''}</dd></div>
             {/if}
