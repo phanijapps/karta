@@ -3,6 +3,7 @@
   import { ArrowUp, Brain, Sparkles, Microscope, FolderOpen, RefreshCw, Info, X } from '@lucide/svelte';
   import { sendChatMessage, streamChatMessage, continueSession } from '../../shared/api/client';
   import { createTimeline } from '../../shared/sse/timeline.svelte';
+  import { renderMarkdown } from '../../shared/markdown/render';
   import type { Sessions } from '../../entities/session/session.svelte';
   import type { ChatMessage } from '../../shared/api/client';
   let { sessions, onresearch }: { sessions: Sessions; onresearch?: () => void } = $props();
@@ -347,7 +348,7 @@
                 <p class="muted">{m.reasoning}</p>
               </details>
             {/if}
-            {m.content}
+            {@html renderMarkdown(m.content ?? '')}
           </article>
         {/each}
       {/each}
@@ -361,7 +362,7 @@
             </details>
           {/if}
           {#if content !== ''}
-            <div class="stream-text">{content}</div>
+            <div class="stream-text">{@html renderMarkdown(content)}</div>
           {:else}
             <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
           {/if}
@@ -442,7 +443,30 @@
   .chat-empty { display: grid; gap: .5rem; justify-items: center; align-content: center; min-height: 50%; text-align: center; }
   .chat-empty h3 { margin: 0; }
   .chat-banner { margin: .5rem 1rem; padding: .6rem 1rem; border-radius: 8px; border: 1px solid var(--ds-color-danger, #e5484d); background: var(--ds-color-danger-soft, oklch(.3 .06 27)); }
-  .bubble { max-width: min(48rem, 90%); padding: .7rem 1rem; border-radius: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: break-word; }
+  .bubble { max-width: min(48rem, 90%); padding: .7rem 1rem; border-radius: 14px; line-height: 1.55; overflow-wrap: break-word; }
+  .bubble.user { white-space: pre-wrap; }
+  /* Rendered markdown inside assistant bubbles */
+  .bubble.assistant :global(> :first-child), .bubble.assistant .stream-text :global(> :first-child) { margin-top: 0; }
+  .bubble.assistant :global(> :last-child), .bubble.assistant .stream-text :global(> :last-child) { margin-bottom: 0; }
+  .bubble.assistant :global(p), .bubble.assistant .stream-text :global(p) { margin: .45rem 0; }
+  .bubble.assistant :global(h1), .bubble.assistant :global(h2), .bubble.assistant :global(h3), .bubble.assistant :global(h4) { margin: .9rem 0 .35rem; font-weight: 600; line-height: 1.3; }
+  .bubble.assistant :global(h1) { font-size: 1.15rem; }
+  .bubble.assistant :global(h2) { font-size: 1.05rem; }
+  .bubble.assistant :global(h3), .bubble.assistant :global(h4) { font-size: .95rem; }
+  .bubble.assistant :global(ul), .bubble.assistant :global(ol) { margin: .4rem 0; padding-left: 1.3rem; }
+  .bubble.assistant :global(li) { margin: .15rem 0; }
+  .bubble.assistant :global(li > p) { margin: .1rem 0; }
+  .bubble.assistant :global(blockquote) { margin: .5rem 0; padding: .2rem .8rem; border-left: 3px solid var(--ds-color-border, #333); color: var(--ds-color-muted, #aaa); }
+  .bubble.assistant :global(code) { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82em; padding: .1rem .3rem; border-radius: 4px; background: var(--ds-color-field, #1a1a1a); }
+  .bubble.assistant :global(pre) { margin: .5rem 0; padding: .6rem .8rem; border-radius: 8px; background: var(--ds-color-field, #1a1a1a); overflow-x: auto; }
+  .bubble.assistant :global(pre code) { padding: 0; background: none; font-size: .78rem; }
+  .bubble.assistant :global(a) { color: var(--accent, var(--ds-color-primary, #6366f1)); text-decoration: underline; text-underline-offset: 2px; }
+  .bubble.assistant :global(a[href^="http"])::after { content: ' ↗'; font-size: .75em; text-decoration: none; }
+  .bubble.assistant :global(table) { border-collapse: collapse; margin: .5rem 0; font-size: .86em; display: block; overflow-x: auto; }
+  .bubble.assistant :global(th), .bubble.assistant :global(td) { border: 1px solid var(--ds-color-border, #333); padding: .25rem .55rem; text-align: left; }
+  .bubble.assistant :global(th) { background: var(--ds-color-hover, #2a2a2a); font-weight: 600; }
+  .bubble.assistant :global(hr) { border: none; border-top: 1px solid var(--ds-color-border, #333); margin: .8rem 0; }
+  .stream-text { white-space: normal; }
   .bubble.user { justify-self: end; background: var(--ds-color-primary, #3b82f6); color: var(--ds-color-on-primary, #fff); border-bottom-right-radius: 4px; }
   .bubble.assistant { justify-self: start; background: var(--ds-color-surface, #1e1e1e); border: 1px solid var(--ds-color-border, #333); border-bottom-left-radius: 4px; }
   .bubble.pending, .bubble.streaming { min-height: 2.5rem; display: grid; align-content: center; }

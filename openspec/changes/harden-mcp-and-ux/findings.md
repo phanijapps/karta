@@ -174,6 +174,19 @@ Spotted on the live view (not yet addressed): assistant content
 renders raw markdown (`**bold**`, `##`) — the chat has no markdown
 renderer; flagged to the operator as the next contained change.
 
+**Markdown rendering (operator go):** assistant bubbles (persisted +
+the live stream) render markdown via `shared/markdown/render.ts` —
+marked (GFM) → DOMPurify. Model output is UNTRUSTED: scripts, event
+handlers, `javascript:` URLs, remote images (tracking/exfil), iframes
+and styles are stripped; links limited to http(s)/mailto with an
+external marker. User bubbles stay verbatim (your own words aren't
+reinterpreted). Playwright pins structure (h2/strong/li/blockquote/
+pre/table/links) AND sanitization (`__pwned` never set; img/script/
+javascript:/onclick gone); axe 0/0 both themes. Bundle +34KB gzip
+(marked + DOMPurify) — lazy-load candidates if it ever matters. Live
+on the operator's AMD brief: bold lead-ins, numbered overhangs,
+blockquoted provenance with inline code.
+
 **task verify: exit 0** — gates + codegen zero drift + lint 0 +
 full suites + budget gates OK (suite 27.3s / 28s — the hardening
 tests' cost trimmed honestly: the echo server builds once per test
