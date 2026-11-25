@@ -121,7 +121,8 @@ func TestBootstrapFirstRunCreatesStructureOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadDir %s: %v", paths.AgentsDir, err)
 	}
-	if len(agents) != 6 {
+	// Six example agents plus the seeded intent analyst.
+	if len(agents) != 7 {
 		t.Fatalf("agents seed count: %d", len(agents))
 	}
 	// The default file parses back as the typed defaults.

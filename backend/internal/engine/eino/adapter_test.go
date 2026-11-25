@@ -974,6 +974,41 @@ func TestDescriptionlessAgentRefusesDelegation(t *testing.T) {
 	}
 }
 
+// intent-analyst-agent: a system-role agent (the intent analyst) is a
+// host-run step — absent from the routing table despite its description,
+// and refused typed at invocation (no child run starts).
+func TestDelegateSkipsSystemAgents(t *testing.T) {
+	t.Parallel()
+	snap := agentSnap()
+	snap.Agents[registry.SystemAgentIntentAnalyst] = registry.AgentSpec{
+		Name: registry.SystemAgentIntentAnalyst, SystemPrompt: "rubric", MaxDepth: 0,
+		Description: "Pre-execution intent analysis — finds hidden intent",
+	}
+	if desc := delegateDescription(snap); strings.Contains(desc, registry.SystemAgentIntentAnalyst) || !strings.Contains(desc, "researcher") {
+		t.Fatalf("routing table must omit the system agent and keep workers: %q", desc)
+	}
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+		"delegate": {
+			{toolCall: "delegate_agent", args: `{"agent":"intent-analyst","task":"analyze this"}`},
+			{content: "recovered"},
+		},
+	}}
+	a := newDelegatingAdapter(t, gen, func() registry.Snapshot { return snap })
+	ch, _ := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "sys-agent", Goal: "delegate analyze", Model: "prov/m1"})
+	var refused bool
+	for evt := range ch {
+		if evt.ToolCall != nil && strings.Contains(evt.ToolCall.Output, "not delegatable") {
+			refused = true
+		}
+	}
+	if !refused {
+		t.Fatal("system agent must refuse delegation at invocation")
+	}
+	if rows, _ := store.QueryChildExecutions(a.st, "sys-agent"); len(rows) != 0 {
+		t.Fatalf("no child run may start for a system agent: %v", rows)
+	}
+}
+
 // P1-3: the PARENT's provider context excludes child transcripts.
 func TestParentContextExcludesChildMessages(t *testing.T) {
 	t.Parallel()

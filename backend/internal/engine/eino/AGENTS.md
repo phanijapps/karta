@@ -28,3 +28,9 @@ checks, and durable-first event emission.
   `delegateTool` composes the `## Active Ward` section onto the
   child's prompt and appends the ward guard to its description while
   hosted.
+- System-role agents (intent-analyst-agent S1): `registry.IsSystemAgent`
+  names host-run steps (the intent analyst). `delegateDescription` omits
+  them from the routing table and `delegateTool.Exec` refuses them typed
+  (`ErrNotDelegatable`) whatever their description — they are never
+  workers, even though they sit in the roster for Settings.
+

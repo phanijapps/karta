@@ -34,3 +34,9 @@ in the dependency graph (nothing here imports registry/eventbus/engine).
   moves entries up one-by-one, never overwriting, hand-move-aware.
 - Skill seeds target `paths.SkillsDir`; prompt seeds stay in
   `config/prompts/` (daemon config, not user skills).
+- The intent analyst (intent-analyst-agent S1) seeds from
+  `seedassets/system-agents/` into `~/.zbot/agents/intent-analyst.md`
+  under its OWN marker (`.intent-analyst-seeded`, `seedIntentAnalyst`
+  runs first in `seedExamples`): homes already marked by the roster
+  change receive it on upgrade exactly once; afterwards edits and
+  deletions stick like every other seed.

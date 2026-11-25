@@ -346,3 +346,55 @@ func TestPersonaV2UpgradeMarkedHome(t *testing.T) {
 		t.Fatalf("post-marker edit clobbered: %q", got)
 	}
 }
+
+// The intent analyst seeds under its OWN marker: a home already marked
+// by the roster change receives it on upgrade exactly once, and an edit
+// or deletion after that is final.
+func TestSeedIntentAnalystOnce(t *testing.T) {
+	home, paths := tempHome(t)
+	// A pre-analyst home: the roster marker already present, no analyst.
+	if err := os.MkdirAll(paths.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, exampleRosterMarker), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, personaSeedV2Marker), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Bootstrap(context.Background(), paths); err != nil {
+		t.Fatalf("upgrade Bootstrap: %v", err)
+	}
+	seeded := filepath.Join(paths.AgentsDir, "intent-analyst.md")
+	raw, err := os.ReadFile(seeded)
+	if err != nil {
+		t.Fatalf("analyst not seeded on a marked home: %v", err)
+	}
+	for _, want := range []string{"name: intent-analyst", "tools: []", "max_depth: 0", "prompt: intent-analysis", "display_name: Intent Analyst"} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("seed lacks %q:\n%s", want, raw)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, intentAnalystSeedMarker)); err != nil {
+		t.Fatalf("analyst marker missing: %v", err)
+	}
+	// An edit survives; a deletion sticks.
+	if err := os.WriteFile(seeded, []byte("---\nname: intent-analyst\ndescription: mine\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Bootstrap(context.Background(), paths); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(seeded); !strings.Contains(string(got), "mine") {
+		t.Fatalf("analyst edit overwritten: %q", got)
+	}
+	if err := os.Remove(seeded); err != nil {
+		t.Fatal(err)
+	}
+	if err := Bootstrap(context.Background(), paths); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(seeded); !os.IsNotExist(err) {
+		t.Fatal("post-marker deletion resurrected the analyst")
+	}
+}

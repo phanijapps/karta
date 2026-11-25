@@ -66,8 +66,25 @@ func TestSeedAgentsDecode(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("load errors over a fresh home: %+v", errs)
 	}
-	if len(snap.Agents) != len(wantSeededAgents) {
-		t.Fatalf("agent count: %d want %d (%+v)", len(snap.Agents), len(wantSeededAgents), snap.Agents)
+	// The example roster plus the seeded system agent (the intent analyst).
+	if len(snap.Agents) != len(wantSeededAgents)+1 {
+		t.Fatalf("agent count: %d want %d (%+v)", len(snap.Agents), len(wantSeededAgents)+1, snap.Agents)
+	}
+	analyst, ok := snap.Agents[registry.SystemAgentIntentAnalyst]
+	if !ok {
+		t.Fatalf("the intent analyst must be seeded: %+v", snap.Agents)
+	}
+	if analyst.Tools == nil || len(analyst.Tools) != 0 {
+		t.Fatalf("analyst tools must be an explicit empty list: %#v", analyst.Tools)
+	}
+	if analyst.MaxDepth != 0 || analyst.Model != "" || analyst.Prompt != "intent-analysis" || analyst.Description == "" || analyst.DisplayName != "Intent Analyst" {
+		t.Fatalf("analyst spec: %+v", analyst)
+	}
+	if _, err := os.Stat(filepath.Join(paths.ConfigDir("prompts"), analyst.Prompt+".md")); err != nil {
+		t.Fatalf("the analyst references prompt %q which must be seeded: %v", analyst.Prompt, err)
+	}
+	if !registry.IsSystemAgent(analyst.Name) {
+		t.Fatal("the analyst must be a system agent")
 	}
 	if len(snap.Skills) != len(wantSeededSkills) {
 		t.Fatalf("skill count: %d want %d", len(snap.Skills), len(wantSeededSkills))

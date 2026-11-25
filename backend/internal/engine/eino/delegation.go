@@ -47,11 +47,12 @@ func agentList(snap registry.Snapshot) string {
 }
 
 // delegateDescription builds the delegate tool's description: the routing
-// table of delegatable agents (description required to be offered).
+// table of delegatable agents (description required to be offered;
+// system-role agents are host-run steps and never listed).
 func delegateDescription(snap registry.Snapshot) string {
 	names := make([]string, 0, len(snap.Agents))
 	for n, spec := range snap.Agents {
-		if spec.Description != "" {
+		if spec.Description != "" && !registry.IsSystemAgent(n) {
 			names = append(names, n)
 		}
 	}
@@ -114,9 +115,11 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 	if !ok {
 		return tools.Result{Err: fmt.Errorf("delegate_agent: %w %q (configured: %s)", ErrUnknownAgent, args.Agent, agentList(d.snap))}
 	}
-	if spec.Description == "" {
+	if spec.Description == "" || registry.IsSystemAgent(args.Agent) {
 		// Not offered for delegation: the description IS the eligibility
-		// contract (routing table and invocation agree).
+		// contract (routing table and invocation agree); a system-role
+		// agent (the intent analyst) is a host-run step whatever its
+		// description says.
 		return tools.Result{Err: fmt.Errorf("delegate_agent: %w %q (no description; usable via goal requests only)", ErrNotDelegatable, args.Agent)}
 	}
 	child := runInput{

@@ -19,17 +19,17 @@
 
 ## 2. Model limits (providers + store)
 
-- [ ] 2.1 `providers.Model{ID, ContextWindow}`; `Client.DiscoverWindows`
+- [x] 2.1 `providers.Model{ID, ContextWindow}`; `Client.DiscoverWindows`
   (native root = base_url minus `/v1`; `/api/version` gate; per-model
   `/api/show` → `model_info.*.context_length`; 10s bound). Verify:
   httptest `TestDiscoverWindowsOllama` + `TestDiscoverWindowsNonOllama`.
-- [ ] 2.2 Limits table: built-in entries + `model_limits.yaml` (prefix →
+- [x] 2.2 Limits table: built-in entries + `model_limits.yaml` (prefix →
   window, longest wins, file overrides); reserved stem skipped by
   `loadProviderFiles`, rejected by `ValidManagedName`; loaded in
   `reloadLocked`; `ResolveWindow` chain + `FallbackContextWindow`.
   Verify: `TestLimitsFileOverridesBuiltIn`, `TestResolveWindowChain`,
   `TestModelLimitsStemReserved`.
-- [ ] 2.3 Catalog: `Lookup(provider, id)`, windows through `Set/LoadEntry`,
+- [x] 2.3 Catalog: `Lookup(provider, id)`, windows through `Set/LoadEntry`,
   server discovery paths call `DiscoverWindows` before `Set`; store
   persists `[{id, context_window}]` and decodes legacy string lists.
   Verify: `TestCatalogCarriesWindows`, `TestCatalogPersistsWindowsRoundTrip`,
@@ -41,10 +41,10 @@
 
 ## 3. The intent-analyst agent
 
-- [ ] 3.1 `registry.IsSystemAgent` (reserved `intent-analyst`); engine
+- [x] 3.1 `registry.IsSystemAgent` (reserved `intent-analyst`); engine
   `delegateDescription` + `Exec` skip system agents (typed
   `ErrNotDelegatable`). Verify: `TestDelegateSkipsSystemAgents`.
-- [ ] 3.2 Seed `seedassets/agents/intent-analyst.md` (frontmatter: name,
+- [x] 3.2 Seed `seedassets/agents/intent-analyst.md` (frontmatter: name,
   description, display_name, model "", tools [], max_depth 0, prompt
   intent-analysis; body = override note) under marker
   `.intent-analyst-seeded` in `seedExamples`. Verify:

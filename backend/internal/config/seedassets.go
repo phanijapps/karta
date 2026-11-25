@@ -17,8 +17,25 @@ import (
 // skill seeds tuned from the operator's ~/Documents/zbot set. Seeded
 // write-once — user-owned after first write.
 //
-//go:embed seedassets/agents seedassets/skills seedassets/prompts
+//go:embed seedassets/agents seedassets/skills seedassets/prompts seedassets/system-agents
 var seedFS embed.FS
+
+// intentAnalystSeedMarker gates the one-time intent-analyst seed
+// (intent-analyst-agent S1): its OWN marker, separate from the example
+// roster's, so homes already marked by the roster change receive the
+// analyst on upgrade exactly once; afterwards edits and deletions stick.
+const intentAnalystSeedMarker = ".intent-analyst-seeded"
+
+// seedIntentAnalyst publishes the system agent once per home.
+func seedIntentAnalyst(ctx context.Context, paths Paths) error {
+	if paths.AgentsDir == "" || markerExists(paths.Home, intentAnalystSeedMarker) {
+		return nil // no destination wired (unit helpers) / already seeded
+	}
+	if err := seedAsset(ctx, filepath.Join(paths.AgentsDir, "intent-analyst.md"), "seedassets/system-agents/intent-analyst.md"); err != nil {
+		return err
+	}
+	return dropMarker(filepath.Join(paths.Home, intentAnalystSeedMarker))
+}
 
 // seedExamples seeds the example roster: agents into agents/, skills
 // into the top-level skills/ root (relocate-skills-hooks). Every file is published
@@ -26,6 +43,11 @@ var seedFS embed.FS
 // edit, a concurrent writer) is left untouched, and the seedRoster
 // marker keeps deleted examples from resurrecting.
 func seedExamples(ctx context.Context, paths Paths) error {
+	// The system agent first: it must land even when the roster/persona
+	// branches below return early on an already-marked home.
+	if err := seedIntentAnalyst(ctx, paths); err != nil {
+		return err
+	}
 	// Agents+skills ride the roster marker (seed-operator-roster):
 	// one marker written after BOTH walks, so the pair seeds as a unit.
 	if markerExists(paths.Home, exampleRosterMarker) {

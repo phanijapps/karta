@@ -60,3 +60,9 @@ imports config.
   `Watch`, `CreateMCP`/`UpdateMCP`/`DeleteMCP`,
   `CreateSkill`/`UpdateSkill`/`DeleteSkill`/`SkillDetail`.
 - Schedules (schedules kind): cron-expressed goal runs under config/schedules — loader + CRUD in schedules.go; capacity 128
+- System-role agents (`system.go`): `IsSystemAgent` holds the reserved
+  host-run names (`intent-analyst`). They are ordinary roster entries
+  (Settings lists them; the file is user-owned) but the engine never
+  offers them for delegation and the intent wrapper never lists them in
+  its own catalog packet.
+
