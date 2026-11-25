@@ -216,7 +216,7 @@ A `use_existing` recommendation must match exactly one real ward directory; else
 
 | Slice | Covers | Size | Why this order |
 |---|---|---|---|
-| **S1 — Analyst agent + model limits** | G1, G2, G17, §3.2, §3.4 | M | Your two gaps; limits = the selected model's window (Ollama-discovered / table / 32k fallback), no pruning; the card shows them + a Test button |
+| **S1 — Analyst agent + model limits** ✅ shipped (`intent-analyst-agent`, 2026-11-25) | G1, G2, G17, §3.2, §3.4 | M | Your two gaps; limits = the selected model's window (Ollama-discovered / table / 32k fallback), no pruning; the card shows them + a Test button. One recorded deviation from §3.4's "max_tokens = window": a provider that rejects the full-window request (output cap below the window) is retried once without `max_tokens` (design D5) |
 | **S2 — Contract v2 + the packet handed over** | G3–G6, G12, §3.1, §3.3 (packet + Plan + events) | L | The biggest quality lift: the orchestrator finally gets what the analyst saw |
 | **S3 — Orchestrator wiring** | G7–G11, G15, G16, §3.3 (MCP grants, budget, ward canonicalization, warm-ward path) | M | Depends on S2's contract |
 | **S4 — Provider modes + adaptive confidence** | G13, G14, §3.5, adaptive half of §3.7 | S | When a local analyst model is in play |

@@ -101,18 +101,18 @@
 
 ## 7. Frontend
 
-- [ ] 7.1 `client.ts`: `getIntentAnalysis`, `putIntentAnalysis`,
+- [x] 7.1 `client.ts`: `getIntentAnalysis`, `putIntentAnalysis`,
   `testIntentAnalysis` + types; timeline store listens to the four
   kinds; `Chat.svelte` applies live analysis on terminal kinds; Task
   Analysis card shows tokens/ms when present. Verify: `pnpm check`.
-- [ ] 7.2 `IntentAnalysisCard.svelte` (picker with windows, derivation
+- [x] 7.2 `IntentAnalysisCard.svelte` (picker with windows, derivation
   line, Test analysis result) mounted in `Advanced.svelte`. Verify:
   `pnpm check` + `pnpm build`; a Test against the dev stack renders
   tokens/ms/attempts. Phase gate (gpt-6.1-sol): fix P0/P1.
 
 ## 8. Documents
 
-- [ ] 8.1 `docs/product/product-context.md` (the analyst agent, model-
+- [x] 8.1 `docs/product/product-context.md` (the analyst agent, model-
   derived limits, the card), plan §4 slice table (S1 done), delete
   `docs/SESSION-HANDOFF.md` (read-and-delete). Verify: docs mention the
   card and the four kinds; handoff gone.
