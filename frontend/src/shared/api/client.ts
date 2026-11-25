@@ -980,32 +980,11 @@ export async function getModelCatalog(): Promise<ModelCatalog> {
 }
 
 // --- Intent analysis settings (Settings → Advanced → Intent Analysis) ---
-
-/** The daemon-managed intent-analysis.json. No token knobs — limits
- *  derive from the selected model (see IntentAnalysisEffective). */
-export type IntentAnalysisSettings = {
-  provider?: string;
-  model?: string;
-  reasoning_effort?: string;
-  deadline_seconds?: number;
-  max_attempts?: number;
-};
-
-/** The read-only derivation for the selected model. */
-export type IntentAnalysisEffective = {
-  model: string;
-  enabled: boolean;
-  context_window?: number;
-  window_source?: 'ollama' | 'table' | 'fallback';
-  output_reserve: number;
-  packet_tokens: number;
-  trimming: boolean;
-};
-
-export type IntentAnalysisStatus = {
-  settings: IntentAnalysisSettings;
-  effective: IntentAnalysisEffective;
-};
+// Types alias the generated schemas (contract-checked, never hand-rolled).
+export type IntentAnalysisSettings = components["schemas"]["IntentAnalysisSettings"];
+export type IntentAnalysisEffective = components["schemas"]["IntentAnalysisEffective"];
+export type IntentAnalysisStatus = components["schemas"]["IntentAnalysisStatus"];
+export type IntentAnalysisTestResult = components["schemas"]["IntentAnalysisTestResult"];
 
 export async function getIntentAnalysis(): Promise<IntentAnalysisStatus> {
   const res = await fetch("/api/intent-analysis");
@@ -1032,21 +1011,6 @@ export async function putIntentAnalysis(
 
 /** One Test-analysis probe: the real decision with its cost. A failed
  *  analysis resolves (status "failed" + reason) rather than rejecting. */
-export type IntentAnalysisTestResult = {
-  status: 'analyzed' | 'failed';
-  reason?: string;
-  model?: string;
-  context_window?: number;
-  window_source?: 'ollama' | 'table' | 'fallback';
-  attempts: number;
-  tokens_in: number;
-  tokens_out: number;
-  duration_ms: number;
-  trimmed: boolean;
-  packet_tokens: number;
-  analysis?: IntentAnalysisPayload;
-};
-
 export async function testIntentAnalysis(goal?: string): Promise<IntentAnalysisTestResult> {
   const res = await fetch("/api/intent-analysis/test", {
     method: "POST",
@@ -1060,10 +1024,6 @@ export async function testIntentAnalysis(goal?: string): Promise<IntentAnalysisT
   }
   return res.json();
 }
-
-/** The terminal analysis kinds (the card renders these; `analysis_started`
- *  only feeds the work stream). */
-export const ANALYSIS_TERMINAL_KINDS = ['analysis_completed', 'analysis_bypassed', 'analysis_failed'] as const;
 
 /** One streamed chat fragment (volatile — the terminal exchange is the truth). */
 export interface ChatStreamDelta {

@@ -1,11 +1,12 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { ArrowUp, Brain, Sparkles, Microscope, FolderOpen, RefreshCw, Info, X } from '@lucide/svelte';
-  import { sendChatMessage, streamChatMessage, continueSession, ANALYSIS_TERMINAL_KINDS } from '../../shared/api/client';
+  import { sendChatMessage, streamChatMessage, continueSession } from '../../shared/api/client';
+  import { costText, fmtTokens, isTerminalAnalysisKind } from '../../entities/timeline-event/analysisText';
   import { createTimeline } from '../../shared/sse/timeline.svelte';
   import { renderMarkdown } from '../../shared/markdown/render';
   import type { Sessions } from '../../entities/session/session.svelte';
-  import type { ChatMessage } from '../../shared/api/client';
+  import type { ChatMessage, IntentAnalysisPayload } from '../../shared/api/client';
   let { sessions, onresearch }: { sessions: Sessions; onresearch?: () => void } = $props();
   let draft = $state('');
   let sending = $state(false);
@@ -53,9 +54,19 @@
   // Live analysis: the terminal SSE analysis_* events render the card
   // the moment the decision lands (mid-run), not at completion. The
   // started event only feeds the work stream.
+  // Each event is handled once: a replayed OLD terminal event must not
+  // release the pending state of a NEW run (the effect re-runs on every
+  // push and re-iterates the whole list).
+  const handledAnalysis = new Set<string>();
+  // Pending from send start until this run's terminal analysis lands —
+  // the chip shows "Analyzing…" instead of the previous decision.
+  let analysisPending = $state(false);
   $effect(() => {
     for (const ev of timeline.events) {
-      if ((ANALYSIS_TERMINAL_KINDS as readonly string[]).includes(ev.kind) && ev.intentAnalysis) {
+      if (handledAnalysis.has(ev.id)) continue;
+      handledAnalysis.add(ev.id);
+      if (isTerminalAnalysisKind(ev.kind) && ev.intentAnalysis) {
+        analysisPending = false;
         sessions.applyLiveAnalysis(ev.intentAnalysis as Record<string, unknown>);
       }
     }
@@ -105,7 +116,8 @@
   // trigger ref for focus return on close.
   let analysisOpen = $state(false);
   let analysisTrigger = $state<HTMLButtonElement | null>(null);
-  const analysisAvailable = $derived(isResearch && sessions.analysis !== null && !['bypassed', 'started'].includes((sessions.analysis as Record<string, any>).status));
+  const analysisAvailable = $derived(isResearch && !analysisPending && sessions.analysis !== null && !['bypassed', 'started'].includes((sessions.analysis as Record<string, any>).status));
+  const analysisCost = $derived(costText((sessions.analysis ?? {}) as Partial<IntentAnalysisPayload>));
   $effect(() => {
     if (analysisOpen) void tick().then(() => document.getElementById('analysis-popover')?.focus());
   });
@@ -119,66 +131,13 @@
   /** Delegations from assistant tool-call intents: agent + task pairs
    * (the delegation roster; results close them). */
 
-  /** 1200 → "1.2k"; 1048576 → "1.0M" — token counts stay short in rows. */
-  function fmtTokens(n: number | undefined | null): string {
-    const v = Number(n ?? 0);
-    if (!v) return '0';
-    if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-    if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
-    return String(v);
-  }
-
-  /** Render one live Timeline event as a work-stream row (null =
-   * filtered noise). */
-  function workRow(ev: { kind: string; text: string; intentAnalysis?: unknown }): {
-    icon: string; kind: string; text: string; tone: string; more?: string;
-  } | null {
-    const clamp = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s);
-    switch (ev.kind) {
-      case 'analysis_started': {
-        const ia = (ev.intentAnalysis ?? {}) as Record<string, any>;
-        return {
-          icon: '🔬', tone: 'analysis', kind: 'analysis',
-          text: `analysis started${ia.model ? ` · ${ia.model}` : ''}${ia.context_window ? ` · window ${fmtTokens(ia.context_window)}` : ''}`,
-        };
-      }
-      case 'analysis_completed': {
-        const ia = (ev.intentAnalysis ?? {}) as Record<string, any>;
-        const cost = ia.tokens_in || ia.tokens_out ? ` · ${fmtTokens(ia.tokens_in)} in / ${fmtTokens(ia.tokens_out)} out · ${ia.duration_ms} ms${ia.attempts > 1 ? ` · ${ia.attempts} attempts` : ''}` : '';
-        return {
-          icon: '🔬', tone: 'analysis', kind: 'analysis',
-          text: ia.primary_intent ? `${ia.primary_intent} · ${ia.complexity ?? '?'} · budget ${ia.step_budget ?? '?'}${cost}` : 'analysis complete',
-        };
-      }
-      case 'analysis_bypassed':
-      case 'analysis_failed': {
-        const ia = (ev.intentAnalysis ?? {}) as Record<string, any>;
-        return { icon: '🔬', tone: 'system', kind: 'analysis', text: clamp(`${ev.kind === 'analysis_bypassed' ? 'analysis bypassed' : 'analysis failed'}${ia.reason ? ` · ${ia.reason}` : ''}`, 200) };
-      }
-      case 'agent_step':
-        if (!ev.text) return null;
-        if (ev.text.startsWith('engine:')) return { icon: '⚙', tone: 'system', kind: 'engine', text: clamp(ev.text, 160) };
-        if (ev.text.startsWith('Pre-execution')) return null;
-        return { icon: '🧠', tone: 'step', kind: 'step', text: clamp(ev.text, 240) };
-      case 'tool_call':
-        return { icon: '🔧', tone: 'tool', kind: 'tool', text: ev.text || 'tool', more: undefined };
-      case 'delegation':
-        return { icon: '👥', tone: 'delegation', kind: 'delegated', text: clamp(ev.text, 160) };
-      case 'session':
-        if (ev.text === 'run completed' || ev.text.startsWith('goal:')) return null;
-        return { icon: '•', tone: 'system', kind: 'run', text: clamp(ev.text, 120) };
-      case 'chitta_tool_invoked':
-        return { icon: '🧬', tone: 'tool', kind: 'memory', text: clamp(ev.text, 120) };
-      default:
-        return null;
-    }
-  }
 
 
   async function send() {
     const text = draft.trim();
     if (!text || sending) return;
     sending = true;
+    if (isResearch) analysisPending = true;
     streaming = true;
     reasoning = '';
     content = '';
@@ -331,11 +290,11 @@
             {#if (sessions.analysis as Record<string, any>).model}
               <div><dt>Model</dt><dd>{(sessions.analysis as Record<string, any>).model}</dd></div>
             {/if}
-            {#if (sessions.analysis as Record<string, any>).tokens_in || (sessions.analysis as Record<string, any>).tokens_out}
-              <div><dt>Cost</dt><dd>{fmtTokens((sessions.analysis as Record<string, any>).tokens_in)} in / {fmtTokens((sessions.analysis as Record<string, any>).tokens_out)} out · {(sessions.analysis as Record<string, any>).duration_ms} ms · {(sessions.analysis as Record<string, any>).attempts} attempt(s)</dd></div>
+            {#if analysisCost}
+              <div><dt>Cost</dt><dd>{analysisCost}</dd></div>
             {/if}
             {#if (sessions.analysis as Record<string, any>).context_window}
-              <div><dt>Window</dt><dd>{fmtTokens((sessions.analysis as Record<string, any>).context_window)} ({(sessions.analysis as Record<string, any>).window_source}){(sessions.analysis as Record<string, any>).trimmed ? ' · packet trimmed to fit' : ''}</dd></div>
+              <div><dt>Window</dt><dd>{fmtTokens((sessions.analysis as Record<string, any>).context_window)}{(sessions.analysis as Record<string, any>).window_source ? ` (${(sessions.analysis as Record<string, any>).window_source})` : ''}{(sessions.analysis as Record<string, any>).trimmed ? ' · packet trimmed to fit' : ''}</dd></div>
             {/if}
           </dl>
           {#if (sessions.analysis as Record<string, any>).recommended_skills?.length || (sessions.analysis as Record<string, any>).dropped?.length}

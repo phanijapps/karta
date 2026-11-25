@@ -38,12 +38,16 @@
           ? 'Configured'
           : loading
             ? 'Loading…'
-            : 'Inherits the run model',
+            : 'Uses model defaults',
   );
   const badgeTone = $derived<'ok' | 'warn' | ''>(
     connected === false || (eff && !eff.enabled) ? 'warn' : selected ? 'ok' : '',
   );
-  const summary = $derived(selected ? `${provider} · ${model}` : '');
+  // The collapsed summary only shows a selection the daemon confirmed.
+  const summary = $derived(connected === true && !dirty && selected ? `${provider} · ${model}` : '');
+  // The probe runs the SAVED selection: a dirty picker is not what it
+  // would test.
+  const canTest = $derived(connected === true && eff?.enabled === true && !dirty && !saving && !testing);
   const advanced = $derived(() => {
     const s = status?.settings;
     const parts: string[] = [];
@@ -56,7 +60,7 @@
   const derivation = $derived.by<string>(() => {
     if (!eff) return '';
     if (!eff.enabled) return 'Analysis is disabled (config.yaml → intent_analysis.enabled: false).';
-    if (!eff.model) return 'No model selected — the run\u2019s model analyzes (the ward\u2019s orchestrator model when a ward hosts the session).';
+    if (!eff.model) return 'No model selected — defaults apply: the analyst agent file, config.yaml, the run\u2019s model (a ward\u2019s orchestrator model wins whenever a ward hosts the session).';
     const window = eff.context_window ? `${fmtTokens(eff.context_window)} (${sourceLabel(eff.window_source)})` : 'unknown';
     return `${eff.model} · window ${window} · analyst: full window · packet ~${fmtTokens(eff.packet_tokens)} tokens · ${
       eff.trimming ? 'packet would be trimmed to fit' : 'no trimming'
@@ -111,6 +115,7 @@
       status = await putIntentAnalysis({ provider, model });
       saved = true;
       dirty = false;
+      testResult = null; // a result for the previous selection no longer applies
     } catch (e) {
       error = e instanceof Error ? e.message : 'Save failed';
     } finally {
@@ -134,6 +139,14 @@
   function onProviderChange() {
     model = '';
     dirty = true;
+    saved = false;
+    testResult = null;
+  }
+
+  function onModelChange() {
+    dirty = true;
+    saved = false;
+    testResult = null;
   }
 
   $effect(() => {
@@ -166,7 +179,7 @@
         </select>
       </label>
       <label>Model
-        <select bind:value={model} onchange={() => (dirty = true)}>
+        <select bind:value={model} onchange={onModelChange}>
           <option value="" disabled>Select model</option>
           {#each models[provider] ?? [] as m}
             <option value={m.id}>{m.id}{m.context_window ? ` · ${fmtTokens(m.context_window)}` : ''}</option>
@@ -189,7 +202,7 @@
     </p>
 
     {#if error}<p class="muted" role="alert" style="color:var(--ds-color-danger)">{error}</p>{/if}
-    {#if saved}<p class="muted" role="status" style="color:var(--ds-color-success)">Saved — the next research run analyzes with this model.</p>{/if}
+    {#if saved}<p class="muted" role="status" style="color:var(--ds-color-success)">Saved — the next research run analyzes with this model unless a ward's orchestrator model overrides it.</p>{/if}
     <div class="actions">
       <button class="primary" onclick={() => void save()} disabled={saving || !selected || (!dirty && !saved)}>Save changes</button>
       {#if dirty}<button class="secondary" onclick={() => void load()}>Discard</button>{/if}
@@ -197,12 +210,12 @@
 
     <section class="test" aria-labelledby="intent-test-heading">
       <h4 id="intent-test-heading" class="test-title"><FlaskConical size={14} aria-hidden="true" /> Test analysis</h4>
-      <p class="muted small">Runs one real decision with the selected model and reports its cost. Nothing is executed and no session is created.</p>
+      <p class="muted small">Runs one real decision with the saved selection and reports its cost. Nothing is executed and no session is created.{dirty ? ' Save changes before testing.' : ''}</p>
       <label class="test-goal">Goal (optional)
         <input bind:value={testGoal} placeholder="Leave empty for a sample research goal" maxlength="8192" />
       </label>
       <div class="actions">
-        <button class="secondary" onclick={() => void runTest()} disabled={testing || !eff?.enabled}>{testing ? 'Analyzing…' : 'Test analysis'}</button>
+        <button class="secondary" onclick={() => void runTest()} disabled={!canTest}>{testing ? 'Analyzing…' : 'Test analysis'}</button>
       </div>
       {#if testResult}
         <div class="test-result" role="status">

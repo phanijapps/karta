@@ -26,9 +26,19 @@ only while the code persisted it since the base engine layer — the
 model-catalog delta in this change now states the real behavior
 (persisted, restored at startup).
 
-## Frontend phase gate (gpt-6.1-sol)
+## Frontend phase gate (gpt-6.1-sol) — round 1
 
-Pending.
+No P0/P1. Seven P2s, all fixed:
+
+| # | Finding | Resolution |
+|---|---|---|
+| 1 | The four new `workRow` cases in Chat.svelte were dead code — the Work tab renders from ContextPanel's own timeline subscription (ward transitions only). | **Fixed**: a pure `entities/timeline-event/analysisText.ts` formatter; ContextPanel renders a "Task analysis" section (started → terminal, with cost); the dead `workRow` removed. Playwright asserts the rows. |
+| 2 | A second run kept showing the previous decision — no pending state; durable replay could re-apply the old terminal event. | **Fixed**: `analysisPending` from send start until THIS run's terminal event; events handled once (id set) so a replayed old terminal event cannot release the pending state. Playwright: "a second run in an analyzed session shows Analyzing…". |
+| 3 | Test probed the SAVED model while the picker showed a dirty draft. | **Fixed**: Test disabled while dirty/saving; copy says "saved selection · Save changes before testing"; the result clears when the selection changes. |
+| 4 | Popover Cost/Window rows interpolated missing fields and hid a real zero usage. | **Fixed**: presence-based `costText` (shared formatter); zero counts render. |
+| 5 | "Inherits the run model" copy contradicted the precedence chain. | **Fixed**: badge "Uses model defaults"; the derivation names the chain and the ward override; the saved note qualifies the ward override. |
+| 6 | A failed reload left a stale selection in the collapsed card beside "Daemon unreachable". | **Fixed**: the summary shows only a daemon-confirmed, non-dirty selection; Test/save gated on `connected`. |
+| 7 | The four new API types were hand-written duplicates of contract schemas. | **Fixed**: `components["schemas"][...]` aliases in client.ts. |
 
 ## Final reviewer pass
 

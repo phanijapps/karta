@@ -458,6 +458,39 @@ test('a live research run shows its latest thinking in the thread; the analysis 
   await expect(popover).toContainText('1.2k in / 180 out');
   await expect(popover).toContainText('900 ms');
   await expect(popover).toContainText('zai/glm-5.3-flash');
+  // The Work tab carries the analyst's trail with the decision's cost.
+  const work = page.getByRole('tabpanel', { name: 'Work' });
+  await expect(work.getByRole('region', { name: 'Task analysis' })).toContainText('Analysis started · zai/glm-5.3-flash');
+  await expect(work.getByRole('region', { name: 'Task analysis' })).toContainText('nvda-check · M · budget 8 · 1.2k in / 180 out · 900 ms · 1 attempt');
+});
+
+test('a second run in an analyzed session shows Analyzing… instead of the stale decision', async ({ page }) => {
+  await mockBase(page);
+  await mockSessions(page);
+  await mockTranscripts(page);
+  await mockStates(page); // the session state carries the previous analysis
+  await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
+    if (route.request().method() === 'GET') return route.fallback();
+    return new Promise(() => {}); // the run never completes
+  });
+  // The replayed stream carries the OLD terminal event (durable replay) and
+  // then the NEW run's started event — never the new decision.
+  await page.route((url) => url.pathname === '/api/sessions/r-stock/events', (route) => {
+    const frames = [
+      'event: analysis_completed\ndata: ' + JSON.stringify({ id: 'old', kind: 'analysis_completed', text: 't', intent_analysis: { status: 'analyzed', primary_intent: 'comparative-research', complexity: 'M', step_budget: 8, approach: 'graph' } }),
+      'event: analysis_started\ndata: ' + JSON.stringify({ id: 'new', kind: 'analysis_started', text: 's', intent_analysis: { status: 'started', model: 'zai/glm-5.3-flash' } }),
+    ].join('\n\n') + '\n\n';
+    return route.fulfill({ status: 200, contentType: 'text/event-stream', body: frames });
+  });
+  await page.goto('/');
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row').click();
+  await expect(page.locator('.analysis-chip')).toContainText('comparative-research');
+  await page.getByLabel('Research question').fill('second run');
+  await page.getByLabel('Research question').press('Enter');
+  // The stale decision hides behind the pending state for the whole run —
+  // even though the replay re-delivers the OLD terminal event.
+  await expect(page.locator('.analysis-chip')).toContainText('Analyzing');
+  await expect(page.locator('.analysis-chip')).not.toContainText('comparative-research');
 });
 
 test('leaving a ward: the strip offers Leave (non-warden), clears the binding, focus returns to the composer', async ({ page }) => {

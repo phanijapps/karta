@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { X, FolderOpen, Layers, Users, ListTree } from '@lucide/svelte';
+  import { X, FolderOpen, Layers, Users, ListTree, Microscope } from '@lucide/svelte';
   import { getWard, type Ward } from '../shared/api/client';
   import type { Sessions } from '../entities/session/session.svelte';
   import WorkSteps from '../features/chat-stream/WorkSteps.svelte';
   import { createTimeline } from '../shared/sse/timeline.svelte';
+  import { analysisText, isAnalysisKind } from '../entities/timeline-event/analysisText';
 
   // FSD note: the app layer composes features — importing the step view
   // here is app → features (allowed), not a cross-feature import.
@@ -33,6 +34,17 @@
     const out: { id: string; text: string }[] = [];
     for (const ev of live.events) {
       if (ev.kind === 'ward_entered' || ev.kind === 'ward_created') out.push({ id: ev.id, text: ev.text });
+    }
+    return out;
+  });
+  // The intent analyst's trail (analysis_started → one terminal event,
+  // with the decision's cost) — the run's first observable steps.
+  const analysisLines = $derived.by(() => {
+    const out: { id: string; kind: string; text: string }[] = [];
+    for (const ev of live.events) {
+      if (!isAnalysisKind(ev.kind)) continue;
+      const text = analysisText(ev);
+      if (text) out.push({ id: ev.id, kind: ev.kind, text });
     }
     return out;
   });
@@ -162,6 +174,13 @@
             <WorkSteps messages={turn.rows} liveTurnId={turn.live ? liveTurnId : undefined} />
           </section>
         {/each}
+        {#if analysisLines.length}
+          <section class="work-turn" aria-label="Task analysis">
+            {#each analysisLines as a (a.id)}
+              <p class="ward-line analysis-line" class:failed={a.kind === 'analysis_failed'}><Microscope size={12} aria-hidden="true" /> {a.text}</p>
+            {/each}
+          </section>
+        {/if}
         {#if wardLines.length}
           <section class="work-turn" aria-label="Ward transitions">
             {#each wardLines as w (w.id)}
