@@ -39,6 +39,12 @@ Wails shell, the recorded P2s in `docs/product/backlog.md`.
 
 ## Two plans on the table (read both, pick the next slice)
 
+**Shipped since the last handoff:** `intent-analyst-agent` (S1),
+`intent-analysis-detail`, `intent-analysis-test-detail`, and
+`run-legibility` (L1+L2+L3) — all archived 2026-11-25, verify-green.
+Next candidates: **S2** (contract v2 + packet handover + Plan events —
+the mockup's Plan row), then L2's follow-ups/S3.
+
 - `docs/architecture/run-legibility-plan.md` — the INR run review
   (2026-11-25): delegation is invisible on the wire (SSE drops `agent`,
   durable rows lose it, ChatMessage has no agent/exec), sub-agent

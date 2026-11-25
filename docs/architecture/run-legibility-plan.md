@@ -110,6 +110,14 @@ is the first one.
 
 ## 5. Slices
 
+**L1 + L2 + L3 shipped 2026-11-25** (`run-legibility`, archived):
+attribution on every row and frame, report cards vs THE answer,
+Thinking/Narration, delegation lifecycle events with cost, the
+attributed Work tab with delegation cards and the session footer. The
+Plan row arrives with S2. Remaining from this document: the duplicate
+report is still stored (hidden behind a reference line) — dedupe needs
+reference expansion in the root's context builder (S3's context work).
+
 | Slice | Covers | Size | Why this order |
 |---|---|---|---|
 | **L1 — Attribution** | R1, R2, R3 | M | Contract (SSE `agent`/`execution_id`, ChatMessage `agent`/`execution_id`), adapter + SSE + store, thread cards, Work tab labels. The single biggest legibility gain; no model change. |
