@@ -57,3 +57,6 @@ identity fields.
 
 `ResolveVaultRoot`, `DefaultVaultRoot`, `Bootstrap`, `Open` →
 `(*Vault).Index()` / `(*Vault).Detail(name)`; `ParseConf`; `Lint`.
+
+- `Conf.Raw` (yaml:"-") carries the parsed conf's source text — the
+  hosting digest fingerprints it so any external edit is detectable.

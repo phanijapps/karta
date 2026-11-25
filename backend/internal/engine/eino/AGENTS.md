@@ -21,3 +21,10 @@ checks, and durable-first event emission.
   leave-ward so the next run starts unhosted (wired via the server's
   `SetWardDropper`). Tool-call bus events carry `Text` = tool name
   (every SSE consumer renders it).
+
+- Ward events (add-ward-hosting): the per-session host's transition
+  observer → `emitWardEvent` persists `ward_entered`/`ward_created`
+  with the `WardEventPayload` then publishes (the F-15 posture).
+  `delegateTool` composes the `## Active Ward` section onto the
+  child's prompt and appends the ward guard to its description while
+  hosted.

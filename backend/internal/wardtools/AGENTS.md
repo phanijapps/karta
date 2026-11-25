@@ -41,3 +41,17 @@ layout template + digest.
 - `Host.Leave` clears the active ward (leave-ward): `Active()` is nil
   and the file/shell tools refuse until re-entered. The binding
   observer is the daemon's to update (it wires Leave on the endpoint).
+
+## Containment + digest (add-ward-hosting close-out)
+
+- `nofollow_unix.go` / `nofollow_other.go`: `readNoFollow` /
+  `writeNoFollow` open with `O_NOFOLLOW` (unix) — a FINAL-component
+  symlink is refused at open time (no Lstat-then-open window); any
+  symlink is refused (the layout is a tree of real files). An outside
+  file can never be read or overwritten through the ward tools.
+- The hosting digest fingerprints the RAW bytes of ward-conf.yaml
+  (`wards.Conf.Raw`) + AGENTS.md — any external edit changes it; every
+  ward tool (read/write/list) reports a mismatch as a warning.
+- `Host.enterKind(…, created)` reports a typed `Transition` (previous
+  ward captured under the lock) → the adapter emits `ward_entered` /
+  `ward_created` (persist then publish).
