@@ -188,3 +188,23 @@ Memory + knowledge graph in one local store with distillation; Timeline Tree
 observability of every step; contract-first multi-client API; mechanically
 enforced engineering rules. Every backlog item must strengthen, not erode,
 these.
+
+## Parked (operator direction, 2026-11-24)
+
+Explicitly kept in the backlog — NOT next up:
+
+- Phase 2 channels (Telegram / WhatsApp) and `harden-mcp-tool-plane`.
+- The Wails desktop shell (the PWA covers the operator today).
+- The recorded P2s across the archived ledgers: Leave on wardens,
+  streaming error messages on /v1, per-ward model niceties, MCP http
+  transports, shell sandboxing.
+
+**Next slice:** intent-analysis enhancement — studied against
+`~/projects/agentzero` (its intent agent + the operator's prompt set
+in `~/Documents/zbot/config`), run as a SEPARATE agent that builds the
+context packet and hands it to the Orchestrator agent. Known gaps:
+(1) Settings has no intent-analysis agent LLM token configuration;
+(2) intent analysis is not run as its own agent. Happy-path flow:
+research session created → intent-analysis agent finds hidden intent
++ builds the context packet → Orchestrator agent (tools, skills,
+subagents, knowledge, memory) achieves the goal → final response.
