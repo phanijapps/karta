@@ -28,11 +28,7 @@ const windowsBudget = 10 * time.Second
 // ollamaRoot derives the native API root from an OpenAI-compatible
 // base_url ("http://host:11434/v1/" → "http://host:11434").
 func ollamaRoot(baseURL string) string {
-	root := strings.TrimRight(baseURL, "/")
-	if strings.HasSuffix(root, "/v1") {
-		root = strings.TrimSuffix(root, "/v1")
-	}
-	return root
+	return strings.TrimSuffix(strings.TrimRight(baseURL, "/"), "/v1")
 }
 
 // DiscoverWindows fills each model's ContextWindow from Ollama's

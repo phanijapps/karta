@@ -107,3 +107,12 @@ mcpclient; never imports clients, engine, or UI code.
   `POST /api/sessions/{id}/leave-ward` (204/404/409 default) clears
   the binding and calls the wired `wardDropper` (the engine's host
   reset).
+- Intent analysis (intent_handlers.go, sse_events.go): the Settings
+  card's `GET/PUT /api/intent-analysis` (the daemon-managed
+  `intent-analysis.json` + the read-only derivation through
+  `providers.ResolveWindow`) and `POST /api/intent-analysis/test` (the
+  `IntentTester` seam = the wrapped engine's probe). Durable replay
+  (`dbSessionEvents`) translates legacy `intent_analysis` rows to the
+  terminal `analysis_*` kind their status names; session state reads
+  the latest terminal analysis (legacy rows included).
+

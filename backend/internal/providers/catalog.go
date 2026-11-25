@@ -105,6 +105,17 @@ type CatalogModel struct {
 	ContextWindow int // 0 = unknown
 }
 
+// ModelOrID returns the catalogued entry, or a bare Model carrying
+// just the id when the model is not catalogued — the limits
+// resolution's read (the table keys on the id, so an uncatalogued
+// model must still reach it).
+func (c *Catalog) ModelOrID(provider, id string) Model {
+	if m, ok := c.Lookup(provider, id); ok {
+		return m
+	}
+	return Model{ID: id}
+}
+
 // Snapshot reads the whole catalog without dialing anything.
 func (c *Catalog) Snapshot() CatalogSnapshot {
 	c.mu.Lock()

@@ -14,6 +14,7 @@ package providers
 import (
 	"errors"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -134,6 +135,26 @@ func LoadLimitsFile(dir string) ([]limitEntry, error) {
 		entries = append(entries, limitEntry{prefix: prefix, window: window})
 	}
 	return entries, nil
+}
+
+// reloadLimitsLocked re-reads the limits table (hot-reloaded with the
+// directory). A broken table keeps the last good one serving and is
+// logged — unlike a broken provider file it never blocks the set.
+func (s *Store) reloadLimitsLocked() {
+	file, err := LoadLimitsFile(s.dir)
+	if err != nil {
+		log.Printf("providers: %s: %v (last good limits table serving)", LimitsFileName, err)
+		return
+	}
+	s.limits.Store(NewLimits(builtinLimits, file))
+}
+
+// Limits returns the current model-limits table (never nil).
+func (s *Store) Limits() *Limits {
+	if l := s.limits.Load(); l != nil {
+		return l
+	}
+	return BuiltinLimits()
 }
 
 // ResolveWindow walks the chain for one catalog model: discovered →

@@ -87,3 +87,18 @@ func TestCatalogCarriesWindows(t *testing.T) {
 		}
 	}
 }
+
+// An uncatalogued model still reaches the limits table: ModelOrID
+// returns a bare entry carrying the id.
+func TestCatalogModelOrID(t *testing.T) {
+	c := NewCatalog()
+	c.Set("ollama", []Model{{ID: "glm5", ContextWindow: 1048576}})
+	if m := c.ModelOrID("ollama", "glm5"); m.ContextWindow != 1048576 {
+		t.Fatalf("catalogued: %+v", m)
+	}
+	m := c.ModelOrID("zai", "glm-5.3-flash")
+	w, src := ResolveWindow(m, BuiltinLimits())
+	if m.ID != "glm-5.3-flash" || w != 128000 || src != WindowTable {
+		t.Fatalf("uncatalogued must resolve through the table: %+v %d %s", m, w, src)
+	}
+}

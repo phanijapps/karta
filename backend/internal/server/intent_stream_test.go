@@ -30,7 +30,7 @@ func TestIntentAnalysisPayloadStreams(t *testing.T) {
 		Complexity: domain.ComplexityL, StepBudget: 16, Approach: domain.ApproachGraph,
 		WardAction: domain.WardUseExisting, WardName: "stock-analysis",
 		Dropped: []string{"phantom-skill"},
-		Model: "zai/glm-5.3-flash", TokensIn: 1200, TokensOut: 180, Attempts: 2, DurationMS: 1400,
+		Model:   "zai/glm-5.3-flash", TokensIn: 1200, TokensOut: 180, Attempts: 2, DurationMS: 1400,
 	}
 	payload, _ := json.Marshal(map[string]any{"text": "Task Analysis: do-research", "intent_analysis": analysis})
 	if err := db.AppendEvent(zbotstore.Event{

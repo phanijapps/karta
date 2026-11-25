@@ -121,11 +121,18 @@ func TestListProviders(t *testing.T) {
 
 func TestListProviderModels(t *testing.T) {
 	t.Run("success proxies discovered models", func(t *testing.T) {
+		// A non-Ollama provider: the model list answers; the window
+		// probe (/api/version) is a 404 and nothing else is asked.
 		daemon, _, _ := newTestDaemon(t, func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/v1/models" {
-				t.Errorf("provider path = %q, want /v1/models", r.URL.Path)
+			switch r.URL.Path {
+			case "/v1/models":
+				_, _ = fmt.Fprint(w, `{"object":"list","data":[{"id":"glm-5.3"},{"id":"qwen:7b"}]}`)
+			case "/api/version":
+				w.WriteHeader(http.StatusNotFound)
+			default:
+				t.Errorf("unexpected provider path %q", r.URL.Path)
+				w.WriteHeader(http.StatusNotFound)
 			}
-			_, _ = fmt.Fprint(w, `{"object":"list","data":[{"id":"glm-5.3"},{"id":"qwen:7b"}]}`)
 		}, nil)
 		code, body := getJSON(t, daemon.URL+"/api/providers/ollama/models")
 		if code != http.StatusOK {
@@ -134,6 +141,38 @@ func TestListProviderModels(t *testing.T) {
 		models := body["models"].([]any)
 		if len(models) != 2 || models[0].(map[string]any)["id"] != "glm-5.3" {
 			t.Fatalf("unexpected models: %v", body)
+		}
+	})
+
+	t.Run("an Ollama provider reports context windows", func(t *testing.T) {
+		daemon, _, _ := newTestDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/v1/models":
+				_, _ = fmt.Fprint(w, `{"object":"list","data":[{"id":"glm5:latest"},{"id":"qwen3:32b"}]}`)
+			case "/api/version":
+				_, _ = fmt.Fprint(w, `{"version":"0.34.2"}`)
+			case "/api/show":
+				var body struct{ Model string }
+				_ = json.NewDecoder(r.Body).Decode(&body)
+				if body.Model == "glm5:latest" {
+					_, _ = fmt.Fprint(w, `{"model_info":{"general.architecture":"glm5_next","glm5_next.context_length":1048576}}`)
+				} else {
+					w.WriteHeader(http.StatusNotFound)
+				}
+			default:
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}, nil)
+		code, body := getJSON(t, daemon.URL+"/api/providers/ollama/models")
+		if code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", code)
+		}
+		models := body["models"].([]any)
+		if models[0].(map[string]any)["context_window"] != float64(1048576) {
+			t.Fatalf("discovered window missing: %v", models[0])
+		}
+		if _, has := models[1].(map[string]any)["context_window"]; has {
+			t.Fatalf("a model /api/show does not know carries no window: %v", models[1])
 		}
 	})
 

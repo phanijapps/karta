@@ -56,6 +56,13 @@ type Server struct {
 	activeRuns map[string]bool
 	// wardDropper clears the engine's in-memory ward host on Leave.
 	wardDropper func(sessionID string)
+	// intentTester runs the Settings card's Test analysis probe (nil =
+	// 503 from the endpoint, e.g. tests); intentEnabled mirrors the
+	// config.yaml kill-switch for the derivation; intentConfigDir
+	// locates intent-analysis.json.
+	intentTester    IntentTester
+	intentEnabled   bool
+	intentConfigDir string
 }
 
 // SetWardDropper wires the engine's host-reset for leave-ward.

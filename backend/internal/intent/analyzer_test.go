@@ -41,6 +41,7 @@ type fakeCompleter struct {
 	mu          sync.Mutex
 	responses   []string // consumed per call
 	errs        []error
+	usage       []Usage // per call (zero when unlisted)
 	calls       int
 	lastSystem  string
 	lastUser    string
@@ -53,27 +54,38 @@ func (f *fakeCompleter) record(system, user string, extra map[string]any) {
 }
 
 func (f *fakeCompleter) Complete(_ context.Context, _, _, system, user string) (string, error) {
-	return f.complete(system, user, nil)
+	s, _, err := f.complete(system, user, nil)
+	return s, err
 }
 
 // CompleteWith satisfies ParamCompleter (provider-param coverage).
 func (f *fakeCompleter) CompleteWith(_ context.Context, _, _, system, user string, extra map[string]any) (string, error) {
+	s, _, err := f.complete(system, user, extra)
+	return s, err
+}
+
+// CompleteUsage satisfies UsageCompleter (the daemon's accounting seam).
+func (f *fakeCompleter) CompleteUsage(_ context.Context, _, _, system, user string, extra map[string]any) (string, Usage, error) {
 	return f.complete(system, user, extra)
 }
 
-func (f *fakeCompleter) complete(system, user string, extra map[string]any) (string, error) {
+func (f *fakeCompleter) complete(system, user string, extra map[string]any) (string, Usage, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.record(system, user, extra)
 	i := f.calls
 	f.calls++
+	var u Usage
+	if i < len(f.usage) {
+		u = f.usage[i]
+	}
 	if i < len(f.errs) && f.errs[i] != nil {
-		return "", f.errs[i]
+		return "", u, f.errs[i]
 	}
 	if i < len(f.responses) {
-		return f.responses[i], nil
+		return f.responses[i], u, nil
 	}
-	return "", nil
+	return "", u, nil
 }
 
 const validContract = `{"primary_intent":"x","hidden_intents":[],"solution_path":"","complexity":"S",
@@ -90,11 +102,11 @@ func TestAnalyzer(t *testing.T) {
 	t.Run("valid contract parses", func(t *testing.T) {
 		fc := &fakeCompleter{responses: []string{validContract}}
 		a := Analyzer{Completer: fc, Snapshot: noopSnap}
-		got, err := a.Analyze(context.Background(), "do the thing", res, "p", "m")
+		got, err := a.Analyze(context.Background(), "do the thing", res, "p", "m", Limits{})
 		if err != nil {
 			t.Fatalf("Analyze: %v", err)
 		}
-		if got.Complexity != domain.ComplexityS || got.WardRecommendation.WardName != "test-ward" {
+		if got.Analysis.Complexity != domain.ComplexityS || got.Analysis.WardRecommendation.WardName != "test-ward" {
 			t.Fatalf("contract: %+v", got)
 		}
 		if !strings.Contains(fc.lastSystem, "- clean-code — coding standards") || !strings.Contains(fc.lastSystem, "- stock-analysis — equity research") {
@@ -108,7 +120,7 @@ func TestAnalyzer(t *testing.T) {
 	t.Run("parse failure retries once then degrades typed", func(t *testing.T) {
 		fc := &fakeCompleter{responses: []string{"not json", "still not json", "nope"}}
 		a := Analyzer{Completer: fc, Snapshot: noopSnap}
-		_, err := a.Analyze(context.Background(), "goal", res, "p", "m")
+		_, err := a.Analyze(context.Background(), "goal", res, "p", "m", Limits{})
 		var du *AnalysisUnavailable
 		if !errors.As(err, &du) {
 			t.Fatalf("want typed degradation, got %v", err)
@@ -121,7 +133,7 @@ func TestAnalyzer(t *testing.T) {
 	t.Run("retry succeeds on second attempt", func(t *testing.T) {
 		fc := &fakeCompleter{responses: []string{"garbage", validContract}}
 		a := Analyzer{Completer: fc, Snapshot: noopSnap}
-		if _, err := a.Analyze(context.Background(), "goal", res, "p", "m"); err != nil {
+		if _, err := a.Analyze(context.Background(), "goal", res, "p", "m", Limits{}); err != nil {
 			t.Fatalf("retry must succeed: %v", err)
 		}
 	})
@@ -129,7 +141,7 @@ func TestAnalyzer(t *testing.T) {
 	t.Run("model failure degrades typed without retry", func(t *testing.T) {
 		fc := &fakeCompleter{errs: []error{errors.New("provider down")}}
 		a := Analyzer{Completer: fc, Snapshot: noopSnap}
-		_, err := a.Analyze(context.Background(), "goal", res, "p", "m")
+		_, err := a.Analyze(context.Background(), "goal", res, "p", "m", Limits{})
 		var du *AnalysisUnavailable
 		if !errors.As(err, &du) || !strings.Contains(du.Reason, "provider down") {
 			t.Fatalf("want model-failure degradation, got %v", err)
@@ -140,7 +152,7 @@ func TestAnalyzer(t *testing.T) {
 		fenced := "```json\n" + validContract + "\n```"
 		fc := &fakeCompleter{responses: []string{fenced}}
 		a := Analyzer{Completer: fc, Snapshot: noopSnap}
-		if _, err := a.Analyze(context.Background(), "goal", res, "p", "m"); err != nil {
+		if _, err := a.Analyze(context.Background(), "goal", res, "p", "m", Limits{}); err != nil {
 			t.Fatalf("fenced contract must parse: %v", err)
 		}
 	})
@@ -152,7 +164,7 @@ func TestAnalyzer(t *testing.T) {
 		}
 		fc := &fakeCompleter{responses: []string{validContract}}
 		a := Analyzer{Completer: fc, Snapshot: func() registry.Snapshot { return snap }}
-		if _, err := a.Analyze(context.Background(), "goal", res, "p", "m"); err != nil {
+		if _, err := a.Analyze(context.Background(), "goal", res, "p", "m", Limits{}); err != nil {
 			t.Fatalf("broken user prompt must fall back: %v", err)
 		}
 	})
@@ -164,7 +176,7 @@ func TestAnalyzer(t *testing.T) {
 		}
 		fc := &fakeCompleter{responses: []string{validContract}}
 		a := Analyzer{Completer: fc, Snapshot: func() registry.Snapshot { return snap }}
-		if _, err := a.Analyze(context.Background(), "goal", res, "p", "m"); err != nil {
+		if _, err := a.Analyze(context.Background(), "goal", res, "p", "m", Limits{}); err != nil {
 			t.Fatalf("custom prompt must render: %v", err)
 		}
 		if !strings.Contains(fc.lastSystem, "CUSTOM MARKER") || !strings.Contains(fc.lastSystem, "clean-code") {
@@ -188,7 +200,7 @@ func TestAnalyzer(t *testing.T) {
 				}
 				fc := &fakeCompleter{responses: []string{validContract}}
 				a := Analyzer{Completer: fc, Snapshot: func() registry.Snapshot { return snap }}
-				if _, err := a.Analyze(context.Background(), "goal", res, "p", "m"); err != nil {
+				if _, err := a.Analyze(context.Background(), "goal", res, "p", "m", Limits{}); err != nil {
 					t.Fatalf("unusable prompt must fall back, not fail: %v", err)
 				}
 				if !strings.Contains(fc.lastSystem, "You are an intent analyzer") {
@@ -201,7 +213,7 @@ func TestAnalyzer(t *testing.T) {
 	t.Run("empty model output degrades typed", func(t *testing.T) {
 		fc := &fakeCompleter{responses: []string{""}}
 		a := Analyzer{Completer: fc, Snapshot: noopSnap}
-		_, err := a.Analyze(context.Background(), "goal", res, "p", "m")
+		_, err := a.Analyze(context.Background(), "goal", res, "p", "m", Limits{})
 		var du *AnalysisUnavailable
 		if !errors.As(err, &du) {
 			t.Fatalf("empty model output must degrade typed, got %v", err)

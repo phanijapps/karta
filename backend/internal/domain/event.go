@@ -25,15 +25,19 @@ const (
 	// success or failure — every chitta operation is observable.
 	EventChittaToolInvoked TimelineEventKind = "chitta_tool_invoked"
 
-	// The analysis trail: analysis_started when the intent-analyst's call
-	// goes out, then exactly one terminal kind — analysis_completed (the
-	// contract + its cost), analysis_bypassed (router/config, with the
-	// reason), or analysis_failed (non-fatal, with the reason). The
-	// payload rides IntentAnalysis on all four.
-	EventAnalysisStarted   TimelineEventKind = "analysis_started"
+	// EventAnalysisStarted — the intent-analyst's call went out (the
+	// trail's first event; the payload rides IntentAnalysis on all four
+	// analysis kinds).
+	EventAnalysisStarted TimelineEventKind = "analysis_started"
+	// EventAnalysisCompleted — the decision landed: the contract + its
+	// cost (tokens, ms, attempts). Terminal.
 	EventAnalysisCompleted TimelineEventKind = "analysis_completed"
-	EventAnalysisBypassed  TimelineEventKind = "analysis_bypassed"
-	EventAnalysisFailed    TimelineEventKind = "analysis_failed"
+	// EventAnalysisBypassed — the router or the kill-switch skipped
+	// analysis (reason in the payload). Terminal.
+	EventAnalysisBypassed TimelineEventKind = "analysis_bypassed"
+	// EventAnalysisFailed — the decision failed; the run proceeds
+	// without it (reason + attempts in the payload). Terminal.
+	EventAnalysisFailed TimelineEventKind = "analysis_failed"
 	// EventWardEntered — a session entered or switched into an existing
 	// ward (hosting is observable; constitution rule 4).
 	EventWardEntered TimelineEventKind = "ward_entered"

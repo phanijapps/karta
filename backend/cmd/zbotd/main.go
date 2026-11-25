@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,7 +16,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 	"zbot/backend/chitta"
@@ -221,131 +219,14 @@ func run(ctx context.Context, homeFlag string) error {
 		Host: domain.ChittaHostContext{Source: domain.SourceDistiller, AgentID: "resource-index"},
 	}
 
-	// Intent middleware wraps the engine for ROOT goal runs (router →
-	// analysis → composed prompt + step budget; children/chat/Resume
-	// pass through). Disabled by config → the plain engine.
-	runEngine := domain.AgentEngine(eng)
-	if cfg.Intent.On() {
-		// The analysis model: cfg intent_analysis.model as "provider/model"
-		// when set; otherwise the completer's default provider (absent
-		// one, analysis degrades non-fatally with the reason in the event).
-		var analysisProvider, analysisModel string
-		if cfg.Intent.Model != "" {
-			analysisProvider, analysisModel, _ = strings.Cut(cfg.Intent.Model, "/")
-		}
-		runEngine = &intent.Wrapper{
-			Engine: eng,
-			Analyzer: &intent.Analyzer{
-				Completer: llmCaller{provStore, providers.NewChatClient()},
-				Snapshot:  reg.Snapshot,
-				Provider:  analysisProvider,
-				Model:     analysisModel,
-			},
-			Snapshot: reg.Snapshot,
-			Wards: func() []intent.WardInfo {
-				infos, err := wardVault.Index(ctx)
-				if err != nil {
-					return nil
-				}
-				out := make([]intent.WardInfo, len(infos))
-				for i, wi := range infos {
-					out[i] = intent.WardInfo{Name: wi.Name, Scope: wi.CanonicalTitle}
-				}
-				return out
-			},
-			RecallFn: func(ctx context.Context, goal string) ([]string, []string) {
-				// Memory: fused recall minus resource-index records.
-				page, err := chittaSys.Recall(ctx, domain.RecallRequest{Query: goal, Limit: 8}, domain.ChittaHostContext{Source: domain.SourceAgent, AgentID: "root"})
-				if err != nil {
-					return nil, nil
-				}
-				var memory []string
-				for _, h := range page.Items {
-					if h.Record.Kind.IsResourceKind() {
-						continue
-					}
-					memory = append(memory, h.Record.Content)
-				}
-				// Knowledge: the same fused recall's GRAPH-lane hits —
-				// both chitta domains in one query, attributed by lane
-				// (graph hits are knowledge-graph contributions).
-				var knowledge []string
-				for _, h := range page.Items {
-					if h.Record.Kind.IsResourceKind() {
-						continue
-					}
-					for _, lane := range h.Lanes {
-						if lane == domain.LaneGraph {
-							knowledge = append(knowledge, h.Record.Content)
-							break
-						}
-					}
-				}
-				// Graph-lane hits double as memory: drop them there.
-				kset := map[string]bool{}
-				for _, k := range knowledge {
-					kset[k] = true
-				}
-				memOnly := memory[:0]
-				for _, m := range memory {
-					if !kset[m] {
-						memOnly = append(memOnly, m)
-					}
-				}
-				return memOnly, knowledge
-			},
-			Cfg: intent.Config{
-				Enabled: cfg.Intent.On(),
-				// Per-ward orchestrator: a bound ward's model override
-				// runs the hosted session (analysis + root run).
-				OrchestratorModel: wardOrchestratorModel(wardVault, db),
-				// Auto-title untitled research sessions from the first
-				// analysis (never overwrites a user title).
-				TitleSession: func(sessionID, title string) {
-					if _, err := db.SetSessionTitleIfUntitled(sessionID, title); err != nil {
-						log.Printf("zbotd: session %s auto-title failed: %v", sessionID, err)
-					}
-				},
-				AnalysisModel:  cfg.Intent.Model,
-				ComposePersona: composePersona,
-				Persist: func(ev domain.TimelineEvent) {
-					// Attempted-durable-first, the engine's own posture.
-					// The stored payload carries text AND the typed
-					// analysis (the SSE replay reads both).
-					payload, _ := json.Marshal(map[string]any{
-						"text":            ev.Text,
-						"intent_analysis": ev.IntentAnalysis,
-					})
-					_ = db.AppendEvent(zbotstore.Event{ //nolint:errcheck // attempted-durable-first (F-15 posture)
-						ID: ev.ID, SessionID: ev.SessionID, Kind: string(ev.Kind), Payload: string(payload),
-					})
-					_ = bus.Publish(context.Background(), ev) //nolint:errcheck // fire-and-forget emit (F-15)
-				},
-				RecallResources: func(ctx context.Context, goal string) intent.Resources {
-					hits, err := resIndex.Relevant(ctx, goal, 12)
-					if err != nil {
-						return intent.Resources{} // listing fallback inside the wrapper
-					}
-					res := intent.Resources{}
-					for _, h := range hits {
-						switch h.Kind {
-						case resourceindex.KindSkill:
-							res.Skills = append(res.Skills, h.Line())
-						case resourceindex.KindAgent:
-							res.Agents = append(res.Agents, h.Line())
-						case resourceindex.KindMCP:
-							res.MCPs = append(res.MCPs, h.Line())
-						}
-					}
-					return res
-				},
-				KnownMCPs: func(name string) bool {
-					known, err := resIndex.KnownMCP(ctx, name)
-					return err == nil && known
-				},
-			},
-		}
-	}
+	// Model catalog: warm from the store, persist every refresh — before
+	// the intent middleware, whose limits seam reads it.
+	catalog := restoreCatalog(db)
+	runEngine := wireIntentMiddleware(intentDeps{
+		cfg: cfg, reg: reg, db: db, bus: bus, eng: eng, provStore: provStore, catalog: catalog,
+		wardVault: wardVault, chitta: chittaSys, resIndex: resIndex, composePersona: composePersona,
+		configDir: paths.ConfigDir(""), ctx: ctx,
+	})
 
 	// The retrieval plane (ward-v2): configured stdio MCP servers stay
 	// connected; root engine runs mount their tools live (search!).
@@ -359,9 +240,6 @@ func run(ctx context.Context, homeFlag string) error {
 	// engine pipeline in their own transcript, and ward enters update
 	// the session-row binding.
 	wireSessionModel(chatSvc, eng, runEngine, db)
-
-	// Model catalog: warm from the store, persist every refresh.
-	catalog := restoreCatalog(db)
 
 	// An operator-selected non-loopback bind adapts the request guard
 	// (Host enforcement is a loopback-posture defense; see guard.go).
@@ -381,6 +259,14 @@ func run(ctx context.Context, homeFlag string) error {
 	daemonSrv.SetV1Token(cfg.Server.ApiToken)
 	daemonSrv.SetWardDropper(eng.DropWard)
 	daemonSrv.SetSkillHub(skillhub.NewHTTPIndexClient(), skillhub.NewGitHubRepoFetcher(), skillStore)
+	// The Intent Analysis card: the wrapped engine is the probe, the
+	// config dir locates the settings file, config.yaml's kill-switch
+	// shows in the derivation.
+	if wrapper, ok := runEngine.(*intent.Wrapper); ok {
+		daemonSrv.SetIntentTester(wrapper)
+	}
+	daemonSrv.SetIntentEnabled(cfg.Intent.On())
+	daemonSrv.SetIntentConfigDir(paths.ConfigDir(""))
 	// Probed MCP tools flow into the resource index (bounded context:
 	// indexing is best-effort, never blocks the probe response).
 	daemonSrv.SetMCPToolIndexer(func(server string, tools []mcpclient.Tool) {
@@ -476,9 +362,18 @@ func (l llmCaller) Complete(ctx context.Context, provider, model, system, user s
 // CompleteWith carries extra request-body parameters (the intent
 // analyzer's provider knobs, e.g. z.ai reasoning_effort=low).
 func (l llmCaller) CompleteWith(ctx context.Context, provider, model, system, user string, extra map[string]any) (string, error) {
+	s, _, err := l.CompleteUsage(ctx, provider, model, system, user, extra)
+	return s, err
+}
+
+// CompleteUsage is the analyzer's accounting seam: the completion plus
+// its REQUEST usage. A provider's 4xx rejection of the body is typed
+// (intent.ErrRequestRejected) so the analyzer can retry once without
+// max_tokens.
+func (l llmCaller) CompleteUsage(ctx context.Context, provider, model, system, user string, extra map[string]any) (string, intent.Usage, error) {
 	p, token, err := l.store.ResolvedLookup(ctx, provider)
 	if err != nil {
-		return "", fmt.Errorf("resolve provider %s: %w", provider, err)
+		return "", intent.Usage{}, fmt.Errorf("resolve provider %s: %w", provider, err)
 	}
 	messages := []providers.ChatMessage{
 		{Role: "system", Content: system},
@@ -486,7 +381,21 @@ func (l llmCaller) CompleteWith(ctx context.Context, provider, model, system, us
 	}
 	resp, err := l.client.ChatCompletionWithBody(ctx, p, model, token, messages, nil, extra)
 	if err != nil {
-		return "", err
+		var failure *providers.Failure
+		if errors.As(err, &failure) && failure.Status >= 400 && failure.Status < 500 {
+			return "", intent.Usage{}, fmt.Errorf("%w (%d): %w", intent.ErrRequestRejected, failure.Status, err)
+		}
+		return "", intent.Usage{}, err
 	}
-	return resp.Message.Content, nil
+	return resp.Message.Content, intent.Usage{PromptTokens: resp.Usage.PromptTokens, CompletionTokens: resp.Usage.CompletionTokens}, nil
+}
+
+// analysisWindow is the wrapper's limits seam: the catalog's window for
+// the model (Ollama-discovered or persisted), the limits table, then
+// the fallback — the one resolution chain, with its source.
+func analysisWindow(store *providers.Store, catalog *providers.Catalog) func(provider, model string) (int, domain.IntentWindowSource) {
+	return func(provider, model string) (int, domain.IntentWindowSource) {
+		window, source := providers.ResolveWindow(catalog.ModelOrID(provider, model), store.Limits())
+		return window, domain.IntentWindowSource(source)
+	}
 }

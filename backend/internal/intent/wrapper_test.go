@@ -89,7 +89,7 @@ func TestWrapperAnalyzedRun(t *testing.T) {
 	for e := range evs {
 		got = append(got, e)
 	}
-	if len(got) != 2 || got[0].Kind != domain.EventSession || got[1].Kind != domain.EventIntentAnalysis {
+	if len(got) != 2 || got[0].Kind != domain.EventSession || got[1].Kind != domain.EventAnalysisCompleted {
 		t.Fatalf("events: %+v", got) // session first (the engine assigns it), analysis second
 	}
 	p := got[1].IntentAnalysis
@@ -200,11 +200,14 @@ func TestWrapperOrderPersistenceConcurrency(t *testing.T) {
 		fc := &fakeCompleter{responses: []string{wrapperContract}}
 		w := newWrapper(fc, snap, []WardInfo{{Name: "stock-analysis", Scope: "equity"}})
 		var persisted []domain.TimelineEvent
-		w.Cfg.Persist = func(ev domain.TimelineEvent) { persisted = append(persisted, ev) }
+		w.Cfg.Emit = func(ev domain.TimelineEvent) { persisted = append(persisted, ev) }
 		evs, _ := w.RunGoal(context.Background(), domain.GoalRequest{SessionID: "", Goal: "research task"})
 		for range evs { // drain
 		}
-		if len(persisted) != 1 || persisted[0].Kind != domain.EventIntentAnalysis {
+		// An ad-hoc run (no session id) emits only its terminal event,
+		// once the engine's first event reveals the id; the started
+		// event has no home to attach to.
+		if len(persisted) != 1 || persisted[0].Kind != domain.EventAnalysisCompleted {
 			t.Fatalf("persist: %+v", persisted)
 		}
 		// Session id learned from the engine's first event (fake assigns s1).
@@ -230,7 +233,13 @@ func TestWrapperOrderPersistenceConcurrency(t *testing.T) {
 		w := newWrapper(&fakeCompleter{responses: []string{wrapperContract, "bad", "bad"}}, snap, nil)
 		var mu sync.Mutex
 		var persisted int
-		w.Cfg.Persist = func(domain.TimelineEvent) { mu.Lock(); persisted++; mu.Unlock() }
+		w.Cfg.Emit = func(ev domain.TimelineEvent) {
+			if ev.Kind == domain.EventAnalysisCompleted || ev.Kind == domain.EventAnalysisFailed {
+				mu.Lock()
+				persisted++
+				mu.Unlock()
+			}
+		}
 		var wg sync.WaitGroup
 		for i := 0; i < 4; i++ {
 			wg.Add(1)
@@ -247,7 +256,7 @@ func TestWrapperOrderPersistenceConcurrency(t *testing.T) {
 		}
 		wg.Wait()
 		if persisted != 4 {
-			t.Fatalf("persisted %d, want 4", persisted)
+			t.Fatalf("persisted %d terminal events, want 4 (one analyzed, three failed on the scripted bad output)", persisted)
 		}
 	})
 

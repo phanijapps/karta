@@ -105,12 +105,12 @@ func TestAnalyzerCorrectionFeedback(t *testing.T) {
 	good := `{"primary_intent":"x","complexity":"S","recommended_skills":["pdf"],"recommended_agents":["root"],"recommended_mcp_tools":[],"ward_recommendation":{"action":"create_new","ward_name":"w","reason":"r"},"execution_strategy":{"approach":"simple","explanation":"e"}}`
 	fc := &fakeCompleter{responses: []string{bad, good}}
 	a := Analyzer{Completer: fc}
-	got, err := a.Analyze(context.Background(), "goal", pkt, "p", "m")
+	got, err := a.Analyze(context.Background(), "goal", pkt, "p", "m", Limits{})
 	if err != nil {
 		t.Fatalf("Analyze: %v", err)
 	}
-	if len(got.RecommendedSkills) != 1 || got.RecommendedSkills[0] != "pdf" {
-		t.Fatalf("skills: %v", got.RecommendedSkills)
+	if len(got.Analysis.RecommendedSkills) != 1 || got.Analysis.RecommendedSkills[0] != "pdf" {
+		t.Fatalf("skills: %v", got.Analysis.RecommendedSkills)
 	}
 	if fc.calls != 2 {
 		t.Fatalf("want correction retry (2 calls), got %d", fc.calls)
@@ -129,12 +129,12 @@ func TestAnalyzerUnknownResidueFallsBackToParsed(t *testing.T) {
 	contract := `{"primary_intent":"x","complexity":"S","recommended_skills":["phantom"],"recommended_agents":["root"],"recommended_mcp_tools":[],"ward_recommendation":{"action":"create_new","ward_name":"w","reason":"r"},"execution_strategy":{"approach":"simple","explanation":"e"}}`
 	fc := &fakeCompleter{responses: []string{contract, contract, contract}}
 	a := Analyzer{Completer: fc}
-	got, err := a.Analyze(context.Background(), "goal", pkt, "p", "m")
+	got, err := a.Analyze(context.Background(), "goal", pkt, "p", "m", Limits{})
 	if err != nil {
 		t.Fatalf("must fall back to the parsed decision: %v", err)
 	}
-	if len(got.RecommendedSkills) != 1 || got.RecommendedSkills[0] != "phantom" {
-		t.Fatalf("parsed residue must ride for Sanitize: %v", got.RecommendedSkills)
+	if len(got.Analysis.RecommendedSkills) != 1 || got.Analysis.RecommendedSkills[0] != "phantom" {
+		t.Fatalf("parsed residue must ride for Sanitize: %v", got.Analysis.RecommendedSkills)
 	}
 }
 
@@ -149,7 +149,7 @@ func TestAnalyzerDeadline(t *testing.T) {
 	hang := &hangingCompleter{}
 	a := Analyzer{Completer: hang}
 	start := time.Now()
-	_, err := a.Analyze(context.Background(), "goal", pkt, "p", "m")
+	_, err := a.Analyze(context.Background(), "goal", pkt, "p", "m", Limits{})
 	var du *AnalysisUnavailable
 	if !errors.As(err, &du) || !strings.Contains(du.Reason, "deadline") {
 		t.Fatalf("want deadline degradation, got %v", err)
@@ -181,7 +181,7 @@ func TestAnalyzerProviderParams(t *testing.T) {
 	} {
 		fc := &fakeCompleter{responses: []string{contract}}
 		a := Analyzer{Completer: fc}
-		if _, err := a.Analyze(context.Background(), "g", Packet{}, tc.provider, tc.model); err != nil {
+		if _, err := a.Analyze(context.Background(), "g", Packet{}, tc.provider, tc.model, Limits{}); err != nil {
 			t.Fatalf("%s/%s: %v", tc.provider, tc.model, err)
 		}
 		got := ""

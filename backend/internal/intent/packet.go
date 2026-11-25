@@ -23,6 +23,15 @@ const (
 	PacketRequestLimit = 32768
 )
 
+// Resources is the semantic recall's per-kind hits injected into the
+// prompt slots: "name — ..." lines, relevance-ordered.
+type Resources struct {
+	Skills []string
+	Agents []string
+	MCPs   []string
+	Wards  []string
+}
+
 // CatalogEntry is one host-authoritative roster entry.
 type CatalogEntry struct {
 	ID          string
@@ -79,6 +88,22 @@ func renderEntries(entries []CatalogEntry) string {
 // prompt's {{.Skills}}/{{.Agents}}/{{.MCPs}}/{{.Wards}} slots).
 func (p Packet) Render() (skills, agents, mcps, wards string) {
 	return renderEntries(p.Skills), renderEntries(p.Agents), renderEntries(p.MCPs), renderEntries(p.Wards)
+}
+
+// Capped bounds each kind to caps, keeping the ranked head (the packet
+// is already ordered — the safety valve's shrink keeps what recall
+// ranked first and drops the unrecalled tail).
+func (p Packet) Capped(c Caps) Packet {
+	cut := func(entries []CatalogEntry, n int) []CatalogEntry {
+		if len(entries) <= n {
+			return entries
+		}
+		return entries[:n]
+	}
+	return Packet{
+		Skills: cut(p.Skills, c.Skills), Agents: cut(p.Agents, c.Agents),
+		MCPs: cut(p.MCPs, c.MCPs), Wards: cut(p.Wards, c.Wards),
+	}
 }
 
 // rankEntries orders one kind: recall-ranked head (rank < 0 = not
@@ -194,19 +219,29 @@ var requestDelimiters = []string{
 // control characters stripped, length bounded, no fence markers, and
 // NONE of the advisory block's own delimiters survive inside it (a
 // request containing "</user-request>" cannot escape the block).
-func EscapeRequest(goal string) string {
+func EscapeRequest(goal string) string { return escapeRequest(goal, PacketRequestLimit) }
+
+// RequestBlock renders the escaped request block for the user message.
+func RequestBlock(goal string) string {
+	return "<user-request>\n" + EscapeRequest(goal) + "\n</user-request>\n\nReturn the decision JSON now."
+}
+
+// RequestBlockLimited is RequestBlock with a smaller echo bound — the
+// valve's last resort (the request gives way only after the packet
+// floors are hit).
+func RequestBlockLimited(goal string, limit int) string {
+	return "<user-request>\n" + escapeRequest(goal, limit) + "\n</user-request>\n\nReturn the decision JSON now."
+}
+
+// escapeRequest is EscapeRequest with an explicit bound.
+func escapeRequest(goal string, limit int) string {
 	out := goal
 	for _, d := range requestDelimiters {
 		out = strings.ReplaceAll(out, d, "")
 		out = strings.ReplaceAll(out, strings.ToUpper(d), "")
 		out = strings.ReplaceAll(out, strings.ToLower(d), "")
 	}
-	return advisory(strings.ReplaceAll(out, "```", "′′′"), PacketRequestLimit)
-}
-
-// RequestBlock renders the escaped request block for the user message.
-func RequestBlock(goal string) string {
-	return "<user-request>\n" + EscapeRequest(goal) + "\n</user-request>\n\nReturn the decision JSON now."
+	return advisory(strings.ReplaceAll(out, "```", "′′′"), limit)
 }
 
 // CorrectionBlock renders the retry instruction after a failed

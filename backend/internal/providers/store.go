@@ -7,7 +7,6 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/fsnotify/fsnotify"
 
@@ -123,26 +122,6 @@ func (s *Store) reloadLocked() error {
 	s.reloadLimitsLocked()
 	s.publish(byName, names)
 	return nil
-}
-
-// reloadLimitsLocked re-reads the limits table (hot-reloaded with the
-// directory). A broken table keeps the last good one serving and is
-// logged — unlike a broken provider file it never blocks the set.
-func (s *Store) reloadLimitsLocked() {
-	file, err := LoadLimitsFile(s.dir)
-	if err != nil {
-		log.Printf("providers: %s: %v (last good limits table serving)", LimitsFileName, err)
-		return
-	}
-	s.limits.Store(NewLimits(builtinLimits, file))
-}
-
-// Limits returns the current model-limits table (never nil).
-func (s *Store) Limits() *Limits {
-	if l := s.limits.Load(); l != nil {
-		return l
-	}
-	return BuiltinLimits()
 }
 
 // addLocked merges one file entry, rejecting duplicates and overflow.
@@ -483,40 +462,5 @@ func applyCredential(entry *Provider, c *CredentialInput) {
 		entry.APIKeyEnv = c.EnvName
 	case CredentialKeyring:
 		entry.UseKeyring = true
-	}
-}
-
-// providerWatchDebounce coalesces editor save bursts (registry parity).
-const providerWatchDebounce = 150 * time.Millisecond
-
-// watchLoop reloads on provider-directory changes, debounced like the
-// registry watcher. Reload runs under the store mutex, so it can never
-// publish a stale set over a completed mutation.
-func (s *Store) watchLoop() {
-	var timer *time.Timer
-	for {
-		select {
-		case <-s.quit:
-			if timer != nil {
-				timer.Stop()
-			}
-			return
-		case _, ok := <-s.fw.Events:
-			if !ok {
-				return
-			}
-			if timer != nil {
-				timer.Stop()
-			}
-			timer = time.AfterFunc(providerWatchDebounce, func() {
-				// Errors are logged inside Reload; last good set keeps serving.
-				_ = s.Reload()
-			})
-		case err, ok := <-s.fw.Errors:
-			if !ok {
-				return
-			}
-			log.Printf("providers: watcher error: %v", err)
-		}
 	}
 }

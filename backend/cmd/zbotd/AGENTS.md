@@ -32,6 +32,17 @@ the live MCP tools on one sticky host for the default session, composes
 `ward_entered`/`ward_created` (attempted-durable-first) for that
 session. Research sessions run the engine's own sticky hosts.
 
+## Intent middleware wiring (intentwiring.go)
+
+`wireIntentMiddleware` (intent-analyst-agent S1) builds the wrapped
+engine every goal run uses: the intent-analyst agent's decision with
+its execution row (`store.CreateAnalysisExecution` / `FinishExecution`),
+the durable-first `analysis_*` event emission, the per-run Settings
+read (`intent.ReadSettings`), and the model-derived limits seam
+(`analysisWindow`: `catalog.ModelOrID` → `providers.ResolveWindow`).
+`catalog.go` restores/persists the model catalog (ids + context
+windows) around the wrapper. Disabled by config → the plain engine.
+
 ## Intentionally thin (test-floor exemption)
 
 This main is wiring only and carries no tests BY DESIGN (go-rules.md

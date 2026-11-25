@@ -27,9 +27,12 @@ const (
 )
 
 // Failure is a typed discovery failure carrying its reason and cause.
+// Status is the provider's HTTP status when it answered (0 = no
+// answer), so callers can branch on a 4xx without parsing the message.
 type Failure struct {
 	Reason FailureReason
 	Err    error
+	Status int
 }
 
 func (f *Failure) Error() string { return fmt.Sprintf("providers: %s: %v", f.Reason, f.Err) }
@@ -95,9 +98,9 @@ func (c *Client) ListModels(ctx context.Context, p Provider, token string) ([]Mo
 	case http.StatusOK:
 		return decodeModels(resp)
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return nil, &Failure{Reason: ReasonUnauthorized, Err: fmt.Errorf("provider answered %s", resp.Status)}
+		return nil, &Failure{Reason: ReasonUnauthorized, Status: resp.StatusCode, Err: fmt.Errorf("provider answered %s", resp.Status)}
 	default:
-		return nil, &Failure{Reason: ReasonMalformed, Err: fmt.Errorf("provider answered %s", resp.Status)}
+		return nil, &Failure{Reason: ReasonMalformed, Status: resp.StatusCode, Err: fmt.Errorf("provider answered %s", resp.Status)}
 	}
 }
 

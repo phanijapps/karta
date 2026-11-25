@@ -162,11 +162,11 @@ func (c *ChatClient) ChatCompletionWithBody(ctx context.Context, p Provider, mod
 		}
 		return ChatResponse{Message: raw.Choices[0].Message, FinishReason: raw.Choices[0].FinishReason, Usage: raw.Usage}, nil
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return ChatResponse{}, &Failure{Reason: ReasonUnauthorized, Err: fmt.Errorf("provider answered %s", resp.Status)}
+		return ChatResponse{}, &Failure{Reason: ReasonUnauthorized, Status: resp.StatusCode, Err: fmt.Errorf("provider answered %s", resp.Status)}
 	case http.StatusTooManyRequests:
-		return ChatResponse{}, &Failure{Reason: ReasonUnreachable, Err: fmt.Errorf("provider rate limited (%s)", resp.Status)}
+		return ChatResponse{}, &Failure{Reason: ReasonUnreachable, Status: resp.StatusCode, Err: fmt.Errorf("provider rate limited (%s)", resp.Status)}
 	default:
-		return ChatResponse{}, &Failure{Reason: ReasonMalformed, Err: fmt.Errorf("provider answered %s", resp.Status)}
+		return ChatResponse{}, &Failure{Reason: ReasonMalformed, Status: resp.StatusCode, Err: fmt.Errorf("provider answered %s", resp.Status)}
 	}
 }
 
@@ -409,11 +409,11 @@ var errStopStream = errors.New("stream done")
 func statusFailure(code int) *Failure {
 	switch code {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return &Failure{Reason: ReasonUnauthorized, Err: fmt.Errorf("provider answered %s", http.StatusText(code))}
+		return &Failure{Reason: ReasonUnauthorized, Status: code, Err: fmt.Errorf("provider answered %s", http.StatusText(code))}
 	case http.StatusTooManyRequests:
-		return &Failure{Reason: ReasonUnreachable, Err: fmt.Errorf("provider rate limited (%s)", http.StatusText(code))}
+		return &Failure{Reason: ReasonUnreachable, Status: code, Err: fmt.Errorf("provider rate limited (%s)", http.StatusText(code))}
 	default:
-		return &Failure{Reason: ReasonMalformed, Err: fmt.Errorf("provider answered %s", http.StatusText(code))}
+		return &Failure{Reason: ReasonMalformed, Status: code, Err: fmt.Errorf("provider answered %s", http.StatusText(code))}
 	}
 }
 
