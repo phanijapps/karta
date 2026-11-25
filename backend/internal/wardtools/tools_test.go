@@ -432,10 +432,34 @@ func TestDigestDiscipline(t *testing.T) {
 	if out := (ListTool{F: files}).Exec(context.Background(), `{"path":""}`).Output; !strings.Contains(out, "digest mismatch") {
 		t.Fatalf("constitution edit must warn on the next list: %q", out)
 	}
-	// And a conf-less ward (nil conf) still detects constitution edits.
-	host2, vault2 := newTestHost(t)
-	_ = host2
-	_ = vault2
+	// A CONF-LESS ward (nil conf) still detects constitution edits —
+	// the old digestOf returned a constant for nil conf, hiding them.
+	root := filepath.Join(t.TempDir(), "wards")
+	if err := wards.Bootstrap(context.Background(), root); err != nil {
+		t.Fatal(err)
+	}
+	bare := filepath.Join(root, "bare-ward")
+	if err := os.MkdirAll(bare, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bare, "AGENTS.md"), []byte("# Bare\nrules v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vault2, err := wards.Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host2 := NewHost(vault2)
+	if res := (UseTool{Host: host2, Vault: vault2}).Exec(context.Background(), `{"name":"bare-ward"}`); res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	files2 := FileTools{Host: host2}
+	if err := os.WriteFile(filepath.Join(bare, "AGENTS.md"), []byte("# Bare\nrules v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out := (ListTool{F: files2}).Exec(context.Background(), `{"path":""}`).Output; !strings.Contains(out, "digest mismatch") {
+		t.Fatalf("conf-less ward: constitution edit must warn on the next list: %q", out)
+	}
 }
 
 // TestSymlinkContainment (add-ward-hosting 2.2, gate fix): a ward

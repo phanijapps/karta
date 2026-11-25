@@ -1234,7 +1234,6 @@ export interface components {
         SessionState: {
             session: components["schemas"]["Session"];
             intent_analysis?: components["schemas"]["IntentAnalysisPayload"];
-            ward?: components["schemas"]["WardEventPayload"];
         };
         /**
          * @description A ward hosting transition on a session — `ward_entered` (enter
@@ -1311,7 +1310,7 @@ export interface components {
          * @description Mirrors the domain TimelineEventKind set.
          * @enum {string}
          */
-        TimelineEventKind: "session" | "agent_step" | "delegation" | "tool_call" | "hook_decision" | "compaction_triggered" | "chitta_tool_invoked" | "chat_delta" | "intent_analysis";
+        TimelineEventKind: "session" | "agent_step" | "delegation" | "tool_call" | "hook_decision" | "compaction_triggered" | "chitta_tool_invoked" | "chat_delta" | "intent_analysis" | "ward_entered" | "ward_created";
         TimelineEvent: {
             id: components["schemas"]["Id"];
             session_id: components["schemas"]["Id"];

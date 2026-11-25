@@ -1013,6 +1013,8 @@ const (
 	TimelineEventKindIntentAnalysis      TimelineEventKind = "intent_analysis"
 	TimelineEventKindSession             TimelineEventKind = "session"
 	TimelineEventKindToolCall            TimelineEventKind = "tool_call"
+	TimelineEventKindWardCreated         TimelineEventKind = "ward_created"
+	TimelineEventKindWardEntered         TimelineEventKind = "ward_entered"
 )
 
 // Valid indicates whether the value is a known member of the TimelineEventKind enum.
@@ -1035,6 +1037,10 @@ func (e TimelineEventKind) Valid() bool {
 	case TimelineEventKindSession:
 		return true
 	case TimelineEventKindToolCall:
+		return true
+	case TimelineEventKindWardCreated:
+		return true
+	case TimelineEventKindWardEntered:
 		return true
 	default:
 		return false
@@ -1855,12 +1861,6 @@ type SessionState struct {
 	// IntentAnalysis One pre-execution intent analysis outcome for a root goal run — analyzed (with the contract summary), bypassed (trivial goal), or failed (non-fatal; the run proceeds).
 	IntentAnalysis *IntentAnalysisPayload `json:"intent_analysis,omitempty"`
 	Session        Session                `json:"session"`
-
-	// Ward A ward hosting transition on a session — `ward_entered` (enter
-	// or switch into an existing ward) or `ward_created` (a new ward
-	// instantiated from an archetype). Constitution rule 4: hosting
-	// changes are observable, never silent.
-	Ward *WardEventPayload `json:"ward,omitempty"`
 }
 
 // SessionStatus defines model for SessionStatus.

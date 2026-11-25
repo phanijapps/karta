@@ -37,7 +37,8 @@ func wireChatToolPlane(chatSvc *chat.Service, vault *wards.Vault, mcpExec *mcpcl
 	// Hosting transitions are observable on the chat surface too (the
 	// lean exchange emits session/tool rows, not Timeline events — the
 	// host's own emitter covers the ward_entered / ward_created events
-	// for the default session). Persisted durable-first, then published.
+	// for the default session). Attempted-durable-first, then published
+	// regardless (the adapter's F-15 posture).
 	host.SetOnTransition(func(tr wardtools.Transition) {
 		kind, text := domain.EventWardEntered, "entered ward "+tr.Ward
 		if tr.Previous != "" {

@@ -79,12 +79,34 @@ the echo server built once per binary).
 
 ## P2s (recorded, not blocking)
 
-- **P2-1 — `ward_entered` on the chat surface's sticky host.** Quick
-  chat's host (cmd/zbotd/chatplane.go) has no transition observer —
-  the lean exchange emits no Timeline events by design (chat emits
-  session/tool_call rows only). Recorded; the chat's `ward_use` is
-  visible in its transcript rows.
+- ~~**P2-1 — `ward_entered` on the chat surface's sticky host**~~ —
+  superseded by gate fix G-4: the chat host now emits + persists the
+  ward events for the default session.
 
 ## Final review
 
-(pending — zbot-reviewer + task verify)
+**zbot-reviewer (final gate): every G-2..G-5 fix verified holding. 2
+P1 + 3 P2 — ALL FIXED on receipt:**
+
+- **F-1 (P1) the kind enum never landed** — my first contract pass
+  edited the wrong anchor; `TimelineEventKind` was missing
+  `ward_entered`/`ward_created` while the daemon streamed them (the
+  frontend store had to widen to `| string`). FIXED: both kinds in the
+  enum, codegen zero drift, the store's union narrowed to the
+  generated `TimelineEventKind` + `WardEventPayload`.
+- **F-2 (P1) `ward` still on SessionState** — the misplaced anchor was
+  added to TimelineEvent but never removed from SessionState (dead,
+  transition-shaped, never populated). FIXED: removed; regenerated.
+- **F-3 (P2) cmd/zbotd/AGENTS.md contradicted the shipped chat plane**
+  — FIXED: chatplane.go documented (ward plane + Active Ward +
+  transition events on quick chat).
+- **F-4 (P2) chat/AGENTS.md missed SetExtraTools/SetActiveWard** —
+  FIXED.
+- **F-5 (P2) dead test tail + stale ledger/comment** — FIXED: the
+  conf-less ward case is implemented (a nil-conf ward now detects
+  constitution edits — the old digestOf returned a constant for nil
+  conf); P2-1 struck as superseded; chatplane's comment says
+  attempted-durable-first.
+
+**task verify: exit 0** (gates + codegen zero drift + lint 0 +
+suites 28.3s / 30s + 96 Playwright).

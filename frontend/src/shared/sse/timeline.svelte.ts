@@ -3,26 +3,21 @@
 // GET /api/sessions/{id}/events — durable replay first, then the live
 // tail. The research chat renders the live work stream from this;
 // every event carries a stable id (reconnect replay dedupes).
+import type { components } from "../api/schema";
 import type { IntentAnalysisPayload } from "../api/client";
 
-export type TimelineEventKind =
-  | "session"
-  | "agent_step"
-  | "tool_call"
-  | "delegation"
-  | "hook_decision"
-  | "compaction_triggered"
-  | "chitta_tool_invoked"
-  | "intent_analysis"
-  | "ward_entered"
-  | "ward_created";
+/** The contract's TimelineEventKind (regenerated) — the closed set the
+ * daemon streams; re-exported for consumers that want it. */
+export type TimelineEventKind = components["schemas"]["TimelineEventKind"];
+/** The contract's ward transition payload (ward_entered/ward_created). */
+export type WardEventPayload = components["schemas"]["WardEventPayload"];
 
 export type TimelineEvent = {
   id: string;
   kind: TimelineEventKind | string;
   text: string;
   intentAnalysis?: IntentAnalysisPayload | Record<string, unknown>;
-  ward?: { ward: string; archetype?: string; previous?: string; digest?: string };
+  ward?: WardEventPayload;
   receivedAt: number;
 };
 
@@ -64,7 +59,7 @@ export function createTimeline() {
           kind?: string;
           text?: string;
           intent_analysis?: IntentAnalysisPayload;
-          ward?: TimelineEvent["ward"];
+          ward?: WardEventPayload;
         };
         push({
           id: raw.id ?? `${kind}-${msg.lastEventId || Math.random()}`,

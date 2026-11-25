@@ -25,8 +25,12 @@ registry's write paths, and the MCP connection probe is wired to
 (research sessions run the wrapped engine pipeline in their own
 transcript, completing as units), and the lean-chat composition (persona
 without custom sections + chitta recall as ## Context). Quick chat is
-lean; wards and delegation live in research sessions via the engine's
-own sticky hosts.
+lean (no intent pipeline, no delegation) but carries the WARD plane —
+`chatplane.go` mounts `ward_use/ward_create/read/write/list/shell` +
+the live MCP tools on one sticky host for the default session, composes
+`## Active Ward` after the persona when hosted, and emits
+`ward_entered`/`ward_created` (attempted-durable-first) for that
+session. Research sessions run the engine's own sticky hosts.
 
 ## Intentionally thin (test-floor exemption)
 

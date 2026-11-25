@@ -2143,8 +2143,6 @@ components:
           $ref: '#/components/schemas/Session'
         intent_analysis:
           $ref: '#/components/schemas/IntentAnalysisPayload'
-        ward:
-          $ref: '#/components/schemas/WardEventPayload'
     WardEventPayload:
       type: object
       description: |
@@ -2305,7 +2303,7 @@ components:
     TimelineEventKind:
       type: string
       description: Mirrors the domain TimelineEventKind set.
-      enum: [session, agent_step, delegation, tool_call, hook_decision, compaction_triggered, chitta_tool_invoked, chat_delta, intent_analysis]
+      enum: [session, agent_step, delegation, tool_call, hook_decision, compaction_triggered, chitta_tool_invoked, chat_delta, intent_analysis, ward_entered, ward_created]
 
     TimelineEvent:
       type: object

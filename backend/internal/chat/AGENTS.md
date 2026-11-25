@@ -16,7 +16,10 @@ engine layer generalizes.
   its immutable type. There is no mode field anywhere.
 - Lean composition: persona (daemon-composed, custom sections dropped)
   + optional `## Context` memory recall (`SetContext` seam — the type
-  gates the pipeline, never the knowledge).
+  gates the pipeline, never the knowledge) + the daemon-mounted EXTRA
+  tool plane per exchange (`SetExtraTools` — quick chat's ward + MCP
+  tools) + the `## Active Ward` section when the sticky host carries a
+  ward (`SetActiveWard`).
 - `Service.SendIn` is serialized per service (sendMu); no database
   transaction spans a provider call.
 - `Completer` is the seam over the providers chat client (tests inject
