@@ -44,4 +44,4 @@
 
 - [x] 5.1 Phase gate (gpt-6.1-terra) over groups 1–3; fix P0/P1; P2s
   fixed or recorded in findings.md.
-- [ ] 5.2 zbot-reviewer + `task verify` green (dev stack stopped).
+- [x] 5.2 zbot-reviewer + `task verify` green (dev stack stopped).

@@ -23,6 +23,17 @@
 | 6 | P2 | Status changes on delegation cards had no announcement semantics. | **Fixed**: decorative pulse `aria-hidden`; a polite `role="status"` per card announcing "agent: status" once on change. |
 | 7 | P2 | Disclosure tests could pass with the reasoning hidden. | **Fixed**: the report's nested Thinking and the final Thinking are opened and asserted visible; `14m 0s` → `14m` (zero parts drop). |
 
-## Final reviewer pass
+## Final reviewer pass (HEAD 553acf1 → archive commit) — 2 P1, 6 P2, all fixed
 
-Pending.
+| # | Sev | Finding | Resolution |
+|---|---|---|---|
+| 1 | P1 | The daemon's `Emit` wiring dropped the analyst attribution on the DURABLE row (agent/execution only on the live bus event) — and the intent tests asserted neither. | **Fixed**: `Emit` persists `ExecutionID` + `agent`; `TestWrapperEmitsStartedThenTerminal` and the bypass test assert `Agent`/`ExecutionID`; `TestSSEFramesAttributed` replays an analysis row. Row 1 of the backend gate is now actually true. |
+| 2 | P1 | The parent's attribution was not restored after a child returned — root ward transitions after a delegation were filed under the child; the attribution map grew per session. | **Fixed**: restored in `delegateTool.Exec`; cleared at the root run's end; `TestWardEventAfterDelegationAttributedToRoot`. |
+| 3 | P2 | `bypassEvent` fabricated `exec-root-` for ad-hoc runs. | **Fixed**: the wrapper fills the root execution id once the session id is known. |
+| 4 | P2 | Design D2 claimed the chat path writes `"root"`; it writes nothing. | **Fixed**: D2 and the contract description say what happens (legacy and chat rows arrive as `root`). |
+| 5 | P2 | The footer said "Run:" but totals are per session; the bound kept the OLDEST rows. | **Fixed**: "Session:" label; every root row kept + the newest bounded set, creation order; test. |
+| 6 | P2 | SSE frames omitted the contract-required `timestamp` (pre-existing). | **Fixed**: replay from the row's `created_at`, live from the event; asserted on every frame. |
+| 7 | P2 | `/v1` work frames ignored the lifecycle kinds. | **Fixed**: one case. |
+| 8 | P2 | `tasks.md` stale. | **Fixed**: ticked; verify names aligned with the shipped tests. |
+
+`task verify` re-run green after the final edit (below).
