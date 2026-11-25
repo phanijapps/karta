@@ -19,7 +19,6 @@ reaches the model without analysis on root runs.
 - **WHEN** a goal run's text is a greeting or smalltalk
 - **THEN** no intent-model call is made and the run starts with a bypass event
 
-
 ### Requirement: The intent agent writes a typed contract
 
 Root goal runs SHALL be analyzed by one small-model call producing a
@@ -41,7 +40,6 @@ criteria}. The analysis itself uses no tools.
 - **WHEN** the intent model recommends a skill not in the index
 - **THEN** the recommendation is dropped and a warning event names the dropped item
 
-
 ### Requirement: Complexity sets the step budget
 
 The contract's complexity SHALL map to the run's engine step budget
@@ -51,18 +49,26 @@ The contract's complexity SHALL map to the run's engine step budget
 - **WHEN** analysis returns complexity XL
 - **THEN** the run's bounded loop allows up to 24 steps
 
-
 ### Requirement: Analysis injects as a prompt section and gates approach
 
 A successful analysis SHALL render as a `## Task Analysis` section in
 the root run's system prompt (children unaffected), including the
 fast-path instruction when approach=simple (skip multi-step
 orchestration). The recommendations are advisory — the model decides.
+The section SHALL additionally act on the ward recommendation:
+`use_existing` instructs the root to call `ward_use(<name>)`;
+`create_new` instructs `ward_create(<name>, <archetype>)`. The
+analysis stays advisory — the MODEL calls the tools; the middleware
+never enters a ward on its own.
 
 #### Scenario: Simple approach stays lean
 - **WHEN** analysis says approach=simple for a quick question
 - **THEN** the injected section tells the model to answer directly without orchestration
 
+#### Scenario: Recommendation becomes instruction
+- **WHEN** the analysis recommends use_existing "stock-analysis"
+- **THEN** the Task Analysis section names ward_use("stock-analysis")
+  as the first structural step
 
 ### Requirement: Resources are discovered semantically
 
@@ -81,7 +87,6 @@ edited) SHALL refresh the indexed entries.
 - **WHEN** a new skill is installed while the daemon runs
 - **THEN** the next analysis recalls it without a restart
 
-
 ### Requirement: Analysis is observable and non-fatal
 
 Every decision SHALL emit events (started/complete/bypass/failed with
@@ -92,7 +97,6 @@ events say why.
 #### Scenario: Model failure degrades gracefully
 - **WHEN** the intent-model call fails
 - **THEN** the run starts anyway, a failed event carries the reason, and no Task Analysis section is injected
-
 
 ### Requirement: Intent analysis precedes root runs
 
@@ -136,7 +140,6 @@ is typed and carries its reason.
 - **THEN** no analysis call runs and the event carries the bypass
   reason (unchanged)
 
-
 ### Requirement: The analysis is queryable session state
 
 The daemon SHALL expose the active session's LATEST intent analysis
@@ -167,7 +170,6 @@ the live event) — never by parsing transcript rows.
 - **THEN** the composer's draft clears immediately (not on
   completion) — a multi-minute research run never holds the user's
   text in the input
-
 
 ### Requirement: Final answers persist to the transcript
 

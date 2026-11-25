@@ -52,7 +52,6 @@ session's type IS the mode.
 - **THEN** chitta recall injects the fact — the type gates the
   pipeline, not the knowledge
 
-
 ### Requirement: Both types carry the persona; research adds the pipeline
 
 BOTH session types SHALL compose the persona sections (Role + Soul +
@@ -77,14 +76,16 @@ protocol.
   research protocol AND the dynamic sections (Context, Task Analysis,
   Skills, Active Ward when hosting)
 
-
 ### Requirement: Session CRUD
 
-The daemon SHALL expose session list and create endpoints. GET
-/api/sessions returns sessions with `type`, `ward` (when bound), and
-recency ordering. POST /api/sessions creates a NEW research session
-and returns it. The one chat session is NOT deletable; research
-sessions exist until user-deletion lands (a later change).
+*(unchanged; ADDED scenario for titling)*
+
+#### Scenario: A research shell titles itself from its first analysis
+
+- **WHEN** an untitled research session's first analysis produces a
+  primary intent
+- **THEN** the session takes a label derived from it (sanitized, ≤ 64
+  chars); a user-set title is never overwritten
 
 #### Scenario: The sidebar renders from the session list
 
@@ -99,8 +100,6 @@ sessions exist until user-deletion lands (a later change).
 - **WHEN** the user clicks [+ New Research]
 - **THEN** a research session (type=research, ward=nil) is created
   and becomes the active session with an empty transcript
-
-
 ### Requirement: Session-scoped chat-send
 
 The chat-send request SHALL carry `session_id` (default `default`).
@@ -120,7 +119,6 @@ fails typed (404).
 
 - **WHEN** a send names a session id that does not exist
 - **THEN** the daemon responds 404 and nothing is appended
-
 
 ### Requirement: Sticky ward binding on research sessions
 
@@ -147,7 +145,6 @@ Subsequent sends in that session pre-load the ward context
 - **THEN** the ward host re-enters the bound ward from the session
   row before the run starts
 
-
 ### Requirement: The Continue protocol extends live runs
 
 A running research session SHALL accept a `continue` control message
@@ -161,7 +158,6 @@ going. This is the user-side override on top of automatic extension.
 - **WHEN** a research run reaches its hard budget while productive
   and the user sends continue with additional_iterations=50
 - **THEN** the run receives 50 more iterations and keeps working
-
 
 ### Requirement: The context panel surfaces the active session's context
 
@@ -180,7 +176,6 @@ Chat sessions render no ward card.
 
 - **WHEN** the active session is the quick chat
 - **THEN** the context panel shows no ward card
-
 
 ### Requirement: Both types share the event stream and Timeline
 
