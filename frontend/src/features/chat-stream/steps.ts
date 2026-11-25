@@ -22,7 +22,8 @@ export type Step = {
   key: string;
   /** Tool name (raw) — the friendly verb derives from it. */
   tool: string;
-  /** The acting agent ("root" or a sub-agent's name) — attribution. */
+  /** The acting agent ("root" or a sub-agent's name); "" on legacy rows
+   *  (no attribution) — read as root, nested by adjacency. */
   agent: string;
   /** The execution the step ran under (child executions bind to their
    *  delegation; "" on legacy rows). */
@@ -176,7 +177,7 @@ export function buildSteps(messages: ChatMessage[], liveTurnId?: string): Step[]
       const step: Step = {
         key: m.id,
         tool,
-        agent: m.agent ?? "root",
+        agent: m.agent ?? "",
         executionId: m.execution_id ?? "",
         calls,
         outcomes: calls.flatMap((c) => byCall.get(c.id) ?? []),
