@@ -126,6 +126,9 @@
   let analysisTrigger = $state<HTMLButtonElement | null>(null);
   const analysisAvailable = $derived(isResearch && !analysisPending && sessions.analysis !== null && !['bypassed', 'started'].includes((sessions.analysis as Record<string, any>).status));
   const analysisCost = $derived(costText((sessions.analysis ?? {}) as Partial<IntentAnalysisPayload>));
+  // The analyst's full decision (hidden intents, solution path, resources,
+  // ward reason, explanation) for the popover's detail sections.
+  const ia = $derived((sessions.analysis ?? {}) as Record<string, any>);
   $effect(() => {
     if (analysisOpen) void tick().then(() => document.getElementById('analysis-popover')?.focus());
   });
@@ -305,15 +308,46 @@
               <div><dt>Window</dt><dd>{fmtTokens((sessions.analysis as Record<string, any>).context_window)}{(sessions.analysis as Record<string, any>).window_source ? ` (${(sessions.analysis as Record<string, any>).window_source})` : ''}{(sessions.analysis as Record<string, any>).trimmed ? ' · packet trimmed to fit' : ''}</dd></div>
             {/if}
           </dl>
-          {#if (sessions.analysis as Record<string, any>).recommended_skills?.length || (sessions.analysis as Record<string, any>).dropped?.length}
-            <div class="skills-row" aria-label="Provisioned skills">
-              {#each (sessions.analysis as Record<string, any>).recommended_skills ?? [] as s}
-                <span class="skill-chip">{s}</span>
-              {/each}
-              {#each (sessions.analysis as Record<string, any>).dropped ?? [] as s}
-                <span class="skill-chip dropped" title="Recommended but not in the index — dropped">{s} ✕ dropped</span>
-              {/each}
-            </div>
+          <!-- The analyst's full decision: what it read into the request,
+               how it plans to proceed, and why. -->
+          {#if ia.hidden_intents?.length || ia.explanation}
+            <section class="analysis-section" aria-label="What the analyst saw">
+              <h4>What the analyst saw</h4>
+              {#if ia.hidden_intents?.length}
+                <ul class="analysis-list">
+                  {#each ia.hidden_intents as h (h)}<li>{h}</li>{/each}
+                </ul>
+              {/if}
+              {#if ia.explanation}<p class="analysis-prose">{ia.explanation}</p>{/if}
+            </section>
+          {/if}
+          {#if ia.solution_path}
+            <section class="analysis-section" aria-label="Solution path">
+              <h4>Solution path</h4>
+              <p class="analysis-prose">{ia.solution_path}</p>
+            </section>
+          {/if}
+          {#if ia.recommended_skills?.length || ia.recommended_agents?.length || ia.recommended_mcp_tools?.length || ia.dropped?.length}
+            <section class="analysis-section" aria-label="Resources">
+              <h4>Resources</h4>
+              <div class="skills-row">
+                {#each ia.recommended_skills ?? [] as s (s)}
+                  <span class="skill-chip" title="Provisioned for the run (the ## Skills section)">{s}</span>
+                {/each}
+                {#each ia.recommended_agents ?? [] as s (s)}
+                  <span class="skill-chip agent" title="Recommended for delegation">{s}</span>
+                {/each}
+                {#each ia.recommended_mcp_tools ?? [] as s (s)}
+                  <span class="skill-chip mcp" title="Recommended MCP tool — advisory until the orchestrator mounts recommendations">⚙ {s}</span>
+                {/each}
+                {#each ia.dropped ?? [] as s (s)}
+                  <span class="skill-chip dropped" title="Recommended but not in the index — dropped">{s} ✕ dropped</span>
+                {/each}
+              </div>
+            </section>
+          {/if}
+          {#if ia.ward_reason}
+            <p class="muted analysis-note">Ward — {ia.ward_reason}{ia.ward_archetype ? ` (${ia.ward_archetype} archetype)` : ''}</p>
           {/if}
           {#if (sessions.analysis as Record<string, any>).status === 'failed' && (sessions.analysis as Record<string, any>).reason}
             <p class="muted analysis-note">Analysis degraded: {(sessions.analysis as Record<string, any>).reason}</p>
@@ -495,7 +529,13 @@
   .analysis-chip .info-btn:disabled { opacity: .4; cursor: not-allowed; }
   .analysis-chip .info-btn:hover:not(:disabled), .analysis-chip .info-btn[aria-expanded="true"] { background: var(--accent, var(--ds-color-primary, #6366f1)); color: var(--ds-color-on-primary, #fff); }
   .analysis-popover-wrap { position: relative; display: flex; justify-self: start; width: min(48rem, 90%); }
-  .analysis-popover { width: 100%; border: 1px solid var(--accent, var(--ds-color-primary, #6366f1)); border-radius: 12px; padding: .7rem 1rem; display: grid; gap: .5rem; background: var(--ds-color-surface, #1e1e1e); box-shadow: 0 12px 32px rgb(0 0 0 / .35); outline: none; }
+  .analysis-popover { width: 100%; max-height: min(70vh, 40rem); overflow: auto; border: 1px solid var(--accent, var(--ds-color-primary, #6366f1)); border-radius: 12px; padding: .7rem 1rem; display: grid; gap: .5rem; background: var(--ds-color-surface, #1e1e1e); box-shadow: 0 12px 32px rgb(0 0 0 / .35); outline: none; }
+  .analysis-popover .analysis-section { display: grid; gap: .25rem; }
+  .analysis-popover .analysis-section h4 { margin: 0; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ds-color-muted, #888); }
+  .analysis-popover .analysis-list { margin: 0; padding-left: 1.1rem; font-size: .8rem; display: grid; gap: .15rem; }
+  .analysis-popover .analysis-prose { margin: 0; font-size: .8rem; line-height: 1.45; }
+  .analysis-popover .skill-chip.agent { border-color: var(--ds-color-primary, #3b82f6); }
+  .analysis-popover .skill-chip.mcp { border-style: dashed; }
   .analysis-popover .pop-close { margin-left: auto; }
   .analysis-popover .analysis-meta { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: 0; font-size: .8rem; }
   .analysis-popover .analysis-meta div { display: contents; }

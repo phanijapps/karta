@@ -1466,6 +1466,16 @@ export interface components {
             recommended_skills?: string[];
             /** @description The validated agent names recommended for delegation. */
             recommended_agents?: string[];
+            /** @description Actionable unstated expectations the analyst read into the request (the v1 contract's hidden intents). */
+            hidden_intents?: string[];
+            /** @description The analyst's high-level solution path (the v1 string; S2 replaces it with a structured plan). */
+            solution_path?: string;
+            /** @description Why the analyst chose the approach and ward. */
+            explanation?: string;
+            /** @description The validated MCP tool names recommended for the run (advisory until the orchestrator mounts them). */
+            recommended_mcp_tools?: string[];
+            ward_archetype?: string;
+            ward_reason?: string;
             /** @description Recommended names the runtime dropped because they are not in the index (drop-and-warn). */
             dropped?: string[];
         };

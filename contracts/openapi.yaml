@@ -2649,6 +2649,36 @@ components:
           items:
             type: string
             maxLength: 256
+        hidden_intents:
+          type: array
+          maxItems: 12
+          description: Actionable unstated expectations the analyst read
+            into the request (the v1 contract's hidden intents).
+          items:
+            type: string
+            maxLength: 512
+        solution_path:
+          type: string
+          maxLength: 2048
+          description: The analyst's high-level solution path (the v1
+            string; S2 replaces it with a structured plan).
+        explanation:
+          type: string
+          maxLength: 2048
+          description: Why the analyst chose the approach and ward.
+        recommended_mcp_tools:
+          type: array
+          description: The validated MCP tool names recommended for the
+            run (advisory until the orchestrator mounts them).
+          items:
+            type: string
+            maxLength: 256
+        ward_archetype:
+          type: string
+          maxLength: 64
+        ward_reason:
+          type: string
+          maxLength: 1024
         dropped:
           type: array
           description: Recommended names the runtime dropped because

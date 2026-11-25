@@ -97,7 +97,16 @@ type IntentAnalysisPayload struct {
 	// card's skill chips and the context panel's roster).
 	RecommendedSkills []string `json:"recommended_skills,omitempty"`
 	RecommendedAgents []string `json:"recommended_agents,omitempty"`
+	RecommendedMCPs   []string `json:"recommended_mcp_tools,omitempty"`
 	Dropped           []string `json:"dropped,omitempty"`
+	// The rest of the v1 contract the analyst decided (intent-analysis-
+	// detail): what it read into the request, how it plans to proceed,
+	// and why.
+	HiddenIntents []string `json:"hidden_intents,omitempty"`
+	SolutionPath  string   `json:"solution_path,omitempty"`
+	Explanation   string   `json:"explanation,omitempty"`
+	WardArchetype string   `json:"ward_archetype,omitempty"`
+	WardReason    string   `json:"ward_reason,omitempty"`
 
 	// Model is the resolved analysis model as "provider/model".
 	Model string `json:"model,omitempty"`

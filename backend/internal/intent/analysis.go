@@ -90,7 +90,11 @@ func contractPayload(a domain.IntentAnalysis, budget int) *domain.IntentAnalysis
 	return &domain.IntentAnalysisPayload{
 		Status: domain.IntentStatusAnalyzed, PrimaryIntent: a.PrimaryIntent, Complexity: a.Complexity, StepBudget: budget,
 		Approach: a.ExecutionStrategy.Approach, WardAction: a.WardRecommendation.Action, WardName: a.WardRecommendation.WardName,
-		RecommendedSkills: a.RecommendedSkills, RecommendedAgents: a.RecommendedAgents,
+		RecommendedSkills: a.RecommendedSkills, RecommendedAgents: a.RecommendedAgents, RecommendedMCPs: a.RecommendedMCPs,
+		// The whole decision, not just its summary: what the analyst read
+		// into the request, how it plans to proceed, and why.
+		HiddenIntents: a.HiddenIntents, SolutionPath: a.SolutionPath, Explanation: a.ExecutionStrategy.Explanation,
+		WardArchetype: a.WardRecommendation.Archetype, WardReason: a.WardRecommendation.Reason,
 	}
 }
 

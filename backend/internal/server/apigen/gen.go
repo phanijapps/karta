@@ -1490,6 +1490,12 @@ type IntentAnalysisPayload struct {
 	// DurationMs Wall-clock duration of the whole decision.
 	DurationMs *int `json:"duration_ms,omitempty"`
 
+	// Explanation Why the analyst chose the approach and ward.
+	Explanation *string `json:"explanation,omitempty"`
+
+	// HiddenIntents Actionable unstated expectations the analyst read into the request (the v1 contract's hidden intents).
+	HiddenIntents *[]string `json:"hidden_intents,omitempty"`
+
 	// Mode The output mode the analyst used (`text_json`).
 	Mode *string `json:"mode,omitempty"`
 
@@ -1503,9 +1509,15 @@ type IntentAnalysisPayload struct {
 	// RecommendedAgents The validated agent names recommended for delegation.
 	RecommendedAgents *[]string `json:"recommended_agents,omitempty"`
 
+	// RecommendedMcpTools The validated MCP tool names recommended for the run (advisory until the orchestrator mounts them).
+	RecommendedMcpTools *[]string `json:"recommended_mcp_tools,omitempty"`
+
 	// RecommendedSkills The validated skill names provisioned for the run (the
-	RecommendedSkills *[]string                   `json:"recommended_skills,omitempty"`
-	Status            IntentAnalysisPayloadStatus `json:"status"`
+	RecommendedSkills *[]string `json:"recommended_skills,omitempty"`
+
+	// SolutionPath The analyst's high-level solution path (the v1 string; S2 replaces it with a structured plan).
+	SolutionPath *string                     `json:"solution_path,omitempty"`
+	Status       IntentAnalysisPayloadStatus `json:"status"`
 
 	// StepBudget The engine step budget derived from complexity.
 	StepBudget *int `json:"step_budget,omitempty"`
@@ -1517,9 +1529,11 @@ type IntentAnalysisPayload struct {
 	TokensOut *int `json:"tokens_out,omitempty"`
 
 	// Trimmed The safety valve fired — packet caps shrank to fit `window - 4000`.
-	Trimmed    *bool                            `json:"trimmed,omitempty"`
-	WardAction *IntentAnalysisPayloadWardAction `json:"ward_action,omitempty"`
-	WardName   *string                          `json:"ward_name,omitempty"`
+	Trimmed       *bool                            `json:"trimmed,omitempty"`
+	WardAction    *IntentAnalysisPayloadWardAction `json:"ward_action,omitempty"`
+	WardArchetype *string                          `json:"ward_archetype,omitempty"`
+	WardName      *string                          `json:"ward_name,omitempty"`
+	WardReason    *string                          `json:"ward_reason,omitempty"`
 
 	// WindowSource Where the window came from.
 	WindowSource *IntentAnalysisPayloadWindowSource `json:"window_source,omitempty"`

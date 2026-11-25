@@ -329,3 +329,63 @@ func TestDisabledKeepsOrchestratorAndEmitsBypass(t *testing.T) {
 		t.Fatalf("the ward's model must still orchestrate a disabled run: %q", eng.lastReq.Model)
 	}
 }
+
+// fullContract carries every v1 field the analyst decides.
+const fullContract = `{"primary_intent":"inr-usd-pressures","hidden_intents":["compare remittance corridors","flag RBI policy risk"],
+"solution_path":"pull the rate series, list the pressure drivers, assess each, write the brief",
+"complexity":"M","recommended_skills":["clean-code"],"recommended_agents":["research-agent"],"recommended_mcp_tools":["brave-mcp"],
+"ward_recommendation":{"action":"use_existing","ward_name":"stock-analysis","archetype":"research","reason":"currency research belongs here"},
+"execution_strategy":{"approach":"graph","explanation":"multi-source evidence needs the research agent"}}`
+
+// The whole decision reaches the surface: the completed event (and the
+// Test probe through the same contractPayload) carries hidden intents,
+// the solution path, the surviving MCP recommendation, the ward reason,
+// and the explanation — not only the summary.
+func TestCompletedEventCarriesFullContract(t *testing.T) {
+	log := &eventLog{}
+	snap := wrapSnap()
+	snap.MCPs = map[string]registry.MCPSpec{"brave-mcp": {Command: "brave-mcp"}}
+	fc := &fakeCompleter{responses: []string{fullContract, fullContract, fullContract, fullContract}}
+	w := newWrapper(fc, snap, []WardInfo{{Name: "stock-analysis"}})
+	w.Cfg.Emit = log.emit
+	w.Cfg.KnownMCPs = func(n string) bool { return n == "brave-mcp" }
+	evs, err := w.RunGoal(context.Background(), domain.GoalRequest{SessionID: "s-full", Goal: "Analyze INR vs USD pressures", Model: "p/m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range evs {
+	}
+	done := log.evs[len(log.evs)-1].IntentAnalysis
+	if len(done.HiddenIntents) != 2 || done.HiddenIntents[1] != "flag RBI policy risk" {
+		t.Fatalf("hidden intents: %v", done.HiddenIntents)
+	}
+	if done.SolutionPath == "" || done.Explanation != "multi-source evidence needs the research agent" {
+		t.Fatalf("path/explanation: %q %q", done.SolutionPath, done.Explanation)
+	}
+	if len(done.RecommendedMCPs) != 1 || done.RecommendedMCPs[0] != "brave-mcp" {
+		t.Fatalf("mcp recommendations: %v", done.RecommendedMCPs)
+	}
+	if done.WardReason != "currency research belongs here" || done.WardArchetype != "research" {
+		t.Fatalf("ward reason/archetype: %q %q", done.WardReason, done.WardArchetype)
+	}
+	if log.evs[len(log.evs)-1].IntentAnalysis.Attempts != 1 {
+		t.Fatalf("a valid decision takes one attempt: %+v", log.evs[len(log.evs)-1].IntentAnalysis)
+	}
+	// The probe reports the same decision.
+	res := w.TestAnalysis(context.Background(), "")
+	if res.Analysis == nil || len(res.Analysis.HiddenIntents) != 2 || res.Analysis.Explanation == "" {
+		t.Fatalf("probe: %+v", res.Analysis)
+	}
+	// An unknown MCP recommendation is dropped (and named), not recommended.
+	w.Cfg.KnownMCPs = func(string) bool { return false }
+	log.evs = nil
+	fc2 := &fakeCompleter{responses: []string{fullContract, fullContract, fullContract}}
+	w.Analyzer = &Analyzer{Completer: fc2}
+	evs, _ = w.RunGoal(context.Background(), domain.GoalRequest{SessionID: "s-full2", Goal: "g", Model: "p/m"})
+	for range evs {
+	}
+	done = log.evs[len(log.evs)-1].IntentAnalysis
+	if len(done.RecommendedMCPs) != 0 {
+		t.Fatalf("unknown MCPs must not be recommended: %v", done.RecommendedMCPs)
+	}
+}

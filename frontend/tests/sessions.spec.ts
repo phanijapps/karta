@@ -438,7 +438,7 @@ test('a live research run shows its latest thinking in the thread; the analysis 
     const frames = sendStarted ? [
       ...past,
       'event: analysis_started\ndata: ' + JSON.stringify({ id: 'e0', kind: 'analysis_started', text: 'Intent analysis started — zai/glm-5.3-flash (window 128000, table)', intent_analysis: { status: 'started', model: 'zai/glm-5.3-flash', context_window: 128000, window_source: 'table' } }),
-      'event: analysis_completed\ndata: ' + JSON.stringify({ id: 'e1', kind: 'analysis_completed', text: 't', intent_analysis: { status: 'analyzed', primary_intent: 'nvda-check', complexity: 'M', step_budget: 8, approach: 'graph', recommended_skills: ['pdf'], tokens_in: 1200, tokens_out: 180, duration_ms: 900, attempts: 1, model: 'zai/glm-5.3-flash', context_window: 128000, window_source: 'table' } }),
+      'event: analysis_completed\ndata: ' + JSON.stringify({ id: 'e1', kind: 'analysis_completed', text: 't', intent_analysis: { status: 'analyzed', primary_intent: 'nvda-check', hidden_intents: ['compare against AMD', 'flag export-control risk'], solution_path: 'pull filings, compare margins, write the brief', complexity: 'M', step_budget: 8, approach: 'graph', explanation: 'filings plus news need the research agent', recommended_skills: ['pdf'], recommended_agents: ['research-agent'], recommended_mcp_tools: ['brave-mcp'], ward_name: 'stock-analysis', ward_reason: 'equity research belongs here', tokens_in: 1200, tokens_out: 180, duration_ms: 900, attempts: 1, model: 'zai/glm-5.3-flash', context_window: 128000, window_source: 'table' } }),
       'event: agent_step\ndata: ' + JSON.stringify({ id: 'e2', kind: 'agent_step', text: 'Entering the ward and staging the search.' }),
       'event: agent_step\ndata: ' + JSON.stringify({ id: 'e3', kind: 'agent_step', text: 'Reading the prior brief before searching.' }),
       'event: tool_call\ndata: ' + JSON.stringify({ id: 'e4', kind: 'tool_call', text: 'mcp_brave-mcp_brave_web_search' }),
@@ -464,6 +464,16 @@ test('a live research run shows its latest thinking in the thread; the analysis 
   await expect(popover).toContainText('1.2k in / 180 out');
   await expect(popover).toContainText('900 ms');
   await expect(popover).toContainText('zai/glm-5.3-flash');
+  // The analyst's FULL decision: hidden intents, explanation, solution
+  // path, resources, the ward reason.
+  const seen = popover.getByRole('region', { name: 'What the analyst saw' });
+  await expect(seen.getByRole('listitem')).toHaveText(['compare against AMD', 'flag export-control risk']);
+  await expect(seen).toContainText('filings plus news need the research agent');
+  await expect(popover.getByRole('region', { name: 'Solution path' })).toContainText('pull filings, compare margins, write the brief');
+  const resources = popover.getByRole('region', { name: 'Resources' });
+  await expect(resources).toContainText('research-agent');
+  await expect(resources).toContainText('brave-mcp');
+  await expect(popover).toContainText('Ward — equity research belongs here');
   // The Work tab carries the analyst's trail with the decision's cost.
   const work = page.getByRole('tabpanel', { name: 'Work' });
   await expect(work.getByRole('region', { name: 'Task analysis' })).toContainText('Analysis started · zai/glm-5.3-flash');
