@@ -2,7 +2,7 @@
 
 ## Context
 
-Legacy transcripts carry no agent; the only signal that a row belongs to
+Legacy transcripts arrive as `root` (no attribution); the only signal that a row belongs to
 a delegation is its position between the `delegate_agent` intent and the
 call's result. The turn builder used adjacency (previous row = intent),
 which a report row in between breaks.

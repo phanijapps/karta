@@ -372,4 +372,53 @@ test('a legacy run with two delegations in one step and a report between intent 
   await expect(dialog.getByRole('region', { name: 'Report' })).toContainText('report received');
   await expect(dialog.locator('details.task > summary')).toContainText('TASK: research the pressures'); // the ward preamble is dropped from the gist
   await expect(dialog.locator('details.task > summary')).not.toContainText('Ward: x');
+  // The task disclosure is part of the modal's Tab cycle (Close → the
+  // summary when there are no calls), and expands with the keyboard.
+  await page.keyboard.press('Shift+Tab');
+  await expect(dialog.locator('details.task > summary')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(dialog.locator('pre.task-full')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+});
+
+test('a mixed id / id-less result sequence never strands a turn open', async ({ page }) => {
+  // Two delegations open (c1, c2); the first result is a legacy row
+  // without an id (closes the NEWEST, c2 — as the grouping does), then
+  // c1's result arrives with its id. Everything closes; the final answer
+  // is an answer; the NEXT user message starts a new turn.
+  await mockBase(page);
+  await mockDaemon(page);
+  const SID = 'r-mixed';
+  const rows = [
+    { id: 'u1', seq: 1, role: 'user', agent: 'root', execution_id: 'exec-root', content: 'first goal', created_at: NOW },
+    { id: 'a1', seq: 2, role: 'assistant', agent: 'root', execution_id: 'exec-root', content: '', tool_calls: JSON.stringify([{ id: 'c1', function: { name: 'delegate_agent', arguments: JSON.stringify({ agent: 'alpha', task: 'A' }) } }, { id: 'c2', function: { name: 'delegate_agent', arguments: JSON.stringify({ agent: 'beta', task: 'B' }) } }]), created_at: NOW },
+    { id: 't2', seq: 3, role: 'tool', agent: 'root', execution_id: 'exec-root', tool_name: 'delegate_agent', content: 'B done (no id)', created_at: NOW },
+    { id: 't1', seq: 4, role: 'tool', agent: 'root', execution_id: 'exec-root', tool_name: 'delegate_agent', tool_call_id: 'c1', content: 'A done', created_at: NOW },
+    { id: 'af', seq: 5, role: 'assistant', agent: 'root', execution_id: 'exec-root', content: 'Final answer one.', created_at: NOW },
+    { id: 'u2', seq: 6, role: 'user', agent: 'root', execution_id: 'exec-root', content: 'second goal', created_at: NOW },
+    { id: 'ag', seq: 7, role: 'assistant', agent: 'root', execution_id: 'exec-root', content: 'Final answer two.', created_at: NOW },
+  ];
+  await page.route((url) => url.pathname === `/api/sessions/${SID}/state`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ session: { id: SID, type: 'research', status: 'completed', ward: 'stock-analysis', updated_at: NOW }, intent_analysis: { status: 'analyzed', primary_intent: 'mixed', complexity: 'S', step_budget: 4 } }) }));
+  await page.route((url) => url.pathname === `/api/sessions/${SID}/events`, (route) => route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' }));
+  await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const u = new URL(route.request().url());
+    const sid = u.searchParams.get('session_id') ?? 'default';
+    const after = Number(u.searchParams.get('after_seq') ?? '0');
+    const list = sid === SID ? rows.filter((m) => m.seq > after) : [];
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ messages: list, next_cursor: list.length ? list[list.length - 1].seq : after, truncated: false }) });
+  });
+  await page.route('**/api/sessions?limit=100', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sessions: [
+    { id: 'default', type: 'chat', status: 'completed', updated_at: NOW },
+    { id: SID, type: 'research', status: 'completed', ward: 'stock-analysis', title: 'Mixed ids', updated_at: '2026-11-27T20:14:00Z' },
+  ], truncated: false }) }));
+  await page.goto('/');
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row', { hasText: 'stock-analysis' }).click({ force: true });
+  await expect(page.locator('.analysis-chip')).toContainText('mixed');
+  const main = page.getByRole('main');
+  await expect(main.getByLabel('Your message')).toHaveCount(2);
+  await expect(main.getByRole('article', { name: 'Final answer' })).toHaveCount(2);
+  await expect(main.getByRole('article', { name: 'Final answer' }).first()).toContainText('Final answer one.');
+  await expect(main.locator('.delegation-pill .pill-live')).toHaveCount(0);
 });

@@ -67,7 +67,8 @@
       // Modal by declaration, modal by behaviour: Tab wraps inside the
       // panel so focus never leaves the drawer while it is open.
       if (e.key === 'Tab' && panel) {
-        const focusables = [...panel.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+        // Native <summary> is focusable too (the task disclosure).
+        const focusables = [...panel.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')]
           .filter((el) => !el.hasAttribute('disabled') && el.offsetParent !== null);
         if (focusables.length === 0) {
           e.preventDefault();

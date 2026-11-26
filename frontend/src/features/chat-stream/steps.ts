@@ -331,8 +331,10 @@ export function taskGist(task: string, max = 120): string {
 }
 
 /** Tracks the delegations a turn has OPEN (a delegate intent whose result
- *  has not landed). Legacy rows may carry no call ids — those resolve by
- *  count, oldest open first. */
+ *  has not landed). Legacy rows may carry no call ids — such a result
+ *  closes the NEWEST open call, the same nearest-open rule
+ *  `delegationGroups` uses, so the two never disagree. A result whose id
+ *  matches nothing is a no-op (it never consumes an unrelated call). */
 export function openDelegationTracker() {
   const open: string[] = [];
   return {
@@ -345,7 +347,7 @@ export function openDelegationTracker() {
         if (i >= 0) open.splice(i, 1);
         return;
       }
-      if (open.length) open.shift(); // legacy result without an id
+      if (open.length) open.pop(); // legacy result without an id → newest open
     },
     get size() {
       return open.length;

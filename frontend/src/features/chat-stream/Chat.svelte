@@ -110,8 +110,9 @@
     let cur: Turn | null = null;
     // OPEN delegations of the current turn: while one awaits its result,
     // a user row is the child's injected context and a tool-free assistant
-    // row is a report — neither breaks the turn or poses as an answer
-    // (legacy rows carry no agent; position is the only signal).
+    // row is a report — neither breaks the turn or poses as an answer.
+    // Legacy rows arrive as "root" (no attribution), so position is the
+    // only signal that a row belongs to a delegation.
     let open = openDelegationTracker();
     for (const m of sessions.messages) {
       if (m.role === 'user') {
