@@ -88,7 +88,11 @@ once and a user edit or deletion of it is final.
 
 #### Scenario: The analyst seeds once per home
 - **WHEN** bootstrap runs on a home that already carries the roster marker
-- **THEN** `agents/intent-analyst.md` is published once; a later edit or deletion survives every further bootstrap
+- **THEN** `agents/intent-analyst.md` is published once; a later edit or deletion survives every further bootstrap The research and builder agent seeds carry the honesty contract (`require_tool_use: true` plus the "never describe a step you did not take" clause); homes seeded before it gain it ONCE under their own marker, and only when the user's copy is still byte-identical to the earlier seed — edited copies are never touched.
+
+#### Scenario: Unmodified research/builder seeds upgrade once
+- **WHEN** bootstrap runs on a home whose research-agent and builder-agent files are byte-identical to the pre-honesty seeds
+- **THEN** both are replaced with the honesty-contract seeds once and the marker drops; a user-edited copy is left untouched
 
 ### Requirement: Strict config loading hard-fails on invalid input
 

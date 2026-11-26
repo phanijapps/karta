@@ -20,10 +20,9 @@ The registry SHALL load every `config/prompts/*.md` file as a named Go text/temp
 - **WHEN** one prompt file has invalid template syntax and another is valid
 - **THEN** the valid prompt loads and the failure is reported with the invalid file's path
 
-
 ### Requirement: Agent spec loading
 
-The registry SHALL load declarative agent specs from `~/.zbot/agents/*.yaml` and from `*.md` files whose YAML frontmatter carries the spec, exposing name, role/system prompt (literal text or prompt-template reference), description, model overrides, tool allowlists, and max_depth. Bootstrap SHALL seed example agents there and SHALL one-time-migrate files from the legacy `config/agents` location when the new directory is absent — user-owned files are never overwritten.
+The registry SHALL load declarative agent specs from `~/.zbot/agents/*.yaml` and from `*.md` files whose YAML frontmatter carries the spec, exposing name, role/system prompt (literal text or prompt-template reference), description, model overrides, tool allowlists, max_depth, and the optional `require_tool_use` flag (a run under the agent is nudged once if its first answer uses no tools). Bootstrap SHALL seed example agents there and SHALL one-time-migrate files from the legacy `config/agents` location when the new directory is absent — user-owned files are never overwritten.
 
 #### Scenario: YAML agent spec loads
 
@@ -45,6 +44,9 @@ The registry SHALL load declarative agent specs from `~/.zbot/agents/*.yaml` and
 - **WHEN** bootstrap runs with `config/agents` populated and `~/.zbot/agents` absent
 - **THEN** the legacy files move to `~/.zbot/agents` and later edits there survive re-bootstrap
 
+#### Scenario: require_tool_use loads from both forms
+- **WHEN** an agent spec declares `require_tool_use: true` in YAML or frontmatter
+- **THEN** the registry exposes it on the spec; an absent key reads false
 
 ### Requirement: Skill loading
 
@@ -60,7 +62,6 @@ The registry SHALL load skills from `skills/<name>/SKILL.md` directories (the to
 - **WHEN** a SKILL.md lacks `name` or `description`
 - **THEN** the failure is reported with the file path and other skills still load
 
-
 ### Requirement: Hook manifest loading
 
 The registry SHALL load `hooks/*.yaml` manifests (the top-level `~/.zbot/hooks/` root) with: `event` from the six lifecycle names (`PreToolUse`, `PostToolUse`, `PreCompact`, `SessionStart`, `SessionEnd`, `SubagentStop`), optional `matcher` (a regex that must compile), required `command`, and `timeout_ms`. Manifests failing any constraint are reported per-file.
@@ -75,7 +76,6 @@ The registry SHALL load `hooks/*.yaml` manifests (the top-level `~/.zbot/hooks/`
 - **WHEN** a manifest names an unknown event or carries a non-compiling matcher regex
 - **THEN** the failure is reported with the file path and the reason
 
-
 ### Requirement: Per-file error isolation
 
 A registry load SHALL always process every file in every config directory; failures SHALL be collected as typed errors carrying their file paths and SHALL NOT prevent valid entries in the same or other directories from loading. An empty control plane SHALL yield an empty registry with no errors.
@@ -89,7 +89,6 @@ A registry load SHALL always process every file in every config directory; failu
 
 - **WHEN** all five config directories are empty
 - **THEN** the registry loads empty with zero errors
-
 
 ### Requirement: Debounced hot-reload
 
@@ -110,7 +109,6 @@ The registry SHALL watch the resolved home's `config.yaml` and `config/**` with 
 - **WHEN** a file write arrives as a burst of create+write events within the debounce window
 - **THEN** the registry performs exactly one reload for that file
 
-
 ### Requirement: MCP manifest variants
 
 The registry SHALL load `config/mcps/*.yaml` manifests in three variants: stdio servers (`command` + `args` + `env`), streamable HTTP servers (`url`), and dual-transport servers declaring both — one entry carrying two transports. Manifests declaring neither transport SHALL be rejected.
@@ -129,7 +127,6 @@ The registry SHALL load `config/mcps/*.yaml` manifests in three variants: stdio 
 
 - **WHEN** a manifest declares neither `command` nor `url`
 - **THEN** the failure is reported with the file path
-
 
 ### Requirement: Serialized write paths for managed kinds
 
@@ -164,7 +161,6 @@ The registry SHALL provide mutations (create, update, rename, delete) for the MC
 
 - **WHEN** hand-edited files push a managed kind beyond its capacity at load
 - **THEN** the lexicographically-last excess files are reported as load errors and the rest load normally
-
 
 ### Requirement: Load-error visibility
 
