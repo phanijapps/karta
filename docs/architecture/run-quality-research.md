@@ -121,6 +121,35 @@ tracks usage only per execution. The table above is reconstruction from
 content sizes; the fixed-overhead share is an estimate. The first fix
 for a cost problem is measuring it per step.
 
+## 3a. Measured (solar run, 2026-11-26 — first run with per-step usage)
+
+The solar-manufacturing run (`research-1795696099774376404-1`): root 23
+steps, builder child 3 steps, research agent unused (the ward's log.md
+lesson steered the root to do the research itself).
+
+| | root | builder |
+|---|---|---|
+| Prompt tokens | 982,769 | 75,115 |
+| Step-1 prompt = fixed overhead + task | **13,608** | 9,274 |
+| Final context | 78,753 | 33,029 |
+| Completion tokens | 45,322 | 23,789 |
+| … of which visible output (files, narration) | ~11k | 485 chars + a 5.4 KB script |
+| … of which model reasoning (thinking) | ~84k chars ≈ 20k tokens | **60k chars ≈ 18k tokens** |
+
+- Fixed overhead (13.6k × 23) = **313k = 32%** of the root's prompt
+  bill: persona, the 12 KB duckduckgo SKILL.md (3k/step, 69k total —
+  the root used Brave instead), the ward packet, ~18 tool schemas.
+- Context growth was five shell dumps (25–38 KB each; `| tail -40`
+  bounded lines, not bytes — single JSON lines): ≈38k tokens re-sent on
+  every later step ≈ **350k+ tokens**.
+- 80% of completion tokens was reasoning; the builder thought ~18k
+  tokens to write 127 lines — nothing sets a reasoning effort for
+  mechanical agents on Ollama cloud.
+
+So the levers below are now numbers, not estimates: delegation
+(isolate the dumps in a child) ≈ 500k; tool-result caps ≈ 300k; skills
+budget ≈ 70k; reasoning effort ≈ 20k on this run.
+
 ## 4. Levers (ranked by expected effect / risk)
 
 ### For fabrication (Q1 — truthfulness)
