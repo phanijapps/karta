@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 )
@@ -166,7 +167,7 @@ func trimToExchangeBoundary(rows []Message) []Message {
 		case first.Role == "tool":
 			// Its assistant intent row is outside — drop the orphan.
 			rows = rows[1:]
-		case first.Role == "assistant" && first.ToolCalls != "":
+		case first.Role == "assistant" && hasToolCalls(first.ToolCalls):
 			// Intent row retained but its tool results are outside the
 			// window (next row is not its tool result) — drop the group head.
 			if len(rows) < 2 || rows[1].Role != "tool" {
@@ -179,4 +180,18 @@ func trimToExchangeBoundary(rows []Message) []Message {
 		}
 	}
 	return rows
+}
+
+// hasToolCalls reports whether a row's tool_calls JSON names at least
+// one call; the literal "[]" (an engine answer row marked as a non-final
+// intent, e.g. a nudged narrated answer) carries none.
+func hasToolCalls(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	var calls []json.RawMessage
+	if json.Unmarshal([]byte(raw), &calls) != nil {
+		return true // unparseable but non-empty: treat as an intent (status quo)
+	}
+	return len(calls) > 0
 }

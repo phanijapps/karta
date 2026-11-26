@@ -145,8 +145,8 @@ func filterWardTools(set []tools.Tool, allow []string) []tools.Tool {
 	return out
 }
 
-// SetMCPTools wires the retrieval plane: fn returns the live MCP
-// tools (nil/empty = none). Mounted on ROOT runs only.
+// SetMCPTools wires the retrieval plane: fn returns the live MCP tools,
+// mounted on every engine run — root and delegated children alike.
 func (a *Adapter) SetMCPTools(fn func() []tools.Tool) { a.mcpTools = fn }
 
 // SetDepthCap applies the configured delegation depth cap

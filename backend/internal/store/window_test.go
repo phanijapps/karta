@@ -166,3 +166,25 @@ func (s *Store) dbPath(t *testing.T) string {
 	}
 	return path
 }
+
+// A "[]" tool_calls row (an engine answer marked as a non-final intent,
+// e.g. a nudged narrated answer) is NOT a pending intent: the window
+// boundary keeps it, while a real intent whose results fell outside
+// the window is still dropped.
+func TestTrimBoundaryEmptyToolCallsIsNotAnIntent(t *testing.T) {
+	rows := []Message{
+		{ID: "n1", Role: "assistant", Content: "narrated", ToolCalls: "[]"},
+		{ID: "a1", Role: "assistant", Content: "final"},
+	}
+	got := trimToExchangeBoundary(rows)
+	if len(got) != 2 || got[0].ID != "n1" {
+		t.Fatalf("an empty call array must survive the boundary trim: %+v", got)
+	}
+	pending := []Message{
+		{ID: "i1", Role: "assistant", Content: "", ToolCalls: `[{"id":"c1","function":{"name":"read"}}]`},
+		{ID: "a2", Role: "assistant", Content: "next"},
+	}
+	if got := trimToExchangeBoundary(pending); len(got) != 1 || got[0].ID != "a2" {
+		t.Fatalf("a real intent without its results must still be dropped: %+v", got)
+	}
+}

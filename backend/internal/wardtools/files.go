@@ -198,6 +198,34 @@ func (f FileTools) resolve(rel string) (string, error) {
 	return full, nil
 }
 
+// Exists reports whether a ward-relative path exists INSIDE the active
+// ward — the same containment resolve enforces (no traversal, no
+// symlinked directories) plus a leaf check that follows no symlink out
+// of the ward. Used by host-side receipts, never by the tools.
+func (f FileTools) Exists(rel string) (bool, error) {
+	full, err := f.resolve(rel)
+	if err != nil {
+		return false, err
+	}
+	fi, err := os.Lstat(full)
+	if err != nil {
+		return false, nil // absent (or unreadable): not an error to the caller
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		// A symlinked leaf may point outside the ward — resolve it and
+		// require the target to stay inside.
+		target, err := filepath.EvalSymlinks(full)
+		if err != nil {
+			return false, nil
+		}
+		view := f.Host.Active()
+		if view == nil || (!strings.HasPrefix(target, view.Dir+string(filepath.Separator)) && target != view.Dir) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 // lintWarning runs the ward's linter over the touched path and renders
 // its findings for the tool result ("" when clean).
 func (f FileTools) lintWarning(ctx context.Context, rel string) string {

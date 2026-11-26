@@ -58,7 +58,7 @@ When an agent declares `require_tool_use: true`, a run under that agent whose FI
 
 ### Requirement: The fold-back carries deliverable receipts
 
-When a delegated task names output paths (relative paths with an extension), the delegate tool's result SHALL append a host-verified line per path — present on disk or not — so the root reads the truth next to the child's claims.
+When a run is hosted in a ward and a delegated task names output paths (relative paths or bare filenames with an alphabetic extension; URLs are not paths), the delegate tool's result SHALL append a host-verified line per path — present inside the ward or not, an existence check at fold-back rather than proof the child created it — so the root reads the truth next to the child's claims. Without a hosted ward no receipts are appended. A path that would escape the ward (traversal, or a symlink leading outside) reads as not on disk.
 
 #### Scenario: Missing deliverables are visible to the root
 - **WHEN** a child claims files it never wrote

@@ -10,8 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -23,6 +21,7 @@ import (
 	"zbot/backend/internal/registry"
 	"zbot/backend/internal/store"
 	"zbot/backend/internal/tools"
+	"zbot/backend/internal/wardtools"
 )
 
 // agentList names configured agents (error guidance).
@@ -187,40 +186,43 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 	return tools.Result{Output: answer + deliverableReceipts(d.parent, args.Task)}
 }
 
-// deliverablePathPattern matches relative paths with a directory and an
-// extension — the shape a task's OUTPUT section names ("sources/x.md",
-// "outputs/brief.md"). Bare filenames and URLs are left alone.
-var deliverablePathPattern = regexp.MustCompile(`\b([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+\.[A-Za-z0-9]{1,6})\b`)
+// deliverablePathPattern matches the shape a task's OUTPUT section
+// names — "sources/x.md", "outputs/brief.md", or a bare "report.md" —
+// with an alphabetic extension (so version strings like "glm-5.3" stay
+// out). URLs are stripped from the task before matching.
+var deliverablePathPattern = regexp.MustCompile(`\b([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z]{2,8})\b`)
+
+// urlPattern removes URLs from the task text before receipt matching.
+var urlPattern = regexp.MustCompile(`(?:https?|ftp)://\S+`)
 
 // deliverableReceipts appends host-verified lines for every path the
-// task named: present on disk (✓) or not (✗) — so the root reads the
-// truth next to the child's claims instead of spending steps on it. Only
-// inside a hosted ward; nothing to check otherwise.
+// task named: present inside the active ward (✓) or not (✗) — so the
+// root reads the truth next to the child's claims instead of spending
+// steps on it. An EXISTENCE check at fold-back, not proof the child
+// created the file (a task-named input that already exists reads ✓).
+// Only inside a hosted ward; nothing to check otherwise.
 func deliverableReceipts(parent runInput, task string) string {
-	if parent.wardHost == nil {
+	if parent.wardHost == nil || parent.wardHost.Active() == nil {
 		return ""
 	}
-	view := parent.wardHost.Active()
-	if view == nil || view.Dir == "" {
-		return ""
-	}
+	files := wardtools.FileTools{Host: parent.wardHost}
 	seen := map[string]bool{}
 	var lines []string
-	for _, p := range deliverablePathPattern.FindAllString(task, -1) {
+	for _, p := range deliverablePathPattern.FindAllString(urlPattern.ReplaceAllString(task, ""), -1) {
 		if seen[p] {
 			continue
 		}
 		seen[p] = true
-		mark := "✓ on disk"
-		if _, err := os.Stat(filepath.Join(view.Dir, filepath.FromSlash(p))); err != nil {
-			mark = "✗ not on disk"
+		mark := "✗ not on disk"
+		if ok, err := files.Exists(p); err == nil && ok {
+			mark = "✓ on disk"
 		}
 		lines = append(lines, "- "+p+" "+mark)
 	}
 	if len(lines) == 0 {
 		return ""
 	}
-	return "\n\nDeliverables check (host, at fold-back):\n" + strings.Join(lines, "\n")
+	return "\n\nDeliverables check (host; existence at fold-back, not proof of creation):\n" + strings.Join(lines, "\n")
 }
 
 // firstLine bounds the task text on the started event's line.

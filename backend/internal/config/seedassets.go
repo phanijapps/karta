@@ -165,8 +165,14 @@ func upgradeAgentSeedsHonesty(ctx context.Context, paths Paths) error {
 	for name, oldBody := range agentHonestyV1Bodies {
 		dst := filepath.Join(paths.AgentsDir, name)
 		raw, err := os.ReadFile(dst)
-		if err != nil || string(raw) != oldBody {
-			continue // absent (user deleted it) or user-modified: untouched
+		if os.IsNotExist(err) {
+			continue // absent (user deleted it): untouched
+		}
+		if err != nil {
+			return err // unreadable ≠ absent: no marker, retry next bootstrap
+		}
+		if string(raw) != oldBody {
+			continue // user-modified: untouched
 		}
 		newBody, rerr := seedAssetFSRead(ctx, "seedassets/agents/"+name)
 		if rerr != nil {

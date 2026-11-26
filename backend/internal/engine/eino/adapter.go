@@ -84,9 +84,10 @@ type Adapter struct {
 }
 
 // DefaultDepthCap bounds delegation depth until the daemon applies the
-// configured `delegation.max_depth` (SetDepthCap); the config default (1)
-// is the operator's hold on nesting.
-const DefaultDepthCap = 2
+// configured `delegation.max_depth` (SetDepthCap); it mirrors the config
+// default — the operator's hold on nesting — so a second constructor
+// could never silently enable it.
+const DefaultDepthCap = 1
 
 // New creates the engine adapter. snapFn may be nil.
 func New(provStore ProviderStore, st *store.Store, bus *eventbus.Bus, toolProv tools.Provider, snapFn func() registry.Snapshot) *Adapter {
@@ -280,8 +281,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 	// kill ONLY when the progress tracker says the agent is stuck.
 	var tokensIn, tokensOut int64
 	var childMsgs []*schema.Message // child's retained conversation (P1-2)
-	nudged := false                 // the require_tool_use nudge fires once per run
-	pendingNudge := ""              // a user-message nudge for the NEXT step
+	pendingNudge := ""              // the require_tool_use nudge (first completion only) rides the next step
 	softBudget := in.maxSteps       // from the intent complexity (0 = default)
 	if softBudget <= 0 || softBudget > MaxSteps {
 		softBudget = MaxSteps
@@ -387,6 +387,13 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 		}
 
 		out, err := chatModel.Generate(ctx, msgs, opts...)
+		if err == nil && ctx.Err() != nil {
+			// Cancelled while the model answered: never record that
+			// answer as the run's success.
+			emit(domain.EventSession, "run cancelled")
+			_ = a.st.FinishExecution(in.execID, "cancelled", "", tokensIn, tokensOut)
+			return "", fmt.Errorf("engine: cancelled: %w", ctx.Err())
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				emit(domain.EventSession, "run cancelled")
@@ -408,12 +415,18 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 			// FIRST step without tools gets exactly one nudge — the answer
 			// stays in the conversation, the instruction rides a user
 			// message, and whatever comes next is final.
-			if in.requireToolUse && !nudged && ctx.Err() == nil {
-				nudged = true
+			if in.requireToolUse && step == 0 && ctx.Err() == nil {
+				// Only the FIRST completion: an agent that did tool work
+				// and then answers is finishing, not narrating.
+				// The nudged answer stays in the transcript as an intent
+				// row (ToolCalls "[]") — deliberately NOT a final-answer
+				// row: surfaces render tool-free assistant rows as answers,
+				// and a narrated non-answer must never pose as one.
 				_, _ = a.st.Append(store.Message{
 					ID: fmt.Sprintf("msg-nudge-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
 					ExecutionID: in.execID, Role: "assistant", Agent: in.agent(), Content: out.Content, Reasoning: out.ReasoningContent,
 					ToolCalls: "[]", Provider: in.providerName, Model: in.modelID,
+					PromptTokens: usageOrNull(out.ResponseMeta, true), CompletionTokens: usageOrNull(out.ResponseMeta, false),
 				})
 				emit(domain.EventAgentStep, "engine: "+in.agent()+" answered without using any tools — nudged once (require_tool_use)")
 				if in.isChild {
@@ -459,11 +472,6 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 			}
 			tracker.Record(tc.Function.Name, tc.Function.Arguments, errText)
 			a.emitToolCall(ctx, events, in, tc, content)
-			_, _ = a.st.Append(store.Message{
-				ID: fmt.Sprintf("msg-tool-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
-				ExecutionID: in.execID, Role: "tool", Agent: in.agent(), Content: content,
-				ToolCallID: tc.ID, ToolName: tc.Function.Name,
-			})
 			if in.isChild {
 				childMsgs = append(childMsgs, &schema.Message{
 					Role: schema.Tool, Content: content, ToolCallID: tc.ID, ToolName: tc.Function.Name,

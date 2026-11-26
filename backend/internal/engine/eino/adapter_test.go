@@ -669,6 +669,10 @@ func TestDelegationDepthGrantAndCap(t *testing.T) {
 	}
 	gen := &routingGenerator{scripts: map[string][]fakeGenStep{}}
 	a := newDelegatingAdapter(t, gen, func() registry.Snapshot { return snap })
+	// Nesting is OFF by default (delegation.max_depth = 1, the hold); the
+	// grant semantics below need the operator to raise the cap to 2 —
+	// which is exactly what lets a child delegate.
+	a.SetDepthCap(2)
 	gen.scripts = map[string][]fakeGenStep{
 		"delegate": {
 			{toolCall: "delegate_agent", args: `{"agent":"planner","task":"plan it now"}`},
@@ -1569,8 +1573,35 @@ func TestDeliverableReceipts(t *testing.T) {
 			receipt = evt.ToolCall.Output
 		}
 	}
-	if !strings.Contains(receipt, "Deliverables check (host, at fold-back):") || !strings.Contains(receipt, "outputs/exists.md ✓ on disk") || !strings.Contains(receipt, "sources/missing.md ✗ not on disk") {
+	if !strings.Contains(receipt, "Deliverables check (host; existence at fold-back, not proof of creation):") || !strings.Contains(receipt, "outputs/exists.md ✓ on disk") || !strings.Contains(receipt, "sources/missing.md ✗ not on disk") {
 		t.Fatalf("receipts missing from the fold-back:\n%s", receipt)
+	}
+	// No token escapes the ward, URLs are not receipts, version strings
+	// are not paths, and a symlinked leaf pointing outside reads ✗.
+	outside := filepath.Join(vault.Root(), "outside.md")
+	if err := os.WriteFile(outside, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(vault.Root(), "stock-analysis", "outputs", "link.md")); err != nil {
+		t.Fatal(err)
+	}
+	for tok, want := range map[string]string{
+		"outputs/link.md":    "✗ not on disk", // symlink out of the ward
+		"../../outside.md":   "nothing",       // traversal: not a receipt at all
+		"https://x.com/a.md": "nothing",       // URLs are stripped
+		"data/glm-5.3":       "nothing",       // version-like, not a path
+		"stock-analysis.md":  "✓ on disk",     // a bare filename that exists (existence, not creation)
+	} {
+		got := deliverableReceipts(runInput{wardHost: a.wardHost("deleg-receipts")}, "write "+tok+" please")
+		if want == "nothing" {
+			if strings.Contains(got, tok) {
+				t.Fatalf("%s must not be a receipt:\n%s", tok, got)
+			}
+			continue
+		}
+		if !strings.Contains(got, tok+" "+want) {
+			t.Fatalf("%s: want %q in:\n%s", tok, want, got)
+		}
 	}
 }
 
@@ -1648,5 +1679,74 @@ func TestDepthCapHoldsNesting(t *testing.T) {
 	}
 	if rows, _ := store.QueryChildExecutions(a.st, "deleg-cap"); len(rows) != 1 {
 		t.Fatalf("only the planner child may exist, got %v", rows)
+	}
+}
+
+// A nudged run's assistant rows still sum to the execution's usage (the
+// nudged answer carries its own usage), and a run cancelled while the
+// model was answering finishes "cancelled" — never as a success.
+type cancellingGenerator struct {
+	inner   *routingGenerator
+	onAfter func() // runs after the answer is produced, before it is handled
+}
+
+func (c *cancellingGenerator) Generate(ctx context.Context, msgs []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	out, err := c.inner.Generate(ctx, msgs, opts...)
+	c.onAfter() // the answer arrived, but the run was cancelled meanwhile
+	return out, err
+}
+
+func TestNudgeUsageSumsAndCancelAfterGenerate(t *testing.T) {
+	t.Parallel()
+	snap := agentSnap()
+	snap.Agents["researcher"] = registry.AgentSpec{Name: "researcher", SystemPrompt: "R.", Description: "d", MaxDepth: 0, RequireToolUse: true}
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+		"nudge-usage": {
+			{toolCall: "delegate_agent", args: `{"agent":"researcher","task":"child-task n"}`},
+			{content: "root done"},
+		},
+		"child-task": {{content: "narrated"}, {content: "still narrated"}},
+	}}
+	a := newDelegatingAdapter(t, gen, func() registry.Snapshot { return snap })
+	ch, err := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "nudge-usage", Goal: "nudge-usage goal", Model: "prov/m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range ch {
+	}
+	msgs, _ := a.st.Replay("nudge-usage", 0, 50)
+	perExec := map[string][2]int64{}
+	for _, m := range msgs {
+		if m.Role != "assistant" || !m.PromptTokens.Valid {
+			continue
+		}
+		e := perExec[m.ExecutionID]
+		perExec[m.ExecutionID] = [2]int64{e[0] + m.PromptTokens.Int64, e[1] + m.CompletionTokens.Int64}
+	}
+	children, _ := store.QueryChildExecutions(a.st, "nudge-usage")
+	if len(children) != 1 {
+		t.Fatalf("children: %v", children)
+	}
+	tin, tout, _, _ := a.st.ExecutionUsage(children[0])
+	if perExec[children[0]] != [2]int64{tin, tout} || tin != 200 { // two child completions × 100
+		t.Fatalf("nudged child usage: rows %v vs execution %d/%d", perExec[children[0]], tin, tout)
+	}
+
+	// Cancelled while answering: the run ends cancelled, not completed.
+	// (The run's context is detached from the caller's — cancel through
+	// the adapter's registered cancel, as Cancel does.)
+	a2 := newDelegatingAdapter(t, gen, agentSnap)
+	a2.newModel = func(context.Context, providers.Provider, string, string) (chatGenerator, error) {
+		return &cancellingGenerator{inner: &routingGenerator{scripts: map[string][]fakeGenStep{"*": {{content: "late answer"}}}}, onAfter: func() { _ = a2.Cancel(context.Background(), "cancel-late") }}, nil
+	}
+	ch2, err := a2.RunGoal(context.Background(), domain.GoalRequest{SessionID: "cancel-late", Goal: "anything", Model: "prov/m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range ch2 {
+	}
+	_, _, status, _ := a2.st.ExecutionUsage("exec-root-cancel-late")
+	if status != "cancelled" {
+		t.Fatalf("a run cancelled while the model answered must finish cancelled, got %q", status)
 	}
 }
