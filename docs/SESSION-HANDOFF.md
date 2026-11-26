@@ -37,6 +37,15 @@
 **Parked (operator direction — do NOT start):** Phase 2 channels, the
 Wails shell, the recorded P2s in `docs/product/backlog.md`.
 
+## Three records on the table (read them, pick the next slice)
+
+- `docs/architecture/run-quality-research.md` — why the INR run's
+  research agent fabricated (zero tool calls, prose tool-use accepted
+  as the answer, children have no MCP plane) and why it cost 1.3M
+  prompt tokens (~12k fixed overhead per step, 34 KB reads, no child
+  compaction). Slices Q1 (truthfulness guard), Q2a (per-step usage),
+  Q2b (context budget = S3). **Recommended next: Q1.**
+
 ## Two plans on the table (read both, pick the next slice)
 
 **Shipped since the last handoff:** `intent-analyst-agent` (S1),
