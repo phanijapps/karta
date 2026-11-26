@@ -188,17 +188,24 @@ Q1 first: it stops the run from producing fiction. Q2a is a
 prerequisite for tuning Q2b. Interleaves with S2 (contract v2) — the
 analyst's `recommended_capabilities` feeds lever 5.
 
-## 6. Decisions to confirm
+## 6. Decisions (operator, 2026-11-25)
 
-1. The first-answer nudge: **opt-in per agent** via `require_tool_use`
-   (recommended) vs. on for every delegated child.
-2. MCP tools for children: by the agent's `tools:` allowlist
-   (recommended) vs. all children get the root's MCP plane.
-3. Tool-result cap size: 8 KB head + pointer (recommended) — the
-   model can re-read with a range.
-4. Whether the honesty clause goes in the shipped seeds (it changes
-   the operator's agent files on upgrade — the v2-upgrade pattern,
-   unmodified-copies-only) or only in new seeds.
+1. **Tool plane: sub-agents get the same tools as the root** — the
+   MCP plane included (not allowlist-scoped beyond the agent's own
+   `tools:`); which MCP to use is the model's judgement, guided by the
+   analyst's recommendations and the agent prompts.
+2. **Nested delegation: not today.** Sub-agents spawning sub-agents is
+   expected later; until then the nesting count is held by a config
+   knob, `delegation.max_depth` (default **1**: the root delegates,
+   children never — regardless of any agent's `max_depth` grant). The
+   engine's cap stops being a constant.
+3. The first-answer nudge ships **opt-in per agent** (`require_tool_use:
+   true` on the research and builder seeds).
+4. The honesty clause ships in the seeds and upgrades **unmodified
+   copies only** (the persona-v2 pattern).
+5. Tool-result cap size: still open (Q2b).
+
+Shipped as `delegation-truthfulness` (Q1 + Q2a + the depth knob).
 
 ## 7. Sources (repository evidence)
 
