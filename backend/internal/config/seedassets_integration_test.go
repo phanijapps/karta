@@ -89,6 +89,20 @@ func TestSeedAgentsDecode(t *testing.T) {
 	if len(snap.Skills) != len(wantSeededSkills) {
 		t.Fatalf("skill count: %d want %d", len(snap.Skills), len(wantSeededSkills))
 	}
+	// The honesty contract: research and builder opt into the first-answer
+	// nudge; the other example agents do not.
+	for name, spec := range snap.Agents {
+		switch name {
+		case "research-agent", "builder-agent":
+			if !spec.RequireToolUse {
+				t.Fatalf("%s must declare require_tool_use", name)
+			}
+		default:
+			if spec.RequireToolUse {
+				t.Fatalf("%s must not declare require_tool_use", name)
+			}
+		}
+	}
 	for _, name := range wantSeededAgents {
 		spec, ok := snap.Agents[name]
 		if !ok {

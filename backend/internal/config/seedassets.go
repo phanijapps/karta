@@ -48,6 +48,13 @@ func seedExamples(ctx context.Context, paths Paths) error {
 	if err := seedIntentAnalyst(ctx, paths); err != nil {
 		return err
 	}
+	// The honesty-contract upgrade of unmodified research/builder seeds:
+	// once per home, before the early returns below.
+	if !markerExists(paths.Home, agentHonestySeedMarker) {
+		if err := upgradeAgentSeedsHonesty(ctx, paths); err != nil {
+			return err
+		}
+	}
 	// Agents+skills ride the roster marker (seed-operator-roster):
 	// one marker written after BOTH walks, so the pair seeds as a unit.
 	if markerExists(paths.Home, exampleRosterMarker) {
@@ -117,6 +124,72 @@ func upgradePersonaSeeds(ctx context.Context, paths Paths) error {
 			_ = os.Remove(tmp)
 			return rerr
 		}
+	}
+	return nil
+}
+
+// agentHonestySeedMarker gates the one-time honesty-contract upgrade of
+// the research and builder agent seeds (delegation-truthfulness): a
+// home seeded before it receives the new seeds ONCE, and only when the
+// user's copy is still byte-identical to the earlier seed — an edited
+// copy is the user's and is never touched.
+const agentHonestySeedMarker = ".agent-seeds-honesty"
+
+// agentHonestyV1FS embeds the PRE-honesty research and builder seeds
+// (the exact bytes earlier bootstraps wrote) for the byte-identical
+// comparison.
+//
+//go:embed seedassets/agents_v1/research-agent.example.md seedassets/agents_v1/builder-agent.example.md
+var agentHonestyV1FS embed.FS
+
+var agentHonestyV1Bodies = map[string]string{
+	"research-agent.example.md": mustReadSeedV1("seedassets/agents_v1/research-agent.example.md"),
+	"builder-agent.example.md":  mustReadSeedV1("seedassets/agents_v1/builder-agent.example.md"),
+}
+
+func mustReadSeedV1(path string) string {
+	raw, err := agentHonestyV1FS.ReadFile(path)
+	if err != nil {
+		panic("config: embedded pre-honesty agent seed missing: " + err.Error())
+	}
+	return string(raw)
+}
+
+// upgradeAgentSeedsHonesty replaces unmodified pre-honesty research and
+// builder seeds with the honesty-contract seeds, crash-atomically
+// (temp + rename), once per home.
+func upgradeAgentSeedsHonesty(ctx context.Context, paths Paths) error {
+	if paths.AgentsDir == "" {
+		return nil
+	}
+	for name, oldBody := range agentHonestyV1Bodies {
+		dst := filepath.Join(paths.AgentsDir, name)
+		raw, err := os.ReadFile(dst)
+		if err != nil || string(raw) != oldBody {
+			continue // absent (user deleted it) or user-modified: untouched
+		}
+		newBody, rerr := seedAssetFSRead(ctx, "seedassets/agents/"+name)
+		if rerr != nil {
+			return rerr
+		}
+		if err := replaceFileAtomically(dst, []byte(newBody)); err != nil {
+			return err
+		}
+	}
+	return dropMarker(filepath.Join(paths.Home, agentHonestySeedMarker))
+}
+
+// replaceFileAtomically writes body to a temp file beside dst and
+// renames it over dst (an interrupted process never strands a partial
+// that later runs would treat as user-owned).
+func replaceFileAtomically(dst string, body []byte) error {
+	tmp := dst + ".upgrade-tmp"
+	if err := os.WriteFile(tmp, body, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		_ = os.Remove(tmp)
+		return err
 	}
 	return nil
 }

@@ -210,6 +210,9 @@ func run(ctx context.Context, homeFlag string) error {
 	// (ward_use/ward_create + ward-scoped file tools) with a sticky
 	// per-session active ward.
 	eng.SetWardVault(func() *wards.Vault { return wardVault })
+	// The operator's hold on nesting (delegation.max_depth; default 1:
+	// the root delegates, children never — regardless of agent grants).
+	eng.SetDepthCap(cfg.Delegation.MaxDepth)
 
 	// Resource index: registry snapshot + probed MCP tools → chitta
 	// reserved kinds; reconciled on boot (the coalescing worker's

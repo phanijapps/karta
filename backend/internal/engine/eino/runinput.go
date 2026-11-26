@@ -23,6 +23,9 @@ type runInput struct {
 	depth        int      // 0 = root
 	grant        int      // may delegate while depth < grant (agent max_depth; root = cap)
 	isChild      bool     // children surface steps as delegation events
+	// requireToolUse (the agent's declaration): a first answer without
+	// tool calls is nudged once before it is accepted.
+	requireToolUse bool
 
 	// Ward hosting (slice 3): the session's sticky host; nil = wards
 	// off. Root runs get the ward tools; children get the file tools +

@@ -45,3 +45,27 @@ You research things.`)
 		t.Fatalf("plain agent should have zero delegation metadata: %+v", p)
 	}
 }
+
+// require_tool_use loads from both spec forms; absent reads false.
+func TestAgentSpecRequireToolUse(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	write("guard.yaml", "name: guard\ndescription: d\nrequire_tool_use: true\n")
+	write("plain.md", "---\nname: plain\ndescription: d\n---\nbody\n")
+	snap, errs := New().LoadAll(Dirs{Agents: dir})
+	if len(errs) > 0 {
+		t.Fatalf("load errors: %+v", errs)
+	}
+	if !snap.Agents["guard"].RequireToolUse {
+		t.Fatal("require_tool_use must load from the YAML form")
+	}
+	if snap.Agents["plain"].RequireToolUse {
+		t.Fatal("an absent require_tool_use reads false")
+	}
+}

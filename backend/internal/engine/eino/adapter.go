@@ -11,7 +11,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -84,7 +83,9 @@ type Adapter struct {
 	models    map[string]chatGenerator   // cache: provider/model/key → model
 }
 
-// DefaultDepthCap bounds delegation depth unless configured lower.
+// DefaultDepthCap bounds delegation depth until the daemon applies the
+// configured `delegation.max_depth` (SetDepthCap); the config default (1)
+// is the operator's hold on nesting.
 const DefaultDepthCap = 2
 
 // New creates the engine adapter. snapFn may be nil.
@@ -134,6 +135,7 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 			return nil, fmt.Errorf("%w %q (configured: %s)", ErrUnknownAgent, req.Agent, agentList(snap))
 		}
 		in.agentName = spec.Name
+		in.requireToolUse = spec.RequireToolUse
 		in.systemPrompt = spec.SystemPrompt
 		if in.systemPrompt == "" && spec.Prompt != "" {
 			in.systemPrompt = "(prompt template " + spec.Prompt + ")"
@@ -278,6 +280,8 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 	// kill ONLY when the progress tracker says the agent is stuck.
 	var tokensIn, tokensOut int64
 	var childMsgs []*schema.Message // child's retained conversation (P1-2)
+	nudged := false                 // the require_tool_use nudge fires once per run
+	pendingNudge := ""              // a user-message nudge for the NEXT step
 	softBudget := in.maxSteps       // from the intent complexity (0 = default)
 	if softBudget <= 0 || softBudget > MaxSteps {
 		softBudget = MaxSteps
@@ -321,6 +325,16 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 			_ = a.st.FinishExecution(in.execID, "failed", err.Error(), tokensIn, tokensOut)
 			return "", err
 		}
+		// The require_tool_use nudge rides one user message (advisory
+		// steering, like the progress nudges) and persists in a child's
+		// retained conversation so later steps keep the instruction.
+		if pendingNudge != "" {
+			msgs = append(msgs, schema.UserMessage(pendingNudge))
+			if in.isChild {
+				childMsgs = append(childMsgs, schema.UserMessage(pendingNudge))
+			}
+			pendingNudge = ""
+		}
 		// Offer tools on all but the final step: the agent's allowlist
 		// plus the delegate tool when this run's depth grant allows. The
 		// offered set is ALSO the execution inventory (an allowlist binds
@@ -346,10 +360,12 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 				if in.depth < in.grant && in.depth < a.depthCap && a.snapFn != nil {
 					offered = append(offered, a.delegateTool(ctx, events, in))
 				}
-				// The retrieval plane (ward-v2): live MCP tools on ROOT
-				// runs — research sessions search/fetch; quick chat (the
-				// chat service's lean plane) never mounts them.
-				if !in.isChild && a.mcpTools != nil {
+				// The retrieval plane (ward-v2): live MCP tools on engine
+				// runs — root AND delegated children share the plane
+				// (delegation-truthfulness: a research child must be able
+				// to search); the agent's allowlist still bounds it.
+				// Quick chat (the chat service's lean plane) never mounts them.
+				if a.mcpTools != nil {
 					offered = append(offered, filterWardTools(a.mcpTools(), in.toolAllow)...)
 				}
 			}
@@ -387,12 +403,32 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 		}
 
 		if len(out.ToolCalls) == 0 {
+			// The guard against narrated tool use (delegation-truthfulness):
+			// an agent that declared require_tool_use and answered its
+			// FIRST step without tools gets exactly one nudge — the answer
+			// stays in the conversation, the instruction rides a user
+			// message, and whatever comes next is final.
+			if in.requireToolUse && !nudged && ctx.Err() == nil {
+				nudged = true
+				_, _ = a.st.Append(store.Message{
+					ID: fmt.Sprintf("msg-nudge-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
+					ExecutionID: in.execID, Role: "assistant", Agent: in.agent(), Content: out.Content, Reasoning: out.ReasoningContent,
+					ToolCalls: "[]", Provider: in.providerName, Model: in.modelID,
+				})
+				emit(domain.EventAgentStep, "engine: "+in.agent()+" answered without using any tools — nudged once (require_tool_use)")
+				if in.isChild {
+					childMsgs = append(childMsgs, out) // the child sees its own answer before the nudge
+				}
+				pendingNudge = toolUseNudge
+				continue
+			}
 			// Final answer (with the step's reasoning — the model's
 			// thinking for this step, as the chat path stores it).
 			_, _ = a.st.Append(store.Message{
 				ID: fmt.Sprintf("msg-final-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
 				ExecutionID: in.execID, Role: "assistant", Agent: in.agent(), Content: out.Content, Reasoning: out.ReasoningContent,
 				Provider: in.providerName, Model: in.modelID,
+				PromptTokens: usageOrNull(out.ResponseMeta, true), CompletionTokens: usageOrNull(out.ResponseMeta, false),
 			})
 			emit(domain.EventAgentStep, out.Content)
 			emit(domain.EventSession, "run completed")
@@ -406,6 +442,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 			ID: fmt.Sprintf("msg-intent-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
 			ExecutionID: in.execID, Role: "assistant", Agent: in.agent(), Content: out.Content, Reasoning: out.ReasoningContent,
 			ToolCalls: string(intentJSON), Provider: in.providerName, Model: in.modelID,
+			PromptTokens: usageOrNull(out.ResponseMeta, true), CompletionTokens: usageOrNull(out.ResponseMeta, false),
 		})
 		emit(domain.EventAgentStep, out.Content)
 		if in.isChild {
@@ -421,30 +458,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 				errText = result.Err.Error()
 			}
 			tracker.Record(tc.Function.Name, tc.Function.Arguments, errText)
-			// Tool event.
-			payload, _ := json.Marshal(map[string]any{"tool": tc.Function.Name, "output": content, "agent": in.agent()})
-			_ = a.st.AppendEvent(store.Event{
-				ID: a.idGen(), SessionID: in.sessionID, ExecutionID: in.execID,
-				Kind: "tool_call", Payload: string(payload),
-			})
-			toolEvt := domain.TimelineEvent{
-				ID: a.idGen(), SessionID: in.sessionID, ExecutionID: in.execID, Kind: domain.EventToolCall,
-				Text:     tc.Function.Name, // the name rides Text too: every SSE consumer (UI work stream, /v1 frames) renders it
-				Agent:    in.agent(),
-				ToolCall: &domain.ToolCallPayload{Tool: tc.Function.Name, Output: content},
-			}
-			if in.isChild {
-				// Child tool calls surface as delegation events (the
-				// durable row keeps "tool_call" under the child's execution).
-				toolEvt.Kind = domain.EventDelegation
-			}
-			if a.bus != nil {
-				_ = a.bus.Publish(context.Background(), toolEvt) // ctx-ok: F-15
-			}
-			select {
-			case events <- toolEvt:
-			case <-ctx.Done():
-			}
+			a.emitToolCall(ctx, events, in, tc, content)
 			_, _ = a.st.Append(store.Message{
 				ID: fmt.Sprintf("msg-tool-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
 				ExecutionID: in.execID, Role: "tool", Agent: in.agent(), Content: content,
@@ -462,24 +476,4 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 	emit(domain.EventSession, "run stopped: step bound reached")
 	_ = a.st.FinishExecution(in.execID, "failed", "step bound reached", tokensIn, tokensOut)
 	return "", fmt.Errorf("engine: step bound reached")
-}
-
-// hashToken produces a short stable hash for cache keying (never the
-// token itself).
-func hashToken(token string) string {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(token))
-	return fmt.Sprint(h.Sum32())
-}
-
-// execOffered executes one tool call against the step's offered inventory
-// (allowlist + delegate). Unknown or non-offered names are typed errors the
-// model can see — never silent execution outside the inventory.
-func execOffered(ctx context.Context, offered []tools.Tool, name, argsJSON string) tools.Result {
-	for _, t := range offered {
-		if t.Def().Name == name {
-			return t.Exec(ctx, argsJSON)
-		}
-	}
-	return tools.Result{Err: fmt.Errorf("%w: %q", ErrToolNotOffered, name)}
 }

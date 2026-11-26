@@ -149,6 +149,15 @@ func filterWardTools(set []tools.Tool, allow []string) []tools.Tool {
 // tools (nil/empty = none). Mounted on ROOT runs only.
 func (a *Adapter) SetMCPTools(fn func() []tools.Tool) { a.mcpTools = fn }
 
+// SetDepthCap applies the configured delegation depth cap
+// (`delegation.max_depth`; values below 1 are ignored). The root's grant
+// is the cap itself, so 1 means the root may delegate and children never.
+func (a *Adapter) SetDepthCap(n int) {
+	if n >= 1 {
+		a.depthCap = n
+	}
+}
+
 // SetWardBinder wires the session-row ward binding: every ward enter
 // (ward_use/ward_create, or EnsureWard) in a session fires fn with the
 // session id and ward name (add-chat-modes — the sidebar re-groups and

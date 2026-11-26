@@ -398,3 +398,54 @@ func TestSeedIntentAnalystOnce(t *testing.T) {
 		t.Fatal("post-marker deletion resurrected the analyst")
 	}
 }
+
+// The honesty-contract upgrade: a home seeded before it gets the new
+// research/builder seeds ONCE and only when its copies are still the
+// earlier seeds byte-for-byte; a user-edited copy is never touched; the
+// marker drops so later deletions stick.
+func TestSeedHonestyUpgrade(t *testing.T) {
+	home, paths := tempHome(t)
+	if err := os.MkdirAll(paths.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// An already-seeded home: roster + persona markers present, the v1
+	// research seed verbatim, the builder seed user-edited.
+	for _, m := range []string{exampleRosterMarker, personaSeedMarker, personaSeedV2Marker} {
+		if err := os.WriteFile(filepath.Join(home, m), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	research := filepath.Join(paths.AgentsDir, "research-agent.example.md")
+	if err := os.WriteFile(research, []byte(agentHonestyV1Bodies["research-agent.example.md"]), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	builder := filepath.Join(paths.AgentsDir, "builder-agent.example.md")
+	edited := agentHonestyV1Bodies["builder-agent.example.md"] + "\nmy own note\n"
+	if err := os.WriteFile(builder, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Bootstrap(context.Background(), paths); err != nil {
+		t.Fatalf("upgrade Bootstrap: %v", err)
+	}
+	got, _ := os.ReadFile(research)
+	if !strings.Contains(string(got), "## Honesty contract") || !strings.Contains(string(got), "require_tool_use: true") {
+		t.Fatalf("the unmodified research seed must upgrade:\n%s", got)
+	}
+	gotB, _ := os.ReadFile(builder)
+	if string(gotB) != edited {
+		t.Fatalf("a user-edited builder seed must be untouched:\n%s", gotB)
+	}
+	if _, err := os.Stat(filepath.Join(home, agentHonestySeedMarker)); err != nil {
+		t.Fatalf("honesty marker missing: %v", err)
+	}
+	// Post-marker: deleting the research seed sticks across bootstraps.
+	if err := os.Remove(research); err != nil {
+		t.Fatal(err)
+	}
+	if err := Bootstrap(context.Background(), paths); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(research); !os.IsNotExist(err) {
+		t.Fatal("post-marker deletion must stick")
+	}
+}

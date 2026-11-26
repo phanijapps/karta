@@ -60,6 +60,10 @@ imports config.
   `Watch`, `CreateMCP`/`UpdateMCP`/`DeleteMCP`,
   `CreateSkill`/`UpdateSkill`/`DeleteSkill`/`SkillDetail`.
 - Schedules (schedules kind): cron-expressed goal runs under config/schedules — loader + CRUD in schedules.go; capacity 128
+- `AgentSpec.RequireToolUse` (`require_tool_use: true`, optional, strict
+  decode in both forms): the engine nudges a run under the agent once
+  when its first answer uses no tools — the research and builder seeds
+  declare it (delegation-truthfulness).
 - System-role agents (`system.go`): `IsSystemAgent` holds the reserved
   host-run names (`intent-analyst`). They are ordinary roster entries
   (Settings lists them; the file is user-owned) but the engine never

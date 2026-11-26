@@ -34,6 +34,15 @@ in the dependency graph (nothing here imports registry/eventbus/engine).
   moves entries up one-by-one, never overwriting, hand-move-aware.
 - Skill seeds target `paths.SkillsDir`; prompt seeds stay in
   `config/prompts/` (daemon config, not user skills).
+- The honesty-contract upgrade (delegation-truthfulness): the
+  research-agent and builder-agent seeds carry `require_tool_use: true`
+  and a "never describe a step you did not take" clause; homes seeded
+  before it upgrade ONCE under `.agent-seeds-honesty`
+  (`upgradeAgentSeedsHonesty`) and only when the user's copy is still
+  byte-identical to the embedded pre-honesty seed
+  (`seedassets/agents_v1/`) — edited copies are never touched.
+- `delegation.max_depth` (config, default 1) is the operator's hold on
+  nested delegation; the daemon applies it with `SetDepthCap`.
 - The intent analyst (intent-analyst-agent S1) seeds from
   `seedassets/system-agents/` into `~/.zbot/agents/intent-analyst.md`
   under its OWN marker (`.intent-analyst-seeded`, `seedIntentAnalyst`

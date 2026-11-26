@@ -1430,3 +1430,223 @@ func TestWardEventAfterDelegationAttributedToRoot(t *testing.T) {
 		t.Fatal("run attribution must be cleared at the run's end")
 	}
 }
+
+// fakeMCPTool stands in for a live MCP tool (the retrieval plane).
+type fakeMCPTool struct{ hits *int }
+
+func (f fakeMCPTool) Def() tools.Def {
+	return tools.Def{Name: "mcp_fake_web_search", Description: "fake search", ParamsJSON: `{"type":"object","properties":{"query":{"type":"string"}}}`}
+}
+func (f fakeMCPTool) Exec(_ context.Context, _ string) tools.Result {
+	*f.hits++
+	return tools.Result{Output: "7 results"}
+}
+
+// Delegated children share the root's MCP plane (delegation-truthfulness):
+// a research child's web search is offered and lands as its own call.
+func TestChildGetsMCPTools(t *testing.T) {
+	t.Parallel()
+	hits := 0
+	snap := agentSnap()
+	snap.Agents["researcher"] = registry.AgentSpec{Name: "researcher", SystemPrompt: "Research.", Description: "d", MaxDepth: 0}
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+		"delegate-mcp": {
+			{toolCall: "delegate_agent", args: `{"agent":"researcher","task":"child-task search it"}`},
+			{content: "root done"},
+		},
+		"child-task": {
+			{toolCall: "mcp_fake_web_search", args: `{"query":"inr"}`},
+			{content: "found 7 results"},
+		},
+	}}
+	a := newDelegatingAdapter(t, gen, func() registry.Snapshot { return snap })
+	a.SetMCPTools(func() []tools.Tool { return []tools.Tool{fakeMCPTool{hits: &hits}} })
+	ch, err := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "deleg-mcp", Goal: "delegate-mcp goal", Model: "prov/m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for evt := range ch {
+		if evt.Kind == domain.EventDelegation && evt.ToolCall != nil && evt.ToolCall.Tool == "mcp_fake_web_search" && strings.Contains(evt.ToolCall.Output, "not offered") {
+			t.Fatalf("the child must be offered the MCP tool: %+v", evt.ToolCall)
+		}
+	}
+	if hits != 1 {
+		t.Fatalf("the child's MCP search must execute exactly once, got %d", hits)
+	}
+}
+
+// The guard against narrated tool use: an agent with require_tool_use
+// that answers its first step without tools is nudged ONCE; the next
+// answer stands (even if it too has no tools).
+func TestToolFreeFirstAnswerNudgedOnce(t *testing.T) {
+	t.Parallel()
+	snap := agentSnap()
+	snap.Agents["researcher"] = registry.AgentSpec{Name: "researcher", SystemPrompt: "Research.", Description: "d", MaxDepth: 0, RequireToolUse: true}
+	snap.Agents["writer"] = registry.AgentSpec{Name: "writer", SystemPrompt: "Write.", Description: "d", MaxDepth: 0}
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+		"delegate-nudge": {
+			{toolCall: "delegate_agent", args: `{"agent":"researcher","task":"child-task research"}`},
+			{toolCall: "delegate_agent", args: `{"agent":"writer","task":"write-task now"}`},
+			{content: "root done"},
+		},
+		"child-task": {
+			{content: "I'll start by reading the evidence base… ## Step 1: Read sources/x.md"}, // narrated, no tools
+			{content: "Still no tools."}, // accepted after the one nudge
+		},
+		"write-task": {{content: "written"}}, // no require_tool_use: accepted at once
+	}}
+	a := newDelegatingAdapter(t, gen, func() registry.Snapshot { return snap })
+	ch, err := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "deleg-nudge", Goal: "delegate-nudge goal", Model: "prov/m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nudges int
+	for evt := range ch {
+		// A child's steps surface as delegation events in the parent's stream.
+		if (evt.Kind == domain.EventAgentStep || evt.Kind == domain.EventDelegation) && strings.Contains(evt.Text, "nudged once") {
+			nudges++
+			if evt.Agent != "researcher" {
+				t.Fatalf("the nudge is attributed to the child: %+v", evt)
+			}
+		}
+	}
+	if nudges != 1 {
+		t.Fatalf("exactly one nudge for the research child (none for the writer), got %d", nudges)
+	}
+	// The child ran two model steps (narrated → nudged → accepted); the
+	// writer one.
+	var childExecs int
+	rows, _ := store.QueryChildExecutions(a.st, "deleg-nudge")
+	childExecs = len(rows)
+	if childExecs != 2 {
+		t.Fatalf("children: %d", childExecs)
+	}
+	msgs, _ := a.st.Replay("deleg-nudge", 0, 50)
+	var nudgeRows, finalRows int
+	for _, m := range msgs {
+		switch {
+		case strings.HasPrefix(m.ID, "msg-nudge-"):
+			nudgeRows++
+		case strings.HasPrefix(m.ID, "msg-final-"):
+			finalRows++
+		}
+	}
+	if nudgeRows != 1 || finalRows != 3 {
+		t.Fatalf("rows: nudged answers %d (want 1), final answers %d (researcher, writer, root; want 3)", nudgeRows, finalRows)
+	}
+}
+
+// The delegate fold-back carries host-verified deliverable receipts for
+// the paths the task named.
+func TestDeliverableReceipts(t *testing.T) {
+	t.Parallel()
+	vault := newWardVault(t)
+	snap := agentSnap()
+	snap.Agents["builder"] = registry.AgentSpec{Name: "builder", SystemPrompt: "Build.", Description: "d", MaxDepth: 0}
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+		"delegate-receipts": {
+			{toolCall: "ward_use", args: `{"name":"stock-analysis"}`},
+			{toolCall: "delegate_agent", args: `{"agent":"builder","task":"write outputs/exists.md and sources/missing.md"}`},
+			{content: "root done"},
+		},
+		"write outputs": {{content: "done"}},
+	}}
+	a := newDelegatingAdapter(t, gen, func() registry.Snapshot { return snap })
+	a.SetWardVault(func() *wards.Vault { return vault })
+	if err := os.MkdirAll(filepath.Join(vault.Root(), "stock-analysis", "outputs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vault.Root(), "stock-analysis", "outputs", "exists.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ch, err := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "deleg-receipts", Goal: "delegate-receipts goal", Model: "prov/m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt string
+	for evt := range ch {
+		if evt.Kind == domain.EventToolCall && evt.ToolCall != nil && evt.ToolCall.Tool == "delegate_agent" {
+			receipt = evt.ToolCall.Output
+		}
+	}
+	if !strings.Contains(receipt, "Deliverables check (host, at fold-back):") || !strings.Contains(receipt, "outputs/exists.md ✓ on disk") || !strings.Contains(receipt, "sources/missing.md ✗ not on disk") {
+		t.Fatalf("receipts missing from the fold-back:\n%s", receipt)
+	}
+}
+
+// Per-step usage rides every assistant row (root and children) and sums
+// to the execution totals.
+func TestAssistantRowsCarryUsage(t *testing.T) {
+	t.Parallel()
+	snap := agentSnap()
+	snap.Agents["researcher"] = registry.AgentSpec{Name: "researcher", SystemPrompt: "R.", Description: "d", MaxDepth: 0}
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+		"delegate-usage": {
+			{toolCall: "delegate_agent", args: `{"agent":"researcher","task":"child-task u"}`},
+			{content: "root done"},
+		},
+		"child-task": {{content: "child done"}},
+	}}
+	a := newDelegatingAdapter(t, gen, func() registry.Snapshot { return snap })
+	ch, err := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "deleg-usage", Goal: "delegate-usage goal", Model: "prov/m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range ch {
+	}
+	msgs, _ := a.st.Replay("deleg-usage", 0, 50)
+	perExec := map[string][2]int64{}
+	for _, m := range msgs {
+		if m.Role != "assistant" {
+			continue
+		}
+		if !m.PromptTokens.Valid {
+			t.Fatalf("assistant row without per-step usage: %+v", m)
+		}
+		e := perExec[m.ExecutionID]
+		perExec[m.ExecutionID] = [2]int64{e[0] + m.PromptTokens.Int64, e[1] + m.CompletionTokens.Int64}
+	}
+	for execID, sum := range perExec {
+		tin, tout, _, err := a.st.ExecutionUsage(execID)
+		if err != nil || tin != sum[0] || tout != sum[1] {
+			t.Fatalf("%s: rows sum %d/%d vs execution %d/%d (%v)", execID, sum[0], sum[1], tin, tout, err)
+		}
+	}
+}
+
+// The depth cap holds nesting off regardless of grants: with
+// delegation.max_depth = 1 a child granted max_depth 2 is still not
+// offered the delegate tool.
+func TestDepthCapHoldsNesting(t *testing.T) {
+	t.Parallel()
+	snap := agentSnap()
+	snap.Agents["planner"] = registry.AgentSpec{Name: "planner", SystemPrompt: "Plan.", Description: "d", MaxDepth: 2}
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{
+		"delegate-cap": {
+			{toolCall: "delegate_agent", args: `{"agent":"planner","task":"plan it now"}`},
+			{content: "root done"},
+		},
+		"plan it": {
+			{toolCall: "delegate_agent", args: `{"agent":"researcher","task":"child-task deep"}`},
+			{content: "planner done"},
+		},
+	}}
+	a := newDelegatingAdapter(t, gen, func() registry.Snapshot { return snap })
+	a.SetDepthCap(1)
+	ch, err := a.RunGoal(context.Background(), domain.GoalRequest{SessionID: "deleg-cap", Goal: "delegate-cap goal", Model: "prov/m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var refused bool
+	for evt := range ch {
+		if evt.Kind == domain.EventDelegation && evt.ToolCall != nil && evt.ToolCall.Tool == "delegate_agent" && strings.Contains(evt.ToolCall.Output, "not offered") {
+			refused = true
+		}
+	}
+	if !refused {
+		t.Fatal("the nested delegate call must be refused as not offered")
+	}
+	if rows, _ := store.QueryChildExecutions(a.st, "deleg-cap"); len(rows) != 1 {
+		t.Fatalf("only the planner child may exist, got %v", rows)
+	}
+}

@@ -10,6 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -133,7 +136,7 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 		token: d.parent.token, prov: d.parent.prov,
 		systemPrompt: spec.SystemPrompt, toolAllow: spec.Tools,
 		agentName: spec.Name, depth: d.parent.depth + 1,
-		grant: spec.MaxDepth, isChild: true,
+		grant: spec.MaxDepth, isChild: true, requireToolUse: spec.RequireToolUse,
 		wardHost: d.parent.wardHost, // read-only inheritance: children act inside the ward (file tools), structural stays root-only
 	}
 	// A hosted child executes as the ward's agent too: the same
@@ -181,7 +184,43 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 	if err != nil {
 		return tools.Result{Err: fmt.Errorf("delegate_agent: %s: %w", args.Agent, err)}
 	}
-	return tools.Result{Output: answer}
+	return tools.Result{Output: answer + deliverableReceipts(d.parent, args.Task)}
+}
+
+// deliverablePathPattern matches relative paths with a directory and an
+// extension — the shape a task's OUTPUT section names ("sources/x.md",
+// "outputs/brief.md"). Bare filenames and URLs are left alone.
+var deliverablePathPattern = regexp.MustCompile(`\b([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+\.[A-Za-z0-9]{1,6})\b`)
+
+// deliverableReceipts appends host-verified lines for every path the
+// task named: present on disk (✓) or not (✗) — so the root reads the
+// truth next to the child's claims instead of spending steps on it. Only
+// inside a hosted ward; nothing to check otherwise.
+func deliverableReceipts(parent runInput, task string) string {
+	if parent.wardHost == nil {
+		return ""
+	}
+	view := parent.wardHost.Active()
+	if view == nil || view.Dir == "" {
+		return ""
+	}
+	seen := map[string]bool{}
+	var lines []string
+	for _, p := range deliverablePathPattern.FindAllString(task, -1) {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		mark := "✓ on disk"
+		if _, err := os.Stat(filepath.Join(view.Dir, filepath.FromSlash(p))); err != nil {
+			mark = "✗ not on disk"
+		}
+		lines = append(lines, "- "+p+" "+mark)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "\n\nDeliverables check (host, at fold-back):\n" + strings.Join(lines, "\n")
 }
 
 // firstLine bounds the task text on the started event's line.

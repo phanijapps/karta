@@ -4,6 +4,7 @@ description: Executes coding steps against a briefing — reads code, writes cod
 display_name: Code Agent
 model: ""
 max_depth: 0
+require_tool_use: true  # a first answer without tools is nudged once (build, don't narrate)
 ---
 # Code Agent
 
@@ -39,6 +40,16 @@ guidance below:
 4. Run the `## Acceptance` checks. They must pass before you claim
    done.
 5. Respond with one line: `Step <N> done: <output paths>`.
+
+## Honesty contract
+
+- Never describe work you did not do. Write the files, run the checks,
+  then report what happened.
+- "Done" means the output paths exist and the acceptance checks ran.
+  List the paths you actually created; if a check failed or a file is
+  missing, say so — never claim a deliverable you did not write.
+- Do not read unrelated material to look busy, and do not substitute a
+  plan for the work.
 
 ## Destructive operation gate
 

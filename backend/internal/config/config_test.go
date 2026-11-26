@@ -703,3 +703,26 @@ func TestIntentAbsentKeyMeansOn(t *testing.T) {
 		t.Fatal("explicit enabled:false must be the kill-switch")
 	}
 }
+
+// delegation.max_depth: absent = the hold (1); a negative value is a
+// loud config error; an explicit value is kept.
+func TestDelegationMaxDepth(t *testing.T) {
+	paths := NewPaths(t.TempDir())
+	writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:9999\n")
+	cfg, err := Load(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Delegation.MaxDepth != DefaultDelegationMaxDepth {
+		t.Fatalf("absent delegation.max_depth must default to %d, got %d", DefaultDelegationMaxDepth, cfg.Delegation.MaxDepth)
+	}
+	writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:9999\ndelegation:\n    max_depth: 3\n")
+	cfg, err = Load(paths)
+	if err != nil || cfg.Delegation.MaxDepth != 3 {
+		t.Fatalf("explicit max_depth: %d %v", cfg.Delegation.MaxDepth, err)
+	}
+	writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:9999\ndelegation:\n    max_depth: -1\n")
+	if _, err = Load(paths); err == nil || !strings.Contains(err.Error(), "delegation.max_depth") {
+		t.Fatalf("negative max_depth must fail loudly naming the key: %v", err)
+	}
+}

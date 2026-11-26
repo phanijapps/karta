@@ -28,6 +28,10 @@ type AgentSpec struct {
 	// depth stays below MaxDepth (0 = may not delegate). A config hard cap
 	// bounds the tree regardless.
 	MaxDepth int `yaml:"max_depth,omitempty"`
+	// RequireToolUse nudges a run under this agent once when its FIRST
+	// answer carries no tool calls (the guard against narrated tool use —
+	// delegation-truthfulness). Off unless declared.
+	RequireToolUse bool `yaml:"require_tool_use,omitempty"`
 
 	Path string `yaml:"-"`
 }

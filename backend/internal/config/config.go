@@ -25,6 +25,15 @@ type Config struct {
 	Chitta       ChittaConfig       `yaml:"chitta"`
 	SystemPrompt SystemPromptConfig `yaml:"system_prompt"`
 	Intent       IntentConfig       `yaml:"intent_analysis"`
+	Delegation   DelegationConfig   `yaml:"delegation"`
+}
+
+// DelegationConfig bounds the delegation tree. MaxDepth is the operator's
+// hold on nesting: 1 (the default) means the ROOT may delegate and
+// children never — whatever any agent's max_depth grants — until the
+// operator raises it (delegation-truthfulness, decision 2).
+type DelegationConfig struct {
+	MaxDepth int `yaml:"max_depth"`
 }
 
 // SystemPromptConfig selects the composed system prompt's static
@@ -40,6 +49,10 @@ type SystemPromptConfig struct {
 	Tools  string   `yaml:"tools,omitempty"`
 	Custom []string `yaml:"custom,omitempty"`
 }
+
+// DefaultDelegationMaxDepth is the shipped hold on nesting: the root
+// delegates, children do not.
+const DefaultDelegationMaxDepth = 1
 
 // IntentConfig gates the pre-execution intent middleware for goal
 // runs (chat is never analyzed). Enabled is a POINTER: an absent key
@@ -163,6 +176,7 @@ type ProviderConfig struct {
 func Default() Config {
 	return Config{
 		Engine:       "eino",
+		Delegation:   DelegationConfig{MaxDepth: DefaultDelegationMaxDepth},
 		Server:       ServerConfig{Address: "127.0.0.1:8787"},
 		Compaction:   CompactionConfig{MaxContextTokens: 128000, ReserveOutputTokens: 8192},
 		Wards:        WardsConfig{VaultRoot: ""}, // empty = OS-aware ~/Documents/wards (wards.ResolveVaultRoot)
@@ -300,6 +314,11 @@ func Load(paths Paths) (Config, error) {
 	}
 	if cfg.Engine == "" {
 		return Config{}, fmt.Errorf("config: %s: engine must be set", paths.ConfigFile)
+	}
+	if cfg.Delegation.MaxDepth == 0 {
+		cfg.Delegation.MaxDepth = DefaultDelegationMaxDepth // absent key: the hold
+	} else if cfg.Delegation.MaxDepth < 0 {
+		return Config{}, fmt.Errorf("config: %s: delegation.max_depth must be at least 1", paths.ConfigFile)
 	}
 	if err := validateProviders(cfg, paths.ConfigFile); err != nil {
 		return Config{}, err

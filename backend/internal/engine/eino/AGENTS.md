@@ -45,4 +45,19 @@ checks, and durable-first event emission.
   after them. Ward transitions are attributed through the per-session
   `runAttr` map (`setRunAttribution` at every run's start). `run.go`
   is the root wrapper around `runLoop`.
+- Delegation truthfulness (operator decisions 2026-11-25): children
+  share the ROOT's tool plane — builtins, memory, ward file/shell and
+  the live MCP tools — bounded only by the agent's own `tools:`
+  allowlist (`adapter.go`, the MCP guard no longer excludes children).
+  `require_tool_use: true` on an agent (registry `AgentSpec`) makes the
+  run loop nudge ONCE when the FIRST completion carries no tool calls
+  (`toolUseNudge`, `runhelpers.go`): the answer stays in the
+  conversation with the nudge as a user message; the next answer is
+  final. The delegate fold-back appends host-verified deliverable
+  receipts for the paths the task named (`deliverableReceipts`). The
+  depth cap is `SetDepthCap` (`delegation.max_depth`, default 1 — the
+  root delegates, children never; nesting stays off until raised).
+  Assistant rows carry per-step usage (`usageOrNull`). `runhelpers.go`
+  holds the loop's helpers (model cache key, offered-inventory executor,
+  nudge text, usage, `emitToolCall`).
 
