@@ -4,7 +4,7 @@
   import { sendChatMessage, streamChatMessage, continueSession } from '../../shared/api/client';
   import { costText, fmtTokens, isTerminalAnalysisKind } from '../../entities/timeline-event/analysisText';
   import DelegationSlideout from './DelegationSlideout.svelte';
-  import { delegationGroups, type DelegationGroup } from './steps';
+  import { delegationGroups, openDelegationTracker, parseCalls, type DelegationGroup } from './steps';
   import { createTimeline } from '../../shared/sse/timeline.svelte';
   import { renderMarkdown } from '../../shared/markdown/render';
   import type { Sessions } from '../../entities/session/session.svelte';
@@ -108,24 +108,27 @@
   const turns = $derived.by<Turn[]>(() => {
     const out: Turn[] = [];
     let cur: Turn | null = null;
+    // OPEN delegations of the current turn: while one awaits its result,
+    // a user row is the child's injected context and a tool-free assistant
+    // row is a report — neither breaks the turn or poses as an answer
+    // (legacy rows carry no agent; position is the only signal).
+    let open = openDelegationTracker();
     for (const m of sessions.messages) {
       if (m.role === 'user') {
-        // A user row right after a delegate_agent intent is the child's
-        // injected context — absorb it, don't start a turn.
-        const prevIntent = cur?.rows[cur.rows.length - 1];
-        // An attributed child's injected context absorbs into the current
-        // turn whatever precedes it; legacy rows keep the adjacency rule.
-        const isChildContext = !!m.agent && m.agent !== 'root';
-        if (cur && (isChildContext || (prevIntent?.tool_calls && prevIntent.tool_calls.includes('"delegate_agent"')))) {
+        const isChildContext = (!!m.agent && m.agent !== 'root') || open.size > 0;
+        if (cur && isChildContext) {
           cur.rows.push(m);
           continue;
         }
         cur = { key: m.id, user: m, rows: [], answers: [], groups: [], live: false };
+        open = openDelegationTracker();
         out.push(cur);
         continue;
       }
       if (!cur) continue;
-      if (m.role === 'assistant' && !m.tool_calls && (m.content || '').trim() !== '' && (!m.agent || m.agent === 'root')) cur.answers.push(m);
+      if (m.role === 'assistant' && m.tool_calls) open.openIntent(parseCalls(m));
+      if (m.role === 'tool' && m.tool_name === 'delegate_agent') open.closeResult(m);
+      if (m.role === 'assistant' && !m.tool_calls && (m.content || '').trim() !== '' && (!m.agent || m.agent === 'root') && open.size === 0) cur.answers.push(m);
       else cur.rows.push(m); // tool rows, intents, and sub-agent reports (shown via the delegation pills)
     }
     // Delegation groups are derived once per turn here (not per render).

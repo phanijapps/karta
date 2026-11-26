@@ -10,7 +10,7 @@
   import { renderMarkdown } from '../../shared/markdown/render';
   import { fmtDuration } from '../../entities/timeline-event/duration';
   import { fmtTokens } from '../../entities/timeline-event/analysisText';
-  import type { DelegationGroup } from './steps';
+  import { taskGist, type DelegationGroup } from './steps';
   import type { SessionExecution } from '../../shared/api/client';
 
   let {
@@ -24,6 +24,7 @@
   } = $props();
 
   let panel = $state<HTMLDivElement | null>(null);
+  const groupGist = $derived(taskGist(group.task, 160) || `Delegated to ${group.agent}`);
 
   // The child's execution row (cost/status), matched by execution id.
   const exec = $derived(
@@ -91,14 +92,19 @@
       <button type="button" class="icon-button" aria-label="Close delegation" onclick={onclose}><X size={16} /></button>
     </header>
     {#if group.task}
-      <p class="task" title={group.task}>{group.task}</p>
+      <!-- A one-line gist; the full task on demand (it can run to
+           thousands of characters, ward preamble included). -->
+      <details class="task">
+        <summary title={group.task}>{groupGist}</summary>
+        <pre class="task-full">{group.task}</pre>
+      </details>
     {/if}
     <section class="calls" aria-label="Calls">
       <h4>Calls</h4>
       {#if group.rows.some((r) => r.role === 'assistant' && r.tool_calls)}
         <WorkSteps messages={group.rows} />
       {:else}
-        <p class="muted small">{group.done ? 'No tool calls — the agent answered directly.' : 'No tool calls yet.'}</p>
+        <p class="calls-empty">{group.done ? 'No tool calls — the agent answered directly.' : 'No tool calls yet.'}</p>
       {/if}
     </section>
     <section class="report" aria-label="Report">
@@ -121,9 +127,12 @@
   .who { display: inline-flex; align-items: center; gap: .45rem; color: var(--ds-color-primary, #3b82f6); }
   .who strong { color: var(--ds-color-text, #f4f4f4); }
   .cost { margin-left: auto; color: var(--ds-color-muted, #888); font-size: .78rem; font-variant-numeric: tabular-nums; }
-  .task { margin: 0; padding: .6rem 1rem; color: var(--ds-color-muted, #888); font-size: .82rem; border-bottom: 1px dashed var(--ds-color-border, #333); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task { margin: 0; padding: .55rem 1rem; color: var(--ds-color-muted, #888); font-size: .82rem; border-bottom: 1px dashed var(--ds-color-border, #333); }
+  .task > summary { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-full { margin: .5rem 0 0; padding: .6rem .7rem; max-height: 12rem; overflow: auto; white-space: pre-wrap; font: inherit; font-size: .78rem; border-radius: 8px; background: var(--ds-color-hover, #2a2a2a); }
   .calls, .report { padding: .7rem 1rem; overflow: auto; }
-  .calls { flex: 0 1 auto; max-height: 45%; }
+  .calls-empty { margin: 0; color: var(--ds-color-muted, #888); font-size: .8rem; }
+  .calls { flex: 0 0 auto; max-height: 45%; }
   .report { flex: 1 1 auto; border-top: 1px solid var(--ds-color-border, #333); }
   h4 { margin: 0 0 .4rem; font-size: .66rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-color-muted, #888); }
   .report-body { font-size: .9rem; line-height: 1.5; }

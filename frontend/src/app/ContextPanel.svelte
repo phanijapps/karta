@@ -3,6 +3,7 @@
   import { getWard, type Ward } from '../shared/api/client';
   import type { Sessions } from '../entities/session/session.svelte';
   import WorkSteps from '../features/chat-stream/WorkSteps.svelte';
+  import { openDelegationTracker, parseCalls, taskGist } from '../features/chat-stream/steps';
   import { createTimeline } from '../shared/sse/timeline.svelte';
   import { analysisText, fmtTokens, isAnalysisKind } from '../entities/timeline-event/analysisText';
   import { fmtDuration } from '../entities/timeline-event/duration';
@@ -145,8 +146,8 @@
     sessions.analysis as Record<string, any> | null,
   );
   const skills = $derived<string[]>((analysis?.recommended_skills as string[]) ?? []);
-  const agents = $derived.by<{ agent: string; task: string }[]>(() => {
-    const out: { agent: string; task: string }[] = [];
+  const agents = $derived.by<{ agent: string; task: string; gist: string }[]>(() => {
+    const out: { agent: string; task: string; gist: string }[] = [];
     for (const m of sessions.messages) {
       if (m.role !== 'assistant' || !m.tool_calls) continue;
       try {
@@ -155,7 +156,7 @@
           if (c.function?.name !== 'delegate_agent') continue;
           try {
             const args = JSON.parse(c.function.arguments ?? '{}') as { agent?: string; task?: string };
-            if (args.agent) out.push({ agent: args.agent, task: args.task ?? '' });
+            if (args.agent) out.push({ agent: args.agent, task: args.task ?? '', gist: taskGist(args.task ?? '', 110) });
           } catch { /* skip malformed */ }
         }
       } catch { /* skip malformed */ }
@@ -169,22 +170,25 @@
   const workTurns = $derived.by<WorkTurn[]>(() => {
     const out: WorkTurn[] = [];
     let cur: WorkTurn | null = null;
+    // Same open-delegation rule as the thread: a child's context row and
+    // a mid-delegation report never break the turn.
+    let open = openDelegationTracker();
     for (const m of sessions.messages) {
       if (m.role === 'user') {
-        const prevIntent = cur?.rows[cur.rows.length - 1];
-        // An attributed child's injected context absorbs into the current
-        // turn whatever precedes it; legacy rows keep the adjacency rule.
-        const isChildContext = !!m.agent && m.agent !== 'root';
-        if (cur && (isChildContext || (prevIntent?.tool_calls && prevIntent.tool_calls.includes('"delegate_agent"')))) {
+        const isChildContext = (!!m.agent && m.agent !== 'root') || open.size > 0;
+        if (cur && isChildContext) {
           cur.rows.push(m);
           continue;
         }
         cur = { key: m.id, user: m, rows: [], live: false };
+        open = openDelegationTracker();
         out.push(cur);
         continue;
       }
       if (!cur) continue;
-      if (m.role === 'assistant' && !m.tool_calls && (m.content || '').trim() !== '') continue; // the ANSWER stays in the chat
+      if (m.role === 'assistant' && m.tool_calls) open.openIntent(parseCalls(m));
+      if (m.role === 'tool' && m.tool_name === 'delegate_agent') open.closeResult(m);
+      if (m.role === 'assistant' && !m.tool_calls && (m.content || '').trim() !== '' && open.size === 0) continue; // the ANSWER stays in the chat
       cur.rows.push(m);
     }
     if (out.length) out[out.length - 1].live = running;
@@ -221,7 +225,7 @@
   {#if tab === 'work'}
     <!-- The tool history: every turn's steps (friendly verbs, folded
          detail), grouped under the user message that started them. -->
-    <div class="context-body work" role="tabpanel" aria-label="Work">
+    <div class="context-body work" role="tabpanel" aria-label="Work" tabindex="0">
       {#if sessions.messages.length === 0 && !running}
         <p class="muted small">No work yet — send a research question and the steps appear here as the run works.</p>
       {:else}
@@ -242,13 +246,14 @@
           <section class="work-turn" aria-label="Delegations">
             <p class="ctx-title"><Users size={12} aria-hidden="true" /> Delegations</p>
             {#each delegations as d (d.execId)}
-              <div class="delegation-card" class:running={d.status === 'running'} class:failed={d.status === 'failed' || d.status === 'cancelled'}>
+              <div class="delegation-card" role="group" aria-label={`Delegation ${d.agent}`} class:running={d.status === 'running'} class:failed={d.status === 'failed' || d.status === 'cancelled'}>
                 <span class="del-agent">{d.agent}</span>
-                {#if d.task}<span class="del-task" title={d.task}>{d.task.slice(0, 90)}{d.task.length > 90 ? '…' : ''}</span>{/if}
+                {#if d.task}<span class="del-task" title={d.task}>{taskGist(d.task, 90)}</span>{/if}
                 <span class="del-cost">
                   {#if d.status === 'running'}<span class="pulse" aria-hidden="true"></span>{/if}
-                  <!-- The changing outcome is announced once per card, with its agent. -->
-                  <span role="status" aria-live="polite">{d.agent}: {d.status}</span>
+                  <!-- The changing outcome is announced once per card (the
+                       card's name carries the agent). -->
+                  <span role="status" aria-live="polite">{d.status}</span>
                   {#if d.tokensIn || d.tokensOut} · {fmtTokens(d.tokensIn)} → {fmtTokens(d.tokensOut)}{/if}
                   {#if d.durationMs} · {fmtDuration(d.durationMs)}{/if}
                 </span>
@@ -282,7 +287,7 @@
       {/if}
     </div>
   {:else}
-  <div class="context-body" role="tabpanel" aria-label="Context">
+  <div class="context-body" role="tabpanel" aria-label="Context" tabindex="0">
     {#if ward}
       <section class="ctx-section" aria-label="Active ward">
         <p class="ctx-title"><FolderOpen size={12} aria-hidden="true" /> Active Ward</p>
@@ -342,7 +347,7 @@
       <p class="ctx-title"><Users size={12} aria-hidden="true" /> Agents</p>
       {#if agents.length}
         {#each agents as a}
-          <p class="ctx-row"><span class="dot agent" aria-hidden="true"></span> {a.agent}{#if a.task}<span class="muted"> — {a.task}</span>{/if}</p>
+          <p class="ctx-row"><span class="dot agent" aria-hidden="true"></span> {a.agent}{#if a.gist}<span class="agent-gist" title={a.task}>{a.gist}</span>{/if}</p>
         {/each}
       {:else}
         <p class="muted small">{sessions.isResearch ? 'No delegations yet in this session.' : 'Delegation is a research-session capability.'}</p>
@@ -369,6 +374,8 @@
   .delegation-card.failed .del-cost { color: var(--ds-color-danger, #ef4444); }
   .delegation-card .pulse { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ds-color-success, #22c55e); margin-right: .3rem; }
   .delegation-card .del-tools { grid-column: 1 / -1; color: var(--ds-color-muted, #888); font-size: .7rem; }
+  .agent-gist { display: block; color: var(--ds-color-muted, #888); font-size: .74rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .context-body:focus-visible { outline: 2px solid var(--ds-color-focus, #93c5fd); outline-offset: -2px; }
   .run-foot { margin-top: .6rem; padding-top: .5rem; border-top: 1px solid var(--ds-color-border, #333); color: var(--ds-color-muted, #888); font-size: .74rem; font-variant-numeric: tabular-nums; }
   .run-breakdown { margin-top: .3rem; }
   .run-breakdown summary { cursor: pointer; }

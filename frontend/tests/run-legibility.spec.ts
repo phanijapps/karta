@@ -123,7 +123,7 @@ test('delegations are pills; the slideout shows the agent\'s calls and report; t
   const dialog = page.getByRole('dialog', { name: 'Delegation to research-agent' });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText('research INR pressures');
-  await expect(dialog).toContainText('completed · 1.1k → 8.0k tokens · 1m 24s');
+  await expect(dialog).toContainText('completed · 1.1k → 8k tokens · 1m 24s');
   await expect(dialog).toContainText('No tool calls');
   await expect(dialog.getByRole('region', { name: 'Report' })).toContainText('Pressures on the Indian Rupee');
   await expect(research).toHaveAttribute('aria-expanded', 'true');
@@ -197,13 +197,13 @@ test('the Work tab attributes steps, shows delegation cards with cost, and total
   await expect(cards).toHaveCount(2);
   await expect(cards.nth(0)).toContainText('research-agent');
   await expect(cards.nth(0)).toContainText('research INR pressures');
-  await expect(cards.nth(0)).toContainText('1.1k → 8.0k');
+  await expect(cards.nth(0)).toContainText('1.1k → 8k');
   await expect(cards.nth(0)).toContainText('1m 24s');
   await expect(cards.nth(1)).toContainText('builder-agent');
   await expect(cards.nth(1)).toContainText('284.1k → 16.8k');
   // The footer totals every execution: root + analyst + both children.
   const foot = work.locator('footer.run-foot');
-  await expect(foot).toContainText('Session: 1.0M prompt');
+  await expect(foot).toContainText('Session: 1M prompt');
   await expect(foot).toContainText('61.9k completion');
   await expect(foot).toContainText('2 delegations');
   await expect(foot).toContainText('14m'); // zero parts drop
@@ -243,10 +243,10 @@ test('a stale state response never overwrites newer run totals', async ({ page }
   const panel = page.getByRole('complementary', { name: 'Session context' });
   await panel.getByRole('tab', { name: /Work/ }).click();
   const work = panel.getByRole('tabpanel', { name: 'Work' });
-  await expect(work.locator('footer.run-foot')).toContainText('Session: 1.0M prompt');
+  await expect(work.locator('footer.run-foot')).toContainText('Session: 1M prompt');
   // Wait out the stale response: the totals and the analysis must stand.
   await page.waitForTimeout(900);
-  await expect(work.locator('footer.run-foot')).toContainText('Session: 1.0M prompt');
+  await expect(work.locator('footer.run-foot')).toContainText('Session: 1M prompt');
   await expect(page.locator('.analysis-chip')).toContainText('analyze-inr-usd-pressures');
 });
 
@@ -310,4 +310,66 @@ test('interleaved children nest under their own delegation by execution, not by 
   await expect(work.locator('.step.delegation > .step-child-wrapper .step.child')).toHaveCount(0); // no child leaks out
   // The root's own read after the delegations is a top-level step.
   await expect(work.locator('.step:not(.delegation):not(.child) .verb', { hasText: 'Read' })).toHaveCount(1);
+});
+
+test('a legacy run with two delegations in one step and a report between intent and result stays ONE turn with one answer', async ({ page }) => {
+  // Mirrors the live INR transcript's shape (pre-attribution): the root
+  // issued two delegate_agent calls in ONE assistant row; the research
+  // agent's 26 KB report sits between its intent and its result; the
+  // builder's context follows. Before the fix the turn split at the
+  // builder's context, the report was tagged "The answer", and the
+  // builder pill showed "running" forever.
+  await mockBase(page);
+  await mockDaemon(page);
+  const SID = 'r-legacy-shape';
+  const rows = [
+    { id: 'u1', seq: 1, role: 'user', agent: 'root', execution_id: 'exec-root', content: 'Research the rupee…', created_at: NOW },
+    { id: 'a1', seq: 2, role: 'assistant', agent: 'root', execution_id: 'exec-root', content: 'Delegating both streams in parallel.', tool_calls: JSON.stringify([{ id: 'c1', function: { name: 'delegate_agent', arguments: JSON.stringify({ agent: 'research-agent', task: 'Ward: x (you are hosted inside it; all paths relative). TASK: research the pressures' }) } }, { id: 'c2', function: { name: 'delegate_agent', arguments: JSON.stringify({ agent: 'builder-agent', task: 'build the charts' }) } }]), created_at: NOW },
+    { id: 'u2', seq: 3, role: 'user', agent: 'root', execution_id: 'exec-root', content: 'Ward: x (you are hosted inside it). TASK: research…', created_at: NOW },
+    { id: 'r1', seq: 4, role: 'assistant', agent: 'root', execution_id: 'exec-root', content: '**Research report** — the drivers ranked. '.repeat(300), created_at: NOW },
+    { id: 't1', seq: 5, role: 'tool', agent: 'root', execution_id: 'exec-root', tool_name: 'delegate_agent', tool_call_id: 'c1', content: 'report received', created_at: NOW },
+    { id: 'u3', seq: 6, role: 'user', agent: 'root', execution_id: 'exec-root', content: 'build the charts', created_at: NOW },
+    { id: 'a2', seq: 7, role: 'assistant', agent: 'root', execution_id: 'exec-root', content: '', tool_calls: JSON.stringify([{ id: 'c3', function: { name: 'write', arguments: JSON.stringify({ path: 'chart.png' }) } }]), created_at: NOW },
+    { id: 't2', seq: 8, role: 'tool', agent: 'root', execution_id: 'exec-root', tool_name: 'write', tool_call_id: 'c3', content: 'wrote', created_at: NOW },
+    { id: 'r2', seq: 9, role: 'assistant', agent: 'root', execution_id: 'exec-root', content: 'Built the charts.', created_at: NOW },
+    { id: 't3', seq: 10, role: 'tool', agent: 'root', execution_id: 'exec-root', tool_name: 'delegate_agent', tool_call_id: 'c2', content: 'Built the charts.', created_at: NOW },
+    { id: 'a3', seq: 11, role: 'assistant', agent: 'root', execution_id: 'exec-root', content: 'Writing the brief.', tool_calls: JSON.stringify([{ id: 'c4', function: { name: 'write', arguments: JSON.stringify({ path: 'brief.md' }) } }]), created_at: NOW },
+    { id: 't4', seq: 12, role: 'tool', agent: 'root', execution_id: 'exec-root', tool_name: 'write', tool_call_id: 'c4', content: 'wrote', created_at: NOW },
+    { id: 'af', seq: 13, role: 'assistant', agent: 'root', execution_id: 'exec-root', content: 'Done. The briefing is at outputs/brief.md.', created_at: NOW },
+  ];
+  await page.route((url) => url.pathname === `/api/sessions/${SID}/state`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ session: { id: SID, type: 'research', status: 'completed', ward: 'stock-analysis', updated_at: NOW }, intent_analysis: { status: 'analyzed', primary_intent: 'legacy-shape', complexity: 'L', step_budget: 16 } }) }));
+  await page.route((url) => url.pathname === `/api/sessions/${SID}/events`, (route) => route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' }));
+  await page.route((url) => url.pathname === '/api/chat/messages', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const u = new URL(route.request().url());
+    const sid = u.searchParams.get('session_id') ?? 'default';
+    const after = Number(u.searchParams.get('after_seq') ?? '0');
+    const list = sid === SID ? rows.filter((m) => m.seq > after) : [];
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ messages: list, next_cursor: list.length ? list[list.length - 1].seq : after, truncated: false }) });
+  });
+  // Roster: add the session under the ward as the most recent one.
+  await page.route('**/api/sessions?limit=100', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sessions: [
+    { id: 'default', type: 'chat', status: 'completed', updated_at: NOW },
+    { id: SID, type: 'research', status: 'completed', ward: 'stock-analysis', title: 'Legacy shape', updated_at: '2026-11-26T20:14:00Z' },
+  ], truncated: false }) }));
+  await page.goto('/');
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('.ward-row', { hasText: 'stock-analysis' }).click({ force: true });
+  await expect(page.locator('.analysis-chip')).toContainText('legacy-shape');
+  const main = page.getByRole('main');
+  // ONE turn: one user bubble, both pills resolved, one answer.
+  await expect(main.getByLabel('Your message')).toHaveCount(1);
+  const pills = main.locator('.delegation-pill');
+  await expect(pills).toHaveCount(2);
+  await expect(pills.nth(1)).toContainText('builder-agent');
+  await expect(main.locator('.delegation-pill .pill-live')).toHaveCount(0); // nothing "running"
+  const answers = main.getByRole('article', { name: 'Final answer' });
+  await expect(answers).toHaveCount(1);
+  await expect(answers).toContainText('Done. The briefing is at outputs/brief.md.');
+  await expect(answers).not.toContainText('Research report');
+  // The research report is the pill's report, not an answer.
+  await pills.first().click();
+  const dialog = page.getByRole('dialog', { name: 'Delegation to research-agent' });
+  await expect(dialog.getByRole('region', { name: 'Report' })).toContainText('report received');
+  await expect(dialog.locator('details.task > summary')).toContainText('TASK: research the pressures'); // the ward preamble is dropped from the gist
+  await expect(dialog.locator('details.task > summary')).not.toContainText('Ward: x');
 });

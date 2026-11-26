@@ -59,7 +59,7 @@ test('the Intent Analysis card derives limits read-only, saves the selection, an
   // allowance, the packet estimate, and "no trimming" — nothing editable.
   const derivation = dialog.getByRole('status').filter({ hasText: 'Limits' });
   await expect(derivation).toContainText('zai/glm-5.3-flash');
-  await expect(derivation).toContainText('window 128.0k (limits table)');
+  await expect(derivation).toContainText('window 128k (limits table)');
   await expect(derivation).toContainText('analyst: full window');
   await expect(derivation).toContainText('packet ~2.1k tokens');
   await expect(derivation).toContainText('no trimming');
@@ -69,7 +69,7 @@ test('the Intent Analysis card derives limits read-only, saves the selection, an
   await expect(card.getByRole('combobox', { name: 'Model' })).toHaveValue('glm-5.3-flash');
   // The picker lists windows when the catalog carries them.
   await card.getByRole('combobox', { name: 'Provider' }).selectOption('ollama');
-  await expect(card.getByRole('option', { name: /glm5:latest/ })).toContainText('1.0M');
+  await expect(card.getByRole('option', { name: /glm5:latest/ })).toContainText('1M');
   await card.getByRole('combobox', { name: 'Model' }).selectOption('qwen3:32b');
   await card.getByRole('button', { name: 'Save changes' }).click();
   await expect.poll(() => putBodies.length).toBe(1);

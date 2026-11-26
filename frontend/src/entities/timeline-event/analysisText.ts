@@ -10,8 +10,9 @@ export type AnalysisEventLike = { id: string; kind: string; text?: string; inten
 export function fmtTokens(n: number | undefined | null): string {
   const v = Number(n ?? 0);
   if (!v) return '0';
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
+  const trim = (x: number) => x.toFixed(1).replace(/\.0$/, '');
+  if (v >= 1_000_000) return `${trim(v / 1_000_000)}M`;
+  if (v >= 1000) return `${trim(v / 1000)}k`;
   return String(v);
 }
 

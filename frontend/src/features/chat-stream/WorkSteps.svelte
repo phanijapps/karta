@@ -5,7 +5,7 @@
   // individual calls (args), result excerpts, the plan narration and
   // the thinking (the brain) — never at the top level.
   import { Brain, ChevronDown, Wrench, Users } from '@lucide/svelte';
-  import { buildSteps, describeCall, outcomeHint, type Step } from './steps';
+  import { buildSteps, describeCall, outcomeHint, taskGist, type Step } from './steps';
   import { renderMarkdown } from '../../shared/markdown/render';
   import type { ChatMessage } from '../../shared/api/client';
 
@@ -126,7 +126,9 @@
             <div class="call">
               <div class="call-head">
                 <code class="raw">{c.name}</code>
-                <span class="call-args">{JSON.stringify(c.args).slice(0, 160)}{JSON.stringify(c.args).length > 160 ? '…' : ''}</span>
+                <span class="call-args">
+                  {#if c.name === 'delegate_agent' && c.args.agent}{String(c.args.agent)}{#if c.args.task} — {taskGist(String(c.args.task), 80)}{/if}{:else}{JSON.stringify(c.args).slice(0, 160)}{JSON.stringify(c.args).length > 160 ? '…' : ''}{/if}
+                </span>
               </div>
               {#each outs as o (o.callId + i)}
                 {#if c.name === 'delegate_agent' && !o.isError}

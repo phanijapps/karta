@@ -64,7 +64,7 @@ export function describeCall(call: ToolCall, outcome?: CallOutcome): { verb: str
     case "ward_shell":
       return { verb: "Ran", object: shortCmd(s(a.command)) };
     case "delegate_agent":
-      return { verb: "Delegated", object: [s(a.agent), s(a.task) ? `— ${s(a.task)}` : ""].filter(Boolean).join(" ") };
+      return { verb: "Delegated", object: [s(a.agent), s(a.task) ? `— ${taskGist(s(a.task), 60)}` : ""].filter(Boolean).join(" ") };
     case "memory_remember":
       return { verb: "Remembered", object: "to memory" };
     case "memory_recall":
@@ -127,7 +127,7 @@ function shortCmd(c: string): string {
   return first.length > 48 ? first.slice(0, 48) + "…" : first;
 }
 
-function parseCalls(m: ChatMessage): ToolCall[] {
+export function parseCalls(m: ChatMessage): ToolCall[] {
   if (!m.tool_calls) return [];
   try {
     const raw = JSON.parse(m.tool_calls) as Array<{ id?: string; function?: { name?: string; arguments?: string } }>;
@@ -318,4 +318,37 @@ export function delegationGroups(rows: ChatMessage[]): DelegationGroup[] {
     if (open) open.rows.push(m);
   }
   return groups;
+}
+
+/** A one-line gist of a delegated task: the engine's ward preamble
+ *  ("Ward: <name> (you are hosted inside it; …)") dropped, whitespace
+ *  collapsed, clamped. */
+export function taskGist(task: string, max = 120): string {
+  let t = (task ?? "").replace(/^Ward: [^\n]*?\)\s*[.;,:]?\s*/i, "").replace(/\s+/g, " ").trim();
+  if (!t) t = (task ?? "").replace(/\s+/g, " ").trim();
+  if (t.length > max) t = t.slice(0, max - 1).trimEnd() + "…";
+  return t;
+}
+
+/** Tracks the delegations a turn has OPEN (a delegate intent whose result
+ *  has not landed). Legacy rows may carry no call ids — those resolve by
+ *  count, oldest open first. */
+export function openDelegationTracker() {
+  const open: string[] = [];
+  return {
+    openIntent(calls: ToolCall[]) {
+      for (const c of calls) if (c.name === "delegate_agent") open.push(c.id);
+    },
+    closeResult(m: ChatMessage) {
+      if (m.tool_call_id) {
+        const i = open.indexOf(m.tool_call_id);
+        if (i >= 0) open.splice(i, 1);
+        return;
+      }
+      if (open.length) open.shift(); // legacy result without an id
+    },
+    get size() {
+      return open.length;
+    },
+  };
 }
