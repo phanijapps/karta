@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>engine-adk-spine — six decisions, with examples</title>
+<style>
+  :root {
+    --bg: #0b0f17; --bg2: #111827; --card: #141c2b; --line: #223047; --line2: #2d3d57;
+    --text: #e6edf7; --muted: #93a4bf; --dim: #5f7191;
+    --amber: #f5b451; --teal: #4fd1c5; --green: #5ee0a0; --rose: #f47294; --violet: #b79bff; --sky: #6cb6ff;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  body { overflow: hidden; }
+  #bar { position: fixed; top: 0; left: 0; height: 3px; background: linear-gradient(90deg, var(--teal), var(--violet)); width: 0; transition: width .25s ease; z-index: 10; }
+  .slide { position: absolute; inset: 0; display: none; padding: 44px 64px 72px; overflow: auto; }
+  .slide.active { display: flex; flex-direction: column; }
+  .slide::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(900px 500px at 85% -10%, rgba(79,209,197,.10), transparent 60%),
+                radial-gradient(700px 400px at 0% 110%, rgba(183,155,255,.08), transparent 60%); }
+  .kicker { font: 600 12px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--teal); margin-bottom: 14px; }
+  h1 { font-size: 46px; line-height: 1.08; margin: 0 0 14px; letter-spacing: -.01em; }
+  h2 { font-size: 34px; line-height: 1.12; margin: 0 0 6px; letter-spacing: -.01em; }
+  h3 { font-size: 15px; margin: 0 0 8px; color: var(--text); letter-spacing: .02em; }
+  p { margin: 0 0 10px; color: var(--muted); font-size: 15.5px; line-height: 1.5; }
+  p.lead { font-size: 18px; color: var(--text); max-width: 900px; }
+  strong { color: var(--text); }
+  code { font-family: var(--mono); font-size: .92em; color: var(--amber); }
+  .sub { color: var(--muted); font-size: 17px; max-width: 980px; margin-bottom: 22px; }
+  .badge { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; height: 44px; border-radius: 12px;
+    font: 700 18px/1 var(--mono); color: #0b0f17; background: var(--teal); margin-right: 14px; vertical-align: middle; }
+  .badge.d1 { background: var(--teal); } .badge.d2 { background: var(--sky); } .badge.d3 { background: var(--amber); }
+  .badge.d4 { background: var(--violet); } .badge.d5 { background: var(--green); } .badge.d6 { background: var(--rose); }
+  .head { display: flex; align-items: center; margin-bottom: 18px; }
+  .head h2 { margin: 0; }
+  .grid { display: grid; gap: 16px; }
+  .g2 { grid-template-columns: 1fr 1fr; } .g3 { grid-template-columns: 1fr 1fr 1fr; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .card.example { border-color: rgba(245,180,81,.45); background: linear-gradient(180deg, rgba(245,180,81,.06), transparent 60%), var(--card); }
+  .card.rec { border-color: rgba(94,224,160,.5); background: linear-gradient(180deg, rgba(94,224,160,.07), transparent 60%), var(--card); }
+  .tag { display: inline-block; font: 700 11px/1 var(--mono); letter-spacing: .1em; padding: 6px 9px; border-radius: 999px; margin-bottom: 10px; }
+  .tag.ex { background: rgba(245,180,81,.15); color: var(--amber); }
+  .tag.rec { background: rgba(94,224,160,.15); color: var(--green); }
+  .tag.risk { background: rgba(244,114,148,.15); color: var(--rose); }
+  .tag.opt { background: rgba(108,182,255,.15); color: var(--sky); }
+  .tag.neutral { background: rgba(147,164,191,.15); color: var(--muted); }
+  pre { margin: 0; padding: 12px 14px; border-radius: 10px; background: #0a0e16; border: 1px solid var(--line); overflow: auto;
+    font: 13px/1.5 var(--mono); color: #d7e2f3; white-space: pre-wrap; word-break: break-word; }
+  pre .k { color: var(--sky); } pre .s { color: var(--green); } pre .e { color: var(--rose); } pre .c { color: var(--dim); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font: 600 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); padding: 8px 10px; border-bottom: 1px solid var(--line2); }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--line); color: var(--muted); vertical-align: top; line-height: 1.4; }
+  td:first-child { color: var(--text); font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+  td.ok { color: var(--green); } td.warn { color: var(--amber); } td.bad { color: var(--rose); }
+  .num { font: 700 30px/1 var(--mono); color: var(--text); letter-spacing: -.02em; }
+  .num small { font: 600 13px/1 var(--mono); color: var(--muted); margin-left: 6px; }
+  .stat { display: flex; flex-direction: column; gap: 6px; }
+  .stat .lbl { color: var(--muted); font-size: 13px; }
+  ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 14.5px; line-height: 1.55; }
+  li { margin-bottom: 5px; } li::marker { color: var(--dim); }
+  .foot { margin-top: auto; padding-top: 16px; display: flex; justify-content: space-between; align-items: center; color: var(--dim); font: 12px/1 var(--mono); }
+  .nav { position: fixed; bottom: 22px; right: 28px; display: flex; gap: 8px; z-index: 10; }
+  .nav button { background: var(--card); color: var(--text); border: 1px solid var(--line2); border-radius: 10px; padding: 9px 13px; font: 600 13px var(--mono); cursor: pointer; }
+  .nav button:hover { border-color: var(--teal); }
+  #counter { position: fixed; bottom: 30px; left: 32px; font: 600 12px var(--mono); color: var(--dim); z-index: 10; }
+  .title { justify-content: center; }
+  .title .sub { font-size: 19px; }
+  .bars { display: grid; gap: 6px; }
+  .bar-row { display: grid; grid-template-columns: 150px 1fr 64px; align-items: center; gap: 10px; font: 12px/1.2 var(--mono); color: var(--muted); }
+  .bar-row .track { height: 12px; background: #0a0e16; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .bar-row .fill { height: 100%; background: linear-gradient(90deg, var(--amber), var(--rose)); }
+  .bar-row .fill.cold { background: linear-gradient(90deg, var(--teal), var(--sky)); }
+  .bar-row .sz { text-align: right; color: var(--text); }
+  .map { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .map .card { min-height: 150px; }
+  .map p { font-size: 13.5px; margin: 6px 0 0; }
+  .map .q { color: var(--text); font-size: 15px; line-height: 1.35; }
+  .map .r { font: 600 13px/1.3 var(--mono); color: var(--green); margin-top: 10px; }
+  .pill { display: inline-block; padding: 3px 8px; border-radius: 999px; font: 600 12px var(--mono); border: 1px solid var(--line2); color: var(--muted); margin: 2px 4px 2px 0; }
+  .pill.yes { border-color: rgba(94,224,160,.5); color: var(--green); }
+  .pill.no { border-color: rgba(244,114,148,.5); color: var(--rose); }
+  .pill.maybe { border-color: rgba(245,180,81,.5); color: var(--amber); }
+  .quote { border-left: 3px solid var(--violet); padding: 4px 0 4px 14px; color: var(--text); font-size: 15px; font-style: italic; }
+  .split { display: grid; grid-template-columns: 1.1fr .9fr; gap: 18px; align-items: start; }
+  .small { font-size: 13px; color: var(--dim); }
+  .tl { display: grid; gap: 0; border-left: 2px solid var(--line2); margin-left: 8px; }
+  .tl .ev { position: relative; padding: 0 0 14px 20px; }
+  .tl .ev::before { content: ""; position: absolute; left: -7px; top: 5px; width: 12px; height: 12px; border-radius: 50%; background: var(--bg); border: 2px solid var(--sky); }
+  .tl .ev.bad::before { border-color: var(--rose); } .tl .ev.good::before { border-color: var(--green); }
+  .tl .ev .t { font: 600 12px var(--mono); color: var(--dim); } .tl .ev .d { color: var(--text); font-size: 14.5px; line-height: 1.45; }
+  @media (max-width: 1100px) { .g2, .g3, .split, .map { grid-template-columns: 1fr; } .slide { padding: 28px 24px 80px; } h1 { font-size: 34px; } }
+  @media print { body { overflow: visible; } .slide { display: flex !important; position: relative; page-break-after: always; } .nav, #counter, #bar { display: none; } }
+</style>
+</head>
+<body>
+<div id="bar"></div>
+<div id="counter">1 / 15</div>
+<div class="nav"><button id="prev" aria-label="Previous">←</button><button id="next" aria-label="Next">→</button></div>
+
+<!-- 1 ───────────────────────────────────────────────────────────── -->
+<section class="slide title active">
+  <div>
+    <div class="kicker">OpenSpec change · openspec/changes/engine-adk-spine</div>
+    <h1>Six decisions before the engine<br>moves onto the ADK spine</h1>
+    <p class="sub">Each one with a worked example from <em>your</em> system — and the angle that changed them: <strong style="color:var(--text)">you will run several models</strong>, so "the run's model" is no longer a safe default for anything.</p>
+    <div class="grid g3" style="max-width:1100px">
+      <div class="card stat"><div class="num">13.6k<small>tokens / step</small></div><div class="lbl">fixed overhead in the solar run — 32% of a 983k-token bill, re-sent 23 times</div></div>
+      <div class="card stat"><div class="num">80%<small>of completion tokens</small></div><div class="lbl">was model reasoning; the builder thought ~18k tokens to write 127 lines</div></div>
+      <div class="card stat"><div class="num">19<small>models · 14 skills</small></div><div class="lbl">one Ollama endpoint today (v0.34.2), every agent still on <code>model: ""</code> = inherit</div></div>
+    </div>
+  </div>
+  <div class="foot"><span>Karta · engine-adk-spine · 2026-11-26</span><span>← → to navigate · print for PDF</span></div>
+</section>
+
+<!-- 2 ───────────────────────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><h2>Why "several models" reshapes the plan</h2></div>
+  <p class="sub">Today every agent inherits the caller's model. The moment agents pin their own, three things that were latent become real — two of them are decisions (D4, D5), one is a bug to fix on the way.</p>
+  <div class="split">
+    <div class="card">
+      <h3>Example pinning (illustrative — the registry already supports it)</h3>
+      <table>
+        <tr><th>Role</th><th>Model</th><th>Why</th></tr>
+        <tr><td>root orchestrator</td><td>ollama/glm-5.3:cloud</td><td>the ward's pick; judgement + delegation</td></tr>
+        <tr><td>intent-analyst</td><td>ollama/glm-5.3-flash:cloud</td><td>one validated decision, no loop (unchanged)</td></tr>
+        <tr><td>research-agent</td><td>ollama/gemini-3-flash-preview:cloud</td><td>cheap breadth over many search results</td></tr>
+        <tr><td>builder-agent</td><td>ollama/qwen3.5:397b-cloud</td><td>code; mechanical → low effort (D5)</td></tr>
+        <tr><td>adversarial-reviewer</td><td>ollama/gpt-oss:120b-cloud</td><td>depth; judgement stays default effort</td></tr>
+        <tr><td>summarizer (new)</td><td class="warn">? → D4</td><td>in-run compaction for roots AND children</td></tr>
+      </table>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:12px"><span class="tag opt">Already true · must survive</span>
+        <p style="margin:0">A delegated child resolves its <strong>own</strong> <code>spec.Model</code> → its own credential, its own client (<code>delegation.go</code>). On the spine: one <code>ChatModelAgent</code> + one <code>WrapModel</code> <em>per child</em>. The contract suite gains a case for it.</p></div>
+      <div class="card" style="margin-bottom:12px"><span class="tag risk">Latent bug · F-26</span>
+        <p style="margin:0">The model cache key is <code>provider/model/token-hash</code> — <strong>no BaseURL</strong>. Add a second OpenAI-compat provider exposing the same id (say <code>glm-5.3-flash</code> on Ollama cloud <em>and</em> on z.ai) and the second call silently reuses the first provider's client. Pinned as a characterization test today; the ADK path keys on <code>provider + baseURL + model + token</code>.</p></div>
+      <div class="card"><span class="tag ex">Consequence</span>
+        <p style="margin:0">"Reasoning effort" and "which model writes the summary" stop being global settings and become <strong>per-model questions</strong> — the subject of D4 and D5.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>Context</span><span>slide 2 / 15</span></div>
+</section>
+
+<!-- 3 ───────────────────────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><h2>The decision map</h2></div>
+  <p class="sub">Each card: the question, my recommendation, and what it costs to get it wrong. Reply with six words or "all recommended".</p>
+  <div class="map">
+    <div class="card"><span class="badge d1">D1</span><span class="q">How does the root call a sub-agent?</span>
+      <p><strong>Recommended:</strong> one tool per agent (<code>research_agent {task}</code>) instead of one dispatch tool (<code>delegate_agent {agent, task}</code>).</p><div class="r">Wrong = typo'd agent names burn 13.6k-token steps</div></div>
+    <div class="card"><span class="badge d2">D2</span><span class="q">Keep the hand-rolled loop after the swap?</span>
+      <p><strong>Recommended:</strong> keep <code>engine_loop: legacy</code> for one soak cycle; delete in a follow-up.</p><div class="r">Wrong = a regression after the flip is a git revert + rebuild, not a restart</div></div>
+    <div class="card"><span class="badge d3">D3</span><span class="q">Which skills does the skill tool offer?</span>
+      <p><strong>Recommended:</strong> the analyst's recommended set only; all skills when it recommends none.</p><div class="r">Wrong = a 41 KB skill body loads on a tangent (~10k tokens/step)</div></div>
+    <div class="card"><span class="badge d4">D4</span><span class="q">Which model writes in-run summaries?</span>
+      <p><strong>Recommended:</strong> a cheap model by default (<code>ollama/glm-5.3-flash:cloud</code>), not the run's own; override per config.</p><div class="r">Wrong = a 120b model paid to compress its own dumps</div></div>
+    <div class="card"><span class="badge d5">D5</span><span class="q">Reasoning effort: per agent, and which defaults?</span>
+      <p><strong>Recommended:</strong> frontmatter <code>reasoning_effort: low|medium|high|none</code>; builder <code>low</code>, summarizer <code>none</code>, judgement agents unset.</p><div class="r">Wrong = 80% of completion tokens stays reasoning</div></div>
+    <div class="card"><span class="badge d6">D6</span><span class="q">Adopt the plantask middleware now?</span>
+      <p><strong>Recommended:</strong> no — S2 (<code>intent-contract-v2</code>) owns <code>plan_step_*</code>; revisit as its emitter.</p><div class="r">Wrong = two plan vocabularies + 4 tool schemas on every step</div></div>
+  </div>
+  <div class="foot"><span>Overview</span><span>slide 3 / 15</span></div>
+</section>
+
+<!-- 4 ───────────────────────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><span class="badge d1">D1</span><h2>Delegate surface: one tool per agent, or one dispatch tool?</h2></div>
+  <p class="sub">Both are the same underneath — an ADK <code>AgentTool</code> over the child's <code>ChatModelAgent</code>, fold-back = the child's final answer. The difference is what the model sees and what can go wrong.</p>
+  <div class="split">
+    <div class="card example">
+      <span class="tag ex">Example · the dispatch tool (today) on a mid-tier root</span>
+<pre>{"name": <span class="s">"delegate_agent"</span>,
+ "arguments": {"agent": <span class="e">"reseach-agent"</span>,   <span class="c">← typo</span>
+               "task": "Find the 2026 INR/USD drivers; write sources/evidence-inr.md"}}</pre>
+<pre style="margin-top:10px"><span class="e">engine: unknown agent "reseach-agent"</span>
+<span class="c">(configured: adversarial-reviewer, builder-agent, planner-agent,
+ research-agent, reviewer-agent, writing-agent)</span></pre>
+      <p style="margin-top:12px">The model reads the error and retries: <strong>one wasted step</strong> — the 13.6k fixed overhead re-sent for nothing, on the root's model tier.</p>
+    </div>
+    <div class="card example">
+      <span class="tag ex">Example · per-agent tools (proposed)</span>
+<pre>{"name": <span class="s">"research_agent"</span>,
+ "arguments": {"task": "Find the 2026 INR/USD drivers; write sources/evidence-inr.md"}}</pre>
+<pre style="margin-top:10px"><span class="c"># tool description the root reads (generated from the registry)</span>
+<span class="k">research_agent</span> — Gathers, evaluates, and synthesizes evidence for a
+self-contained research task. <span class="c">Runs on ollama/gemini-3-flash-preview.</span>
+<span class="c">Must use tools (require_tool_use). Works inside the active ward.</span></pre>
+      <p style="margin-top:12px">No agent-name argument to get wrong. The <strong>model is part of the menu</strong>, so the root chooses by capability <em>and</em> tier.</p>
+    </div>
+  </div>
+  <div class="grid g3" style="margin-top:16px">
+    <div class="card"><span class="tag opt">Trade-off</span><p style="margin:0">Six delegatable agents → six schemas (~650 tokens/step) vs. one routing table (~350). Net cost ≈ +300 tokens/step — against a 13.6k overhead, and slice 1's reduction trims menus anyway.</p></div>
+    <div class="card"><span class="tag risk">Prompt churn</span><p style="margin:0">Seeds and the persona mention <code>delegate_agent</code> by name in places; they become advisory, not broken. Zero churn is the only argument for the dispatch tool.</p></div>
+    <div class="card rec"><span class="tag rec">Recommendation</span><p style="margin:0"><strong>Per-agent tools.</strong> ADK-native (<code>adk.NewAgentTool</code>), removes a failure class the solar run already paid for, and makes the multi-model roster visible to the root.</p></div>
+  </div>
+  <div class="foot"><span>D1 · delegate surface</span><span>slide 4 / 15</span></div>
+</section>
+
+<!-- 5 ───────────────────────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><span class="badge d2">D2</span><h2>Legacy retention: how long does the old loop stay?</h2></div>
+  <p class="sub">Both paths already have to pass the full conformance suite during the transition. The question is only what happens <em>after</em> the default flips to <code>adk</code>.</p>
+  <div class="split">
+    <div class="card example">
+      <span class="tag ex">Example · a regression you can only see in a live run</span>
+      <div class="tl" style="margin-top:10px">
+        <div class="ev"><div class="t">Day 1</div><div class="d">Default flips to <code>adk</code>. contracttest green (incl. delegation), <code>task verify</code> green, archived.</div></div>
+        <div class="ev bad"><div class="t">Day 2</div><div class="d">Solar re-run on glm-5.3-flash: the builder writes 127 lines but <strong>never calls the <code>skill</code> tool</strong> — <code>clean-code</code> never loads. Tests can't see model behaviour; a live run can.</div></div>
+        <div class="ev good"><div class="t">+10 seconds</div><div class="d"><code>engine_loop: legacy</code> in config.yaml, restart air. Same binary, old loop, bodies back in the prompt. Research continues.</div></div>
+        <div class="ev good"><div class="t">Day 14</div><div class="d">Root cause fixed (prompt nudge to load skills), three clean runs. Follow-up change deletes the legacy loop and the flag.</div></div>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:12px"><span class="tag opt">Option A · keep one soak cycle</span>
+        <p style="margin:0">Revert = a config line. Cost: two run paths kept honest by the suite for one cycle; the package carries ~400 lines that are already scheduled to die.</p></div>
+      <div class="card" style="margin-bottom:12px"><span class="tag opt">Option B · delete at archive</span>
+        <p style="margin:0">Cleaner tree. Revert = <code>git revert</code> of a multi-slice change + rebuild + redeploy — while a ward run is broken.</p></div>
+      <div class="card rec"><span class="tag rec">Recommendation</span><p style="margin:0"><strong>Option A.</strong> The risk this change carries is behavioural (skills-as-tool, sticky nudges), and behaviour only shows in live runs.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>D2 · legacy retention</span><span>slide 5 / 15</span></div>
+</section>
+
+<!-- 6 ───────────────────────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><span class="badge d3">D3</span><h2>Skills: which ones does the <code>skill</code> tool offer?</h2></div>
+  <p class="sub">Progressive disclosure replaces injected bodies with a tool: names + descriptions every step, the body only when the model loads it. Your vault decides how big that menu is.</p>
+  <div class="split">
+    <div class="card">
+      <h3>Your skills today — SKILL.md body size (141 KB total ≈ 35k tokens if all were injected)</h3>
+      <div class="bars">
+        <div class="bar-row"><span>ppt-agent-skill</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="sz">41.0K</span></div>
+        <div class="bar-row"><span>humanizer</span><div class="track"><div class="fill" style="width:72%"></div></div><span class="sz">29.6K</span></div>
+        <div class="bar-row"><span>skill-creator</span><div class="track"><div class="fill" style="width:46%"></div></div><span class="sz">18.7K</span></div>
+        <div class="bar-row"><span>duckduckgo-search</span><div class="track"><div class="fill" style="width:30%"></div></div><span class="sz">12.1K</span></div>
+        <div class="bar-row"><span>light-panda-browser</span><div class="track"><div class="fill" style="width:24%"></div></div><span class="sz">9.8K</span></div>
+        <div class="bar-row"><span>yfinance-market-analysis</span><div class="track"><div class="fill" style="width:16%"></div></div><span class="sz">6.7K</span></div>
+        <div class="bar-row"><span>eagle-eye · socrates · book-reader · clean-code · pdf · plan-composer · spec-builder</span><div class="track"><div class="fill cold" style="width:12%"></div></div><span class="sz">22.6K</span></div>
+      </div>
+      <p class="small" style="margin-top:10px">Solar run: the analyst recommended two skills → 18.8 KB of bodies on every one of 23 steps ≈ 4.7k tokens/step, 108k total — while the root used Brave, not duckduckgo.</p>
+    </div>
+    <div>
+      <div class="card example" style="margin-bottom:12px"><span class="tag ex">Example · unscoped</span>
+        <p style="margin:0">The tool description lists all 14 names + descriptions (~600 tokens/step). On a "prepare a deck" tangent the root loads <code>ppt-agent-skill</code>: <strong>41 KB ≈ 10k tokens</strong>, re-sent on every later step of the run.</p></div>
+      <div class="card example" style="margin-bottom:12px"><span class="tag ex">Example · scoped to the analyst's picks</span>
+        <p style="margin:0">Goal "research X" → analyst recommends <code>duckduckgo-search</code> → the tool offers that one (~100 tokens/step). The body loads when the model calls it, once, ~3k tokens — and only if it actually searches with it.</p></div>
+      <div class="card rec"><span class="tag rec">Recommendation</span><p style="margin:0"><strong>Scoped, with a fallback:</strong> offer the analyst's recommended set; when it recommends none, offer all. Revert knob: <code>skills.injection: bodies</code>.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>D3 · skills scoping</span><span>slide 6 / 15</span></div>
+</section>
+
+<!-- 7 ───────────────────────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><span class="badge d4">D4</span><h2>Summarizer: which model compresses the history?</h2></div>
+  <p class="sub">In-run summarization (roots <em>and</em> children) is one extra model call that ingests nearly the whole history. With several models, "use the run's model" is a choice — and often the wrong one.</p>
+  <div class="card example" style="margin-bottom:16px"><span class="tag ex">Example</span>
+    <p style="margin:0">A root on <code>gpt-oss:120b-cloud</code> carries five shell dumps (25–38 KB each, as in the solar run). It crosses your <code>compaction.max_context_tokens: 128000</code>. The summary call sends ~110k tokens to… which model? And a <em>child</em> on the same 120b model hits its own threshold three steps later.</p></div>
+  <div class="card">
+    <table>
+      <tr><th>Summarizer</th><th>Summary quality</th><th>Cost · latency</th><th>Privacy</th><th>When it's right</th></tr>
+      <tr><td>the run's own model</td><td class="ok">best fidelity — it read everything in its own frame</td><td class="bad">a 110k-token call at the run's tier; a 120b model compressing its own dumps</td><td class="warn">same as the run</td><td>small runs; a single-model fleet (today)</td></tr>
+      <tr><td>ollama/glm-5.3-flash:cloud</td><td class="warn">good on structure; may blur exact figures</td><td class="ok">fast, cheapest tier you run (the analyst's tier)</td><td class="warn">leaves the device</td><td class="ok">the default — mechanical compression</td></tr>
+      <tr><td>ollama/llama3.1:8b (local)</td><td class="bad">weakest at preserving numbers, paths and citations</td><td class="ok">free, on-device, 128k window</td><td class="ok">never leaves the device</td><td>privacy-max wards; non-research work</td></tr>
+    </table>
+    <p class="small" style="margin-top:10px">The built-in keeps the most recent user messages intact (default 30k tokens, <code>PreserveUserMessages</code>), so the facts closest to the work survive whichever model writes the older summary.</p>
+  </div>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card"><span class="tag opt">Shape</span><p style="margin:0"><code>compaction.summarizer: ollama/glm-5.3-flash:cloud</code> — one global default for roots and children; empty = the run's own model (today's behaviour). Children inherit the global, never their own expensive model by accident.</p></div>
+    <div class="card rec"><span class="tag rec">Recommendation</span><p style="margin:0"><strong>Cheap cloud flash as the default summarizer.</strong> Local 8b if the ward's content must stay on-device — at a known quality cost for research runs.</p></div>
+  </div>
+  <div class="foot"><span>D4 · summarizer model</span><span>slide 7 / 15</span></div>
+</section>
+
+<!-- 8 ───────────────────────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><span class="badge d5">D5</span><h2>Reasoning effort: per agent, per model</h2></div>
+  <p class="sub">The lever is verified end-to-end: eino-ext's <code>WithReasoningEffort</code> (a plain string type) → Ollama's OpenAI-compat endpoint (≥ 0.31; you run <strong>0.34.2</strong>) accepts <code>low · medium · high · max · none</code>. <code>none</code> becomes <code>think: false</code>; the rest become a thinking level; anything else is a 400.</p>
+  <div class="split">
+    <div class="card">
+      <h3>What the field does, model by model</h3>
+      <table>
+        <tr><th>Model</th><th>Thinks?</th><th><code>none</code> / <code>low</code></th><th>Verify</th></tr>
+        <tr><td>glm-5.3-flash <span class="pill">cloud</span></td><td>yes — observed</td><td class="warn">level / off (per docs)</td><td class="warn">measure</td></tr>
+        <tr><td>glm-5.3 <span class="pill">cloud</span></td><td>yes</td><td class="warn">level / off</td><td class="warn">measure</td></tr>
+        <tr><td>gemini-3-flash-preview <span class="pill">cloud</span></td><td>provider-side</td><td class="warn">depends on Ollama's bridge</td><td class="warn">measure</td></tr>
+        <tr><td>qwen3.5:397b <span class="pill">cloud</span></td><td>hybrid</td><td class="warn">level / off</td><td class="warn">measure</td></tr>
+        <tr><td>gpt-oss:120b · gpt-oss <span class="pill">cloud</span><span class="pill">local</span></td><td>cannot disable</td><td class="bad"><code>none</code> → lowest level</td><td>docs</td></tr>
+        <tr><td>DeepSeek-R1-Distill-32B <span class="pill">local</span></td><td>reasoning-only</td><td class="bad">lowest level</td><td>docs</td></tr>
+        <tr><td>llama3.1:8b · llama3.2:3b <span class="pill">local</span></td><td>no</td><td class="ok">no-op (harmless)</td><td>—</td></tr>
+      </table>
+      <p class="small" style="margin-top:8px">"Measure" = one run per pinned model comparing completion tokens on the same prompt (task 2.4). The window chain already calls <code>/api/show</code> per model — it reports the thinking capability, so the matrix is mechanical, not guesswork.</p>
+    </div>
+    <div>
+      <div class="card example" style="margin-bottom:12px"><span class="tag ex">Example · builder-agent</span>
+        <p style="margin:0">Solar run: 3 steps, 24k completion tokens, ~18k of them thinking — to write 127 lines and a 5.4 KB script. With <code>reasoning_effort: low</code> the thinking budget drops; the files are still written, the receipts still check. Target: completion tokens ≤ ~6k on the same task.</p></div>
+      <div class="card example" style="margin-bottom:12px"><span class="tag ex">Example · who stays default</span>
+        <p style="margin:0">research-agent and adversarial-reviewer keep judgement-heavy work → <strong>unset</strong> (provider default). The analyst is a validated single decision — unchanged. The summarizer (D4) is mechanical → <code>none</code>.</p></div>
+      <div class="card rec"><span class="tag rec">Recommendation</span><p style="margin:0">Frontmatter <code>reasoning_effort: low | medium | high | none</code>, unset = default. Seeds: builder <code>low</code>. The <code>WrapModel</code> seam is the one place a future non-OpenAI-compat provider (e.g. Anthropic's <code>budget_tokens</code>) gets mapped.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>D5 · reasoning effort</span><span>slide 8 / 15</span></div>
+</section>
+
+<!-- 9 ───────────────────────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><span class="badge d6">D6</span><h2>Plan events: adopt <code>plantask</code> now, or leave it to S2?</h2></div>
+  <p class="sub">The handoff maps S2's <code>plan_step_*</code> events to the <code>plantask</code> middleware. It fits the spine — but it brings its own vocabulary, and S2 already has one.</p>
+  <div class="split">
+    <div class="card example">
+      <span class="tag ex">Example · two plan vocabularies in one run</span>
+      <div class="grid g2" style="gap:12px">
+        <div><h3 style="color:var(--teal)">S2 · the analyst's plan</h3>
+<pre><span class="c"># events</span>
+plan_step_started {step: 3, "write evidence file"}
+plan_step_done     {step: 3, status: ok}
+
+<span class="c"># consumer</span>
+the mockup's Plan row (run-legibility)</pre></div>
+        <div><h3 style="color:var(--rose)">plantask · task files</h3>
+<pre><span class="c"># 4 tools injected on every step</span>
+TaskCreate {subject, description}
+TaskGet   {id}
+TaskUpdate {status, blocks, blockedBy}
+TaskList
+
+<span class="c"># state</span>
+/tasks/&lt;session&gt;/… via a Backend</pre></div>
+      </div>
+      <p style="margin-top:12px">The root would see two ways to "plan", the Timeline would carry both, and every step pays ~1k tokens of schemas — against the budget this change exists to cut.</p>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:12px"><span class="tag opt">Option · in now</span><p style="margin:0">A planning tool exists on day one. Cost: the mapping to <code>plan_step_*</code> is speculative until S2 fixes the v2 contract; likely rework.</p></div>
+      <div class="card" style="margin-bottom:12px"><span class="tag opt">Option · S2 owns it</span><p style="margin:0">S2 defines the events first; plantask becomes the <em>emitter</em> if its model fits (tasks with dependencies), or a thin plan tool is written against the contract.</p></div>
+      <div class="card rec"><span class="tag rec">Recommendation</span><p style="margin:0"><strong>Out of this change.</strong> Spine compatibility is already secured — it is a middleware like any other, added in S2.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>D6 · plan events</span><span>slide 9 / 15</span></div>
+</section>
+
+<!-- 10 ──────────────────────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><h2>Multi-model consequences that are not decisions</h2></div>
+  <p class="sub">Things the spine swap must do because you run several models. Listed so they are seen, not chosen.</p>
+  <div class="grid g3">
+    <div class="card"><span class="tag risk">F-26 becomes real</span>
+      <p style="margin:0">Model cache keys on <code>provider + baseURL + model + token-hash</code> on the ADK path. The legacy path keeps the pinned characterization; the follow-up that deletes legacy closes F-26 for good.</p></div>
+    <div class="card"><span class="tag neutral">One WrapModel per child</span>
+      <p style="margin:0">Each child builds its own client for its own <code>spec.Model</code>; effort, usage accumulation and the summarizer setting ride that instance. A contracttest case pins "two children on two models, each usage attributed to its own execution".</p></div>
+    <div class="card"><span class="tag neutral">Verification is mechanical</span>
+      <p style="margin:0">Task 2.4 = <code>/api/show</code> for the thinking capability + one measured run per pinned model. No guessing which model honours <code>low</code>; the matrix on the previous slide fills itself in.</p></div>
+    <div class="card"><span class="tag neutral">Model limits already chain</span>
+      <p style="margin:0">The analyst's window chain (<code>/api/show</code> → <code>model_limits.yaml</code> → 32k) is per model. In-run summarization triggers per run on <em>that</em> model's window — a child on a 32k model compacts earlier than the root on a 128k one.</p></div>
+    <div class="card"><span class="tag neutral">Non-thinking models are safe</span>
+      <p style="margin:0">An effort hint on <code>llama3.1:8b</code> is a no-op; a <code>400</code> can only come from an unknown value, and the strict frontmatter decode stops that at load time.</p></div>
+    <div class="card"><span class="tag ex">Still open (handoff §4)</span>
+      <p style="margin:0">The operator's <code>research-agent.example.md</code> says <code>tools: []</code> with the comment "empty = all tools" — the engine reads it as <strong>no tools</strong>. Fix by hand before the next research delegation; it is not part of this change.</p></div>
+  </div>
+  <div class="foot"><span>Consequences</span><span>slide 10 / 15</span></div>
+</section>
+
+<!-- 12 ──────────────────────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><h2>Part 2 · Model routing as part of intent</h2></div>
+  <p class="sub">Not one LLM for everything: the analyst assigns models to the jobs — orchestrator and sub-agents — from the models at its disposal. Your rule: <strong style="color:var(--text)">explicit config wins → otherwise intent chooses → otherwise today's default.</strong></p>
+  <div class="grid g3">
+    <div class="card"><span class="badge d1" style="background:var(--teal)">R</span><h3 style="margin-top:10px">The orchestrator (root)</h3>
+      <p style="margin:0">Today: the model you selected for the send, else the agent's pin, else a typed refusal. Routing fills the hole when nothing was selected — an ad-hoc <code>/v1/goals</code> call without a model becomes valid.</p></div>
+    <div class="card"><span class="badge d3" style="background:var(--amber)">C</span><h3 style="margin-top:10px">Each sub-agent</h3>
+      <p style="margin:0">Today: the agent's frontmatter <code>model:</code>, else <em>inherit the root's</em> — which is why glm-5.3-flash did everything in the solar run. Routing gives each recommended agent its own pick.</p></div>
+    <div class="card"><span class="badge d4" style="background:var(--violet)">F</span><h3 style="margin-top:10px">Fixed roles</h3>
+      <p style="margin:0">The analyst and the summarizer keep their own chains (D4). The analyst never routes itself — no recursion, no loop; it stays one validated decision (your decision #1).</p></div>
+  </div>
+  <div class="card example" style="margin-top:16px"><span class="tag ex">The shape · one more field in IntentAnalysis v2</span>
+<pre>{ <span class="s">"model_assignments"</span>: {
+    <span class="s">"root"</span>:   <span class="s">"ollama/glm-5.3:cloud"</span>,                 <span class="c">// source: intent</span>
+    <span class="s">"agents"</span>: { <span class="s">"research-agent"</span>: <span class="s">"ollama/gemini-3-flash-preview:cloud"</span>,
+                 <span class="s">"builder-agent"</span>:  <span class="s">"ollama/qwen3.5:397b-cloud"</span> },
+    <span class="s">"reason"</span>:  <span class="s">"4 delegations + ward file work → mid-tier generalist; breadth → cheap tool-capable; code → code-strong"</span> } }</pre>
+    <p style="margin-top:10px">Bounded (one per recommended agent), validated by the HOST, never fatal: an invalid pick falls to the next precedence level and shows up as a drop reason on the analysis card — the <code>drops</code> list already exists.</p></div>
+  <div class="foot"><span>Part 2 · model routing</span><span>slide 12 / 15</span></div>
+</section>
+
+<!-- 13 ──────────────────────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><h2>The precedence chain, and what the host enforces</h2></div>
+  <p class="sub">The analyst proposes; the host disposes. Everything below the line is code, not a prompt promise.</p>
+  <div class="split">
+    <div class="card">
+      <table>
+        <tr><th>Role</th><th>1 · explicit override</th><th>2 · intent</th><th>3 · default</th></tr>
+        <tr><td>root</td><td class="ok">model selected for the send<br>ward's orchestrator pin</td><td><code>assignments.root</code></td><td>configured default</td></tr>
+        <tr><td>child</td><td class="ok">agent frontmatter <code>model:</code></td><td><code>assignments.agents[name]</code></td><td>inherit the root's</td></tr>
+        <tr><td>analyst</td><td class="ok">Settings → spec → config</td><td class="bad">never</td><td>ward → run model</td></tr>
+        <tr><td>summarizer</td><td class="ok"><code>compaction.summarizer</code> (D4)</td><td class="bad">never</td><td>the run's own</td></tr>
+      </table>
+      <p class="small" style="margin-top:10px">The analysis card shows every role's <code>source</code> badge — <span class="pill yes">intent</span> <span class="pill maybe">config</span> <span class="pill">request</span> <span class="pill">default</span> — and the analyst's one-line reason per role.</p>
+    </div>
+    <div>
+      <div class="grid g2" style="gap:10px">
+        <div class="card"><span class="tag neutral">known id</span><p style="margin:0;font-size:13.5px">must be in the catalog; a hallucinated id is dropped, never fatal</p></div>
+        <div class="card"><span class="tag neutral">tool-capable</span><p style="margin:0;font-size:13.5px">root always; any child that uses tools — <code>/api/show</code> says</p></div>
+        <div class="card"><span class="tag neutral">reachable</span><p style="margin:0;font-size:13.5px">catalog health; unreachable → next level (eino failover = [assigned, inherited])</p></div>
+        <div class="card"><span class="tag neutral">tier · cloud-first</span><p style="margin:0;font-size:13.5px">Ollama's catalog is handed over pre-sorted cloud → local; local only when the run is local, the ward says so, or cloud is down — and an explicitly local run is never raised to cloud</p></div>
+      </div>
+      <div class="card rec" style="margin-top:10px"><span class="tag rec">Stability</span><p style="margin:0;font-size:13.5px">Root assignment is session-sticky; the host breaks ties deterministically (tier, then id); the analyst runs at temperature 0. The root cannot pick models mid-run in v1 — no <code>model</code> argument on delegation tools (a tier-escalation hole and more schema tokens).</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>Part 2 · precedence</span><span>slide 13 / 15</span></div>
+</section>
+
+<!-- 14 ──────────────────────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><h2>What makes it "intelligent": two layers of facts</h2></div>
+  <p class="sub">Not a static model→job map. The analyst sees what each model <em>is</em> and what it <em>did</em> — both derived by the host, both shown on the analysis card.</p>
+  <div class="split">
+    <div class="card">
+      <h3>Layer A · the derived profile — zero YAML</h3>
+      <table>
+        <tr><th>Model</th><th>Tier</th><th>Size</th><th>Capabilities</th></tr>
+        <tr><td>glm-5.3-flash:cloud</td><td class="ok">cloud · first</td><td>321B</td><td>tools · thinking · vision</td></tr>
+        <tr><td>gpt-oss:120b-cloud</td><td class="ok">cloud · first</td><td>117B</td><td>tools · thinking</td></tr>
+        <tr><td>qwen3:32b</td><td class="warn">local · fallback</td><td>32.8B</td><td>tools · thinking</td></tr>
+        <tr><td>llama3.1:8b</td><td class="warn">local · fallback</td><td>8.0B</td><td>tools</td></tr>
+      </table>
+      <p class="small" style="margin-top:8px">Packet order = preference (<strong style="color:var(--text)">operator: Ollama cloud-first</strong>; knob <code>providers[].prefer_tier</code>, default <code>cloud</code>). From <code>ollama list</code> + <code>/api/show</code> (verified on your Ollama 0.34.2 today) + the context window the limits chain already reads. All 19 models derive the same way; ~25 tokens each in the analyst's packet, bounded to reachable models.</p>
+      <p class="small">Optional YAML <code>strengths:</code> / <code>tier:</code> on a model are <strong>overrides</strong> — the same principle as for the models themselves.</p>
+    </div>
+    <div class="card">
+      <h3>Layer B · the scorecard from our own rows</h3>
+      <table>
+        <tr><th>Signal</th><th>Source</th><th>glm-5.3-flash, today</th></tr>
+        <tr><td>narrated first answer</td><td>nudge events ÷ child runs</td><td class="bad">1 of 4 delegated runs</td></tr>
+        <tr><td>model errors</td><td>error rows ÷ steps</td><td class="ok">0</td></tr>
+        <tr><td>reasoning share</td><td>completion vs visible</td><td class="warn">80% (solar)</td></tr>
+        <tr><td>fixed overhead / step</td><td>step-1 prompt tokens</td><td class="warn">13.6k root · 9.3k child</td></tr>
+      </table>
+      <p class="small" style="margin-top:8px">Handed to the analyst as bounded facts: <em>"glm-5.3-flash narrated tool use in 1/4 delegated runs (n=4)"</em>. Cold start (n&lt;3) routes on Layer A alone; the rubric says don't demote on thin evidence. This is the loop that would have caught the INR fabrication <em>as a routing fact</em>, not just a nudge.</p>
+    </div>
+  </div>
+  <div class="foot"><span>Part 2 · facts</span><span>slide 14 / 15</span></div>
+</section>
+
+<!-- 15 ──────────────────────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><h2>Worked example — the solar run, routed</h2></div>
+  <p class="sub">One model did everything: 23 root steps, the builder child, 983k prompt tokens. The analyst's decision changes three slots and nothing else — the depth hold, receipts and the nudge stay.</p>
+  <div class="split">
+    <div class="card example"><span class="tag ex">Example</span>
+      <table style="margin-top:4px">
+        <tr><th>Role</th><th>Assigned</th><th>Source</th><th>Why</th></tr>
+        <tr><td>root</td><td>ollama/glm-5.3:cloud</td><td><span class="pill yes">intent</span></td><td>4 delegations, ward file work, judgement → mid-tier generalist with tools</td></tr>
+        <tr><td>research-agent</td><td>gemini-3-flash-preview:cloud</td><td><span class="pill yes">intent</span></td><td>breadth over many search results; cheap; tools ✓</td></tr>
+        <tr><td>builder-agent</td><td>qwen3:32b <span class="small">(local)</span></td><td><span class="pill maybe">config</span></td><td>frontmatter pins it; the analyst's qwen3.5 pick is dropped — shown, not hidden</td></tr>
+        <tr><td>summarizer</td><td>glm-5.3-flash:cloud</td><td><span class="pill">D4</span></td><td>global default; children inherit the global, never their own tier</td></tr>
+      </table>
+      <p class="small" style="margin-top:8px">Delegation becomes the context-isolation mechanism it was meant to be (≈500k tokens on this run per the handoff), <em>and</em> the children bill at their own tiers.</p></div>
+    <div>
+      <div class="card example" style="margin-bottom:10px"><span class="tag ex">Edge · hallucinated id</span><p style="margin:0;font-size:14px">Analyst proposes <code>glm-5.3-pro:cloud</code> → not in the catalog → inherit + drop reason <em>"unknown model"</em> on the card. The run proceeds.</p></div>
+      <div class="card example" style="margin-bottom:10px"><span class="tag ex">Edge · offline session</span><p style="margin:0;font-size:14px">You picked <code>llama3.1:8b</code> for this session → tier local → every cloud pick rejected by the host; all-local run; card: <em>"cloud models excluded: session is local"</em>.</p></div>
+      <div class="card example"><span class="tag ex">Edge · wrong shape</span><p style="margin:0;font-size:14px">A child with <code>require_tool_use</code> assigned a model without <code>tools</code> → rejected; the child inherits instead.</p></div>
+      <div class="card example" style="margin-top:10px"><span class="tag ex">Edge · Ollama cloud down</span><p style="margin:0;font-size:14px">Failover list <code>[assigned cloud, local fallback in packet order]</code> → <code>qwen3:32b</code> picks up; the card shows <em>"fallback: local (cloud unreachable)"</em>. This is where local earns its place.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>Part 2 · example</span><span>slide 15 / 15</span></div>
+</section>
+
+<!-- 11 ──────────────────────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><h2>Decisions — recorded 2026-11-26</h2></div>
+  <p class="sub">All nine as recommended, D8 = Ollama cloud-first. Recorded in <code>design.md</code>; the proposal is committed; slice 0 (the behaviour-preserving spine swap) starts under the playbook. Routing lands as its own change after S2; adk-spine prepares the seam.</p>
+  <div class="split">
+    <div class="card">
+      <table>
+        <tr><th>#</th><th style="width:36%">Decision</th><th>Recommended</th></tr>
+        <tr><td><span class="badge d1" style="min-width:34px;height:30px;font-size:13px;margin:0">D1</span></td><td>delegate surface</td><td class="ok">per-agent tools</td></tr>
+        <tr><td><span class="badge d2" style="min-width:34px;height:30px;font-size:13px;margin:0">D2</span></td><td>legacy retention</td><td class="ok">keep one soak cycle, then delete</td></tr>
+        <tr><td><span class="badge d3" style="min-width:34px;height:30px;font-size:13px;margin:0">D3</span></td><td>skills scoping</td><td class="ok">analyst's picks; all when none</td></tr>
+        <tr><td><span class="badge d4" style="min-width:34px;height:30px;font-size:13px;margin:0">D4</span></td><td>summarizer model</td><td class="ok">ollama/glm-5.3-flash:cloud (config override)</td></tr>
+        <tr><td><span class="badge d5" style="min-width:34px;height:30px;font-size:13px;margin:0">D5</span></td><td>reasoning effort</td><td class="ok">low|medium|high|none per agent; builder low</td></tr>
+        <tr><td><span class="badge d6" style="min-width:34px;height:30px;font-size:13px;margin:0">D6</span></td><td>plantask</td><td class="ok">out — S2 owns plan events</td></tr>
+        <tr><td><span class="badge d4" style="min-width:34px;height:30px;font-size:13px;margin:0">D7</span></td><td>root precedence</td><td class="ok">the model you selected beats the analyst; intent routes the root only when none was</td></tr>
+        <tr><td><span class="badge d3" style="min-width:34px;height:30px;font-size:13px;margin:0">D8</span></td><td>Ollama tier rule</td><td class="ok">cloud-first; local only when the run is local or the ward requires it</td></tr>
+        <tr><td><span class="badge d1" style="min-width:34px;height:30px;font-size:13px;margin:0">D9</span></td><td>routing scope</td><td class="ok">sibling change <code>intent-model-routing</code> after S2</td></tr>
+      </table>
+    </div>
+    <div>
+      <div class="card rec" style="margin-bottom:12px"><span class="tag rec">Recorded</span>
+<pre><span class="c">all recommended · D8 Ollama cloud-first</span>
+
+D1 per-agent · D2 one soak cycle · D3 scoped+fallback
+D4 glm-5.3-flash · D5 low|medium|high|none (builder low) · D6 out
+D7 selected-model-wins · D8 cloud-first · D9 sibling</pre></div>
+      <div class="card"><span class="tag neutral">Next</span>
+        <ul>
+          <li>Decisions recorded in <code>openspec/changes/engine-adk-spine/design.md</code></li>
+          <li>Proposal committed (explicit paths), slice 0 starts: tool adapter, four middlewares, run driver, <code>engine_loop</code> flag</li>
+          <li>Gate: contracttest green on both paths → phase review (terra) → slice 1 (the four pay-now middlewares) → your measurement run</li>
+        </ul></div>
+    </div>
+  </div>
+  <div class="foot"><span>Karta · engine-adk-spine</span><span>slide 15 / 15</span></div>
+</section>
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var i = Math.max(0, Math.min(slides.length - 1, (parseInt((location.hash || '').replace('#/', ''), 10) || 1) - 1));
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function (s, k) { s.classList.toggle('active', k === i); s.scrollTop = 0; });
+    document.getElementById('counter').textContent = (i + 1) + ' / ' + slides.length;
+    document.getElementById('bar').style.width = ((i + 1) / slides.length * 100) + '%';
+    history.replaceState(null, '', '#/' + (i + 1));
+  }
+  document.getElementById('prev').onclick = function () { show(i - 1); };
+  document.getElementById('next').onclick = function () { show(i + 1); };
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown' || e.key === 'Enter') { e.preventDefault(); show(i + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'Backspace') { e.preventDefault(); show(i - 1); }
+    else if (e.key === 'Home') show(0); else if (e.key === 'End') show(slides.length - 1);
+  });
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('.nav') || e.target.closest('a')) return;
+    if (window.getSelection() && String(window.getSelection()).length) return;
+    var x = e.clientX / window.innerWidth;
+    if (x > 0.7) show(i + 1); else if (x < 0.12) show(i - 1);
+  });
+  show(i);
+})();
+</script>
+</body>
+</html>
