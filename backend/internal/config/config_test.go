@@ -726,3 +726,28 @@ func TestDelegationMaxDepth(t *testing.T) {
 		t.Fatalf("negative max_depth must fail loudly naming the key: %v", err)
 	}
 }
+
+// engine_loop (engine-adk-spine): absent = legacy (the transition
+// default); adk selects the ADK spine; anything else fails loudly.
+func TestEngineLoop(t *testing.T) {
+	paths := NewPaths(t.TempDir())
+	writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:9999\n")
+	cfg, err := Load(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EngineLoop != LoopLegacy {
+		t.Fatalf("absent engine_loop must default to %q, got %q", LoopLegacy, cfg.EngineLoop)
+	}
+	writeConfig(t, paths, "engine: eino\nengine_loop: adk\nserver:\n    address: 127.0.0.1:9999\n")
+	if cfg, err = Load(paths); err != nil || cfg.EngineLoop != LoopADK {
+		t.Fatalf("explicit engine_loop: %q %v", cfg.EngineLoop, err)
+	}
+	writeConfig(t, paths, "engine: eino\nengine_loop: spaghetti\nserver:\n    address: 127.0.0.1:9999\n")
+	if _, err = Load(paths); err == nil || !strings.Contains(err.Error(), "engine_loop") {
+		t.Fatalf("unknown engine_loop must fail loudly naming the key: %v", err)
+	}
+	if d := Default(); d.EngineLoop != LoopLegacy {
+		t.Fatalf("Default().EngineLoop must be %q (the documented default), got %q", LoopLegacy, d.EngineLoop)
+	}
+}

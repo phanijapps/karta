@@ -213,6 +213,11 @@ func run(ctx context.Context, homeFlag string) error {
 	// The operator's hold on nesting (delegation.max_depth; default 1:
 	// the root delegates, children never — regardless of agent grants).
 	eng.SetDepthCap(cfg.Delegation.MaxDepth)
+	// The run path (engine_loop: legacy during the transition, adk after
+	// the delegation slice). Unknown values never reach here: Load is strict.
+	if err := eng.SetLoop(cfg.EngineLoop); err != nil {
+		return fmt.Errorf("engine loop: %w", err)
+	}
 
 	// Resource index: registry snapshot + probed MCP tools → chitta
 	// reserved kinds; reconciled on boot (the coalescing worker's

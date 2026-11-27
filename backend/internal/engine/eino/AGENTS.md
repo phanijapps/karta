@@ -61,3 +61,79 @@ checks, and durable-first event emission.
   holds the loop's helpers (model cache key, offered-inventory executor,
   nudge text, usage, `emitToolCall`).
 
+- **The ADK run path (engine-adk-spine, slice 0)** — `engine_loop: adk`
+  (`Adapter.SetLoop`; default `legacy` until the delegation slice) runs a
+  root as ONE `adk.ChatModelAgent` under `adk.Runner`; children still run
+  the legacy loop via the delegate tool in this slice. `run.go` dispatches;
+  both paths share `prepareRun` (`runsetup.go`: attribution, the
+  durable-first `emit` closure, the model cache, the goal row) and
+  `offeredTools` (`runhelpers.go`: the per-run inventory) and
+  `budgetFor` (`runstate.go`).
+  - `adkrun.go` is the driver: seeds the agent input from the store
+    window (`seedMessages`/`rowsToMessages`; a child's is the task alone),
+    composes the model input exactly like the legacy loop
+    (`genModelInput`: system prompt, compaction summary, messages),
+    consumes the runner's event stream, and decides every terminal state
+    (`failRun`: cancelled / stuck / step bound / model error — the ADK
+    calls no hook on error termination). The final and nudge rows are
+    persisted HERE (only the driver knows a tool-free response is THE
+    answer); intent rows in the persistence middleware.
+  - Middlewares (each `adk.BaseChatModelAgentMiddleware` + the hooks it
+    needs): `mw_budget.go` (tracker tick, extension events, the stuck kill
+    as a typed `errStuck`, near-ceiling tool suppression via
+    `state.ToolInfos`, the transient progress nudge — appended before the
+    call, stripped after, never persisted); `mw_persistence.go` (intent
+    row + `agent_step` after a tool-calling response; the tool-call
+    wrapper: execute → `tracker.Record` → `emitToolCall`; refusals —
+    hallucinated names via the ToolsNode's unknown handler, suppressed
+    calls, tool-less runs — get the typed `ErrToolNotOffered` text as
+    the result, are recorded and surface as rows/events exactly like
+    executed calls); `mw_usage.go` (`WrapModel`: usage onto the run
+    totals; slice 1 adds reasoning effort here).
+  - `einotool.go`: `tools.Tool` → `InvokableTool` (an Exec error is the
+    endpoint error; the wrapper turns it into the model-facing text). The
+    ADK fails the run on a tool error — never return one from an adapter.
+    `placeholderTool` keeps a TOOL-LESS run on the ReAct path: the ADK
+    otherwise degrades to a single call with no tool node, so a
+    hallucinated call would become the "answer"; the placeholder is never
+    offered (ToolInfos emptied) and never executes (refused).
+  - `require_tool_use` on the ADK: a tool-free completion IS the terminal
+    state, so the one nudge is a CONTINUATION run seeded with
+    [history, answer, nudge] under the same execution (`runAgent`); the
+    nudged non-answer is persisted as the `msg-nudge-` row with
+    `ToolCalls "[]"` exactly like the legacy loop.
+  - Gate-driven refinements (terra, two passes): the driver checks
+    `ctx.Err()` after a successful agent run before accepting an answer
+    (a late answer after Cancel is never the run's success — legacy
+    post-Generate parity) and the nudge branch never consults the context;
+    the nudge continuation inherits the REMAINING iteration budget
+    (`MaxIterations = steps - calls`); refusal rows pair with their own
+    call IDs (`runState.pendingID`: a per-name queue — sequential
+    execution makes the order deterministic); the LIVE tool plane decides
+    per call, exactly like the legacy per-step inventory: the model-facing
+    list is re-derived every call (`budgetMW.refresh`), and every call —
+    compiled name or not — executes through `persistenceMW.execute` →
+    `execOffered` against the current plane (a tool removed, replaced or
+    added mid-run is refused / the replacement runs / runs; an empty plane
+    advertises nothing and refuses everything); `delegateTool.Exec`
+    re-reads the registry (`refreshed()`): a hot-reload during a long run
+    cannot leave a dropped agent invocable; `emitToolCall` gives the
+    durable row and the published event ONE id (the row used to mint its
+    own); progress nudges fire only while tools are offered (legacy
+    parity — `Nudge` flips the tracker's warning flags); a root's
+    `require_tool_use` nudge rides ONE call (`runState.stripMsg`, removed
+    by pointer identity — the state carries the instruction prefix, and a
+    user may type the same words).
+  - Tests: `TestContractSuiteADK` runs the shared conformance suite on
+    this path (same fixture, `suiteFixture(t, LoopADK)`); `adkrun_test.go`
+    pins the surviving loop behaviors (row/event order + usage +
+    attribution, hallucinated-tool refusal, the nudge continuation, the
+    transient nudge, the stuck kill at call 11, the step bound at the
+    ceiling, the suppressed-call refusal; the gate cases: cancel during
+    the model call never completes, a nudged run shares the ceiling,
+    refusals pair with their own call IDs, the delegate tool reads the
+    live registry, the inventory follows it, the nudge rides one call,
+    execution follows the live plane (removed/replaced/added), every
+    event is durable before publication — checked at bus delivery). Test
+    fakes implement only `Generate`; `baseModelOf` widens them to
+    `model.BaseModel`.

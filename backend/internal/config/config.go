@@ -18,6 +18,7 @@ import (
 // keys are rejected, and failures never fall back to defaults.
 type Config struct {
 	Engine       string             `yaml:"engine"`
+	EngineLoop   string             `yaml:"engine_loop"`
 	Server       ServerConfig       `yaml:"server"`
 	Compaction   CompactionConfig   `yaml:"compaction"`
 	Wards        WardsConfig        `yaml:"wards"`
@@ -26,14 +27,6 @@ type Config struct {
 	SystemPrompt SystemPromptConfig `yaml:"system_prompt"`
 	Intent       IntentConfig       `yaml:"intent_analysis"`
 	Delegation   DelegationConfig   `yaml:"delegation"`
-}
-
-// DelegationConfig bounds the delegation tree. MaxDepth is the operator's
-// hold on nesting: 1 (the default) means the ROOT may delegate and
-// children never — whatever any agent's max_depth grants — until the
-// operator raises it (delegation-truthfulness, decision 2).
-type DelegationConfig struct {
-	MaxDepth int `yaml:"max_depth"`
 }
 
 // SystemPromptConfig selects the composed system prompt's static
@@ -170,27 +163,6 @@ type ProviderConfig struct {
 	APIKeyEnv string `yaml:"api_key_env,omitempty"`
 }
 
-// Default returns the documented defaults. Bootstrap marshals these to the
-// initial config.yaml, so the default file and this function share one
-// source of truth.
-func Default() Config {
-	return Config{
-		Engine:       "eino",
-		Delegation:   DelegationConfig{MaxDepth: DefaultDelegationMaxDepth},
-		Server:       ServerConfig{Address: "127.0.0.1:8787"},
-		Compaction:   CompactionConfig{MaxContextTokens: 128000, ReserveOutputTokens: 8192},
-		Wards:        WardsConfig{VaultRoot: ""}, // empty = OS-aware ~/Documents/wards (wards.ResolveVaultRoot)
-		SystemPrompt: SystemPromptConfig{Role: "role", Soul: "soul", OS: "auto", Tools: "tools", Custom: []string{"research-protocol"}},
-		Intent:       IntentConfig{Enabled: boolPtrLocal(true)},
-		Providers:    []ProviderConfig{}, // marshals as `providers: []` so the key is discoverable
-		Chitta: ChittaConfig{
-			Provider:  "local",
-			Embedding: ChittaEmbeddingConfig{Model: DefaultChittaEmbeddingModel, Dim: DefaultChittaEmbeddingDim},
-			Recall:    ChittaRecallConfig{Weights: RecallWeights{Keyword: 1.0, Vector: 1.0, Graph: 0.8}, HalflifeDays: 30, BlendRecency: 0.3, BlendConfidence: 0.15, BlendMentions: 0.1, MMRLambda: 0.7, Rerank: boolPtrLocal(true), RerankTop: 50},
-		},
-	}
-}
-
 // Bootstrap creates the control-plane tree (config subdirectories, data/), migrates a legacy config/agents directory to ~/.zbot/agents
 // (one-time, non-destructive), writes the defaults when config.yaml is
 // absent, and seeds the example roster ONCE per home (a marker file
@@ -314,6 +286,11 @@ func Load(paths Paths) (Config, error) {
 	}
 	if cfg.Engine == "" {
 		return Config{}, fmt.Errorf("config: %s: engine must be set", paths.ConfigFile)
+	}
+	if cfg.EngineLoop == "" {
+		cfg.EngineLoop = LoopLegacy // absent key: the transition default
+	} else if cfg.EngineLoop != LoopLegacy && cfg.EngineLoop != LoopADK {
+		return Config{}, fmt.Errorf("config: %s: engine_loop must be one of %q, %q (got %q)", paths.ConfigFile, LoopADK, LoopLegacy, cfg.EngineLoop)
 	}
 	if cfg.Delegation.MaxDepth == 0 {
 		cfg.Delegation.MaxDepth = DefaultDelegationMaxDepth // absent key: the hold

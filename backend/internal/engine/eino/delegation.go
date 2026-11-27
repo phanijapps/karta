@@ -93,6 +93,18 @@ type delegateTool struct {
 	desc    string
 }
 
+// refreshed re-reads the registry snapshot: on the ADK path the tool is
+// built once per run (the legacy loop rebuilt it every step), and a
+// hot-reload during a long run must not leave a removed or changed agent
+// invocable. The routing table (description) is refreshed with it.
+func (d delegateTool) refreshed() delegateTool {
+	if d.adapter.snapFn != nil {
+		d.snap = d.adapter.snapFn()
+		d.desc = delegateDescription(d.snap)
+	}
+	return d
+}
+
 func (d delegateTool) Def() tools.Def {
 	desc := d.desc
 	if d.parent.wardHost != nil && d.parent.wardHost.Active() != nil {
@@ -108,6 +120,7 @@ func (d delegateTool) Def() tools.Def {
 // record (parent linkage), its agent wiring, depth+1, steps surfaced as
 // delegation events, final answer folded back as the tool result.
 func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
+	d = d.refreshed()
 	var args struct {
 		Agent string `json:"agent"`
 		Task  string `json:"task"`

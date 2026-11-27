@@ -10,26 +10,40 @@
 
 ## 1. Slice 0 — the spine swap (behavior-preserving)
 
-- [ ] 1.1 `engine_loop` config (`legacy` default during transition, strict
-  decode) + daemon wiring. Verify: config tests; both paths construct.
-- [ ] 1.2 `einotool.go`: `tools.Tool` → eino `InvokableTool` adapter
-  (reusing `paramsOneOfFromJSON`); tool wrappers (`WrapInvokableToolCall`)
-  persist tool rows + emit `tool_call` events + feed the tracker. Verify:
-  adapter tests with the fake model; row/event parity vs legacy.
-- [ ] 1.3 Middlewares: `toolplane` (`BeforeAgent`: allowlist, ward, MCP,
-  delegate offering, `tools: []` semantics), `persistence`
-  (`AfterModelRewriteState`: assistant rows with reasoning + per-step
-  usage), `budget` (tracker, nudges, stuck kill, extension events,
-  near-ceiling tool shrink), `reasoning` (`WrapModel`: usage accumulation +
-  `WithReasoningEffort`). Verify: unit tests per middleware.
-- [ ] 1.4 The run driver: seeding (`RootWindowFull` + summary), Runner
-  construction, event iterator → durable-first timeline translation with
-  attribution, terminal states (completed/failed/cancelled/step-bound
-  described on the stream), the nudge re-run, `FinishExecution` usage.
-  Verify: contracttest Suite green on the `adk` path (incl. delegation
-  group via legacy children); characterization tests (F-23/F-24/F-26
-  shape) green.
-- [ ] 1.5 Phase gate: gpt-6.1-terra over the diff; fix P0/P1; record P2s.
+- [x] 1.1 `engine_loop` config (`legacy` default during transition, strict
+  decode) + daemon wiring (`SetLoop`). Verify: `TestEngineLoop`,
+  `TestSetLoopRejectsUnknown`.
+- [x] 1.2 `einotool.go`: `tools.Tool` → eino `InvokableTool` adapter
+  (reusing `paramsOneOfFromJSON`); the tool wrapper (`WrapInvokableToolCall`)
+  persists tool rows + emits `tool_call` events + feeds the tracker;
+  hallucinated/suppressed/tool-less calls refused as typed text, recorded
+  and emitted like executed calls; `placeholderTool` keeps tool-less runs
+  on the ReAct path. Verify: `TestADKToolRoundParity`,
+  `TestADKWrapperRefusesSuppressedCalls`, `TestADKStepBoundReached`.
+- [x] 1.3 Middlewares: tool plane at agent construction (`offeredTools`),
+  `mw_persistence.go` (assistant intent rows with reasoning + per-step
+  usage), `mw_budget.go` (tracker, transient nudges, stuck kill,
+  extension events, near-ceiling tool shrink), `mw_usage.go` (`WrapModel`:
+  usage accumulation). Verify: unit + parity tests above.
+- [x] 1.4 The run driver (`adkrun.go`): seeding (`RootWindowFull` +
+  summary), Runner construction, event iterator → durable-first timeline
+  translation with attribution, terminal states (completed/failed/
+  cancelled/stuck/step-bound described on the stream), the nudge
+  continuation run, `FinishExecution` usage. Verify: `TestContractSuiteADK`
+  green (incl. the delegation group via legacy children);
+  `TestADKRootNudgeOnce`, `TestADKStuckKill`; legacy suite unchanged.
+- [x] 1.5 Phase gate: gpt-6.1-terra over the diff (findings.md G1):
+  four P1s fixed with tests (F1 late answer after cancel, F2 continuation
+  budget, F3 refusal call IDs, F4 live registry/inventory); P2s F5–F7
+  fixed (nudges only while tools are offered, the nudge rides one call,
+  barrier-driven cancel test). The test for F6 caught the first fix
+  stripping the wrong message (input-relative index vs. the state's
+  instruction prefix) — matched by identity now. Second pass (G2): the
+  remaining P1s (a cancel falling through the nudge branch; execution
+  bound to the compiled tool objects) fixed — every call executes against
+  the live plane; two more bugs found by the new tests (a tool-less START
+  was sticky for the run; `tool_call` durable rows minted a second id) —
+  both fixed.
 
 ## 2. Slice 1 — the four pay-now middlewares
 

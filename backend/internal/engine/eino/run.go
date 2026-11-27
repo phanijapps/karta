@@ -22,11 +22,18 @@ func (a *Adapter) run(ctx context.Context, cancel context.CancelFunc, events cha
 		close(events)
 	}()
 	// Root run: the answer was already emitted as the final agent step;
-	// runLoop's error variants emit their own failure events (the caller
-	// observes the stream, not the return value).
-	if _, err := a.runLoop(ctx, events, in); err != nil {
+	// the run paths emit their own failure events (the caller observes
+	// the stream, not the return value). The path is config-selected
+	// (engine_loop); children follow the delegate tool's own path.
+	var err error
+	if a.loop == LoopADK {
+		_, err = a.runAgent(ctx, events, in)
+	} else {
+		_, err = a.runLoop(ctx, events, in)
+	}
+	if err != nil {
 		// Nothing further to do at the root: the failure event and
-		// execution status were already recorded inside the loop.
+		// execution status were already recorded inside the run.
 		_ = err
 	}
 }

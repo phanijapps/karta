@@ -67,16 +67,16 @@ characterizations).
 
 | Current (file:line) | ADK mechanism | Notes |
 |---|---|---|
-| Tool plane assembly (adapter.go `offered` block; `tools: []` semantics; ward/MCP/allowlist; delegate tool offering) | `BeforeAgent` mutating `ChatModelAgentContext.Tools` (per-run assembly of our `tools.Tool` → eino `InvokableTool` adapter) + depth grant check | One assembly per run instead of per step; the allowlist binds execution identically (unknown tools error in the ToolsNode). Delegate offering is grant-gated here → depth refusal stays invisible by construction. |
+| Tool plane assembly (adapter.go `offered` block; `tools: []` semantics; ward/MCP/allowlist; delegate tool offering) | Assembled once per run at agent construction (`offeredTools` → `ToolsConfig.Tools`) — the `BeforeAgent` equivalent; slice 2 moves the depth grant here unchanged | One assembly per run instead of per step; the allowlist binds execution identically. Unknown names go to the ToolsNode's unknown handler → the typed `ErrToolNotOffered` text, recorded + emitted like the legacy `execOffered` refusal. Delegate offering is grant-gated → depth refusal stays invisible by construction. |
 | Root history (messages.go `RootWindowFull`, compaction summary) | Run driver seeds `Runner.Run(ctx, msgs)` from the store; summary rides as the first input message; instruction = system prompt | The store stays the source of history at run START; in-run state is the agent's. Cross-run compaction (durable `domain.Compactor`) is untouched. |
 | Child fresh context (adapter.go:318) | Child = its own `ChatModelAgent` (isolated state by construction; task = input) | Same "no inherited transcript" semantics. |
-| Step budget / extensions / tracker kill (adapter.go tracker block) | `MaxIterations` = today's absolute ceiling (`hardBudget + 3×softBudget`); budget middleware: `BeforeModelRewriteState` appends nudges (sticky — see Risks), `SendEvent` for extension/stuck events, error return for the stuck kill | Tracker (`progress.Tracker`) is framework-free — reused as-is inside the middleware. |
-| Near-ceiling tool suppression (adapter.go `step < steps-1`) | Budget middleware shrinks `state.ToolInfos` near the ceiling | Same force-a-final-answer trick. |
+| Step budget / extensions / tracker kill (adapter.go tracker block) | `MaxIterations` = today's absolute ceiling (`hardBudget + 3×softBudget`); the budget middleware (`mw_budget.go`): `BeforeModelRewriteState` appends the transient nudge and strips it in `AfterModelRewriteState` (never persisted — legacy parity), `emit` for extension events, the typed `errStuck` for the stuck kill | Tracker (`progress.Tracker`) is framework-free — reused as-is inside the middleware. |
+| Near-ceiling tool suppression (adapter.go `step < steps-1`) | Budget middleware empties `state.ToolInfos` near the ceiling; the tool wrapper refuses any call that still arrives (typed text, recorded) | A TOOL-LESS run (`tools: []`, or an allowlist matching nothing) stays on the ReAct path through `placeholderTool` — never offered, never executed — because the ADK otherwise degrades to a single call where a hallucinated call becomes the "answer" (the contract suite's DepthRefused case). |
 | Cancellation (ctx checks; cancel-after-generate) | ctx cancellation + the Runner's cancel safe-points | Terminal states handled in the run driver from the event stream (`AfterAgent` is NOT called on error/cancel). |
 | Model call + usage + reasoning effort | `WrapModel` — accumulates usage, appends `openaiext.WithReasoningEffort` per agent | Option is typed to the eino-ext openai client we construct (the only client the engine builds). |
-| Final answer detection (adapter.go:389) | The ReAct branch (no tool calls → terminal) — identical semantics | `AfterAgent` on success; the run driver reads the final message from the terminal event. |
+| Final answer detection (adapter.go:389) | The ReAct branch (no tool calls → terminal) — identical semantics | The driver reads the terminal (tool-free) message from the runner's event stream and persists the FINAL row itself (only it knows a tool-free response is THE answer, vs. the nudged non-answer); `AfterAgent` is not used (it never fires on error termination). |
 | `require_tool_use` nudge (first tool-free completion, once) | Run-driver re-run: if the run ended with a single tool-free completion and `require_tool_use`, start one continuation run seeded with [task, answer, nudge] | Same row shapes as today (answer row with `ToolCalls "[]"`, nudge as a user message); one extra completion, same as today. Re-run lives under the SAME execution record. |
-| Assistant rows (intent/final, reasoning, per-step usage) | Persistence middleware `AfterModelRewriteState` → store Append | Row identity: same fields, same IDs scheme. |
+| Assistant rows (intent/final, reasoning, per-step usage) | Intent rows: the persistence middleware's `AfterModelRewriteState` (runs inside the model call, before the event reaches the driver — durable-first holds); final + nudge rows: the driver | Row identity: same fields, same IDs scheme. |
 | Tool rows + `tool_call` events + attribution | `WrapInvokableToolCall` wrapper (persist row, emit event, tracker.Record) | Our `tools.Tool` adapter implements `InvokableTool`, so the hook fires for every tool. |
 | Durable-first emit + bus + channel + attribution | Run driver: consumes the Runner's event iterator → AppendEvent → publish → stream (same order, same F-15 posture) | Message ROWS persist in middlewares; EVENT rows persist in the driver/wrappers. Both attempted-durable-first. |
 | Delegation (delegate tool, lifecycle events, receipts, fold-back) | Per-agent `adk.NewAgentTool` (D1); our tool decorator creates the child execution, emits `delegation_started/completed`, appends `deliverableReceipts`, folds back | `EmitInternalEvents: true` → child steps surface in the parent's stream (translated with child attribution). Cancel propagates via ctx. |
@@ -92,6 +92,14 @@ characterizations).
 
 Each slice is independently verified (contracttest + characterization tests
 green) and measured (per-step usage rows exist — savings are exact).
+
+Live inventory (slice 0, as built): the compiled ADK node's tools are name
+slots only — the model-facing list is re-derived every call and every call
+executes against the CURRENT plane (`execOffered` over a fresh inventory,
+via the wrapper for compiled names and the unknown-tool handler for the
+rest). A tool removed, replaced or added mid-run behaves exactly as on the
+legacy loop's next step; the delegate tool re-reads the registry per call
+and per invocation.
 
 **Slice 0 — the spine swap (behavior-preserving).** New run path in
 `engine/eino` selected by `engine_loop` (default `legacy` until slice 2
@@ -144,10 +152,10 @@ characterizations F-23/F-24/F-26 (preserved, not fixed here).
    shapes; error text). Mitigation: characterization tests run against BOTH
    paths during the transition; contracttest is the gate; the legacy path
    stays switchable.
-2. **Progress nudges become sticky** (today: transient per-step; ADK:
-   `state.Messages` persists). Either accept (a "wrap up" instruction
-   persisting is fine) or strip in `AfterModelRewriteState`. Proposed:
-   accept sticky, note as a delta; flip to strip if the operator objects.
+2. **Progress nudges on the ADK state** (today: transient per-step). Resolved
+   in slice 0 as parity, not a delta: the budget middleware appends the nudge
+   before the model call and strips it in `AfterModelRewriteState` — pinned
+   by `TestADKProgressNudgeIsTransient` (never persisted, never emitted).
 3. **Skills-as-tool changes model behavior**: the model must CALL the
    `skill` tool where today the body is in-context. A model that doesn't
    call it loses the skill (quality risk). Mitigation: the middleware's

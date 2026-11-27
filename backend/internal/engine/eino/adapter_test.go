@@ -236,12 +236,25 @@ func drainUntilClosed(ch <-chan domain.TimelineEvent, timeout time.Duration) boo
 }
 
 // TestContractSuite runs the shared seam conformance suite against the
-// REAL adapter (fake deps, default id generator).
-func TestContractSuite(t *testing.T) {
-	contracttest.Suite(t, contracttest.Fixture{
+// REAL adapter (fake deps, default id generator) on the legacy loop;
+// TestContractSuiteADK runs it on the ADK spine (engine-adk-spine) —
+// both paths must stay green throughout the transition.
+func TestContractSuite(t *testing.T)    { contracttest.Suite(t, suiteFixture(t, "")) }
+func TestContractSuiteADK(t *testing.T) { contracttest.Suite(t, suiteFixture(t, LoopADK)) }
+
+func suiteFixture(t *testing.T, loop string) contracttest.Fixture {
+	withLoop := func(a *Adapter) *Adapter {
+		if loop != "" {
+			if err := a.SetLoop(loop); err != nil {
+				panic(err)
+			}
+		}
+		return a
+	}
+	return contracttest.Fixture{
 		New: func(t *testing.T) contracttest.Instance {
 			mf := &modelFactory{}
-			a := newTestAdapter(t, mf)
+			a := withLoop(newTestAdapter(t, mf))
 			return contracttest.Instance{
 				Engine: a,
 				StartQuick: func(ctx context.Context, sessionID string) (<-chan domain.TimelineEvent, error) {
@@ -267,7 +280,7 @@ func TestContractSuite(t *testing.T) {
 						{content: "recovered"},
 					},
 				}}
-				a := newDelegatingAdapter(t, gen, agentSnap)
+				a := withLoop(newDelegatingAdapter(t, gen, agentSnap))
 				return a.RunGoal(ctx, domain.GoalRequest{SessionID: sessionID, Goal: "delegate " + sessionID, Model: "prov/m1"})
 			},
 			StartDepthRefused: func(ctx context.Context, sessionID string) (<-chan domain.TimelineEvent, error) {
@@ -282,7 +295,7 @@ func TestContractSuite(t *testing.T) {
 					},
 				}}
 				snap := agentSnap() // researcher.max_depth = 0
-				a := newDelegatingAdapter(t, gen, func() registry.Snapshot { return snap })
+				a := withLoop(newDelegatingAdapter(t, gen, func() registry.Snapshot { return snap }))
 				return a.RunGoal(ctx, domain.GoalRequest{SessionID: sessionID, Goal: "delegate " + sessionID, Agent: "researcher", Model: "prov/m1"})
 			},
 			ChildAnswer: "research findings: X is Y",
@@ -294,7 +307,7 @@ func TestContractSuite(t *testing.T) {
 					},
 					"child-task": {{content: "research findings: X is Y"}},
 				}}
-				a := newDelegatingAdapter(t, gen, agentSnap)
+				a := withLoop(newDelegatingAdapter(t, gen, agentSnap))
 				suiteDelegEngine.eng = a
 				return a.RunGoal(ctx, domain.GoalRequest{SessionID: sessionID, Goal: "delegate " + sessionID, Model: "prov/m1"})
 			},
@@ -305,7 +318,7 @@ func TestContractSuite(t *testing.T) {
 		CompletionEventPredicate: func(evt domain.TimelineEvent) bool {
 			return evt.Kind == domain.EventSession && strings.Contains(evt.Text, "run completed")
 		},
-	})
+	}
 }
 
 // TestCallerContextDetached pins F-23's CURRENT (buggy) semantics: the
@@ -533,7 +546,7 @@ func agentSnap() registry.Snapshot {
 	return snap
 }
 
-func newDelegatingAdapter(t *testing.T, gen *routingGenerator, snapFn func() registry.Snapshot) *Adapter {
+func newDelegatingAdapter(t *testing.T, gen chatGenerator, snapFn func() registry.Snapshot) *Adapter {
 	t.Helper()
 	db, err := store.Open(filepath.Join(t.TempDir(), "deleg.db"))
 	if err != nil {
@@ -701,7 +714,8 @@ type fakeGenStep struct {
 	content   string
 	toolCall  string
 	args      string
-	reasoning string // the model's thinking for the step (ReasoningContent)
+	reasoning string        // the model's thinking for the step (ReasoningContent)
+	extra     []fakeGenStep // more tool calls issued in the SAME response (parallel calls)
 }
 
 // routingGenerator scripts completions BY GOAL MARKER: the first user
@@ -750,6 +764,12 @@ func (g *routingGenerator) Generate(_ context.Context, msgs []*schema.Message, _
 			ID: fmt.Sprintf("call-%d", nextFakeCallID.Add(1)), Type: "function",
 			Function: schema.FunctionCall{Name: step.toolCall, Arguments: step.args},
 		}}
+		for _, x := range step.extra {
+			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{
+				ID: fmt.Sprintf("call-%d", nextFakeCallID.Add(1)), Type: "function",
+				Function: schema.FunctionCall{Name: x.toolCall, Arguments: x.args},
+			})
+		}
 		return msg, nil
 	}
 	return &schema.Message{Role: schema.Assistant, Content: step.content, ReasoningContent: step.reasoning, ResponseMeta: usage}, nil

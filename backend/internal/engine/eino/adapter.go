@@ -21,7 +21,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"zbot/backend/internal/domain"
-	"zbot/backend/internal/engine"
 	"zbot/backend/internal/eventbus"
 	"zbot/backend/internal/progress"
 	"zbot/backend/internal/providers"
@@ -81,6 +80,27 @@ type Adapter struct {
 	wardVault func() *wards.Vault
 	wardHosts map[string]*wardtools.Host // sessionID → sticky ward host
 	models    map[string]chatGenerator   // cache: provider/model/key → model
+	// loop selects the run path (engine-adk-spine): LoopLegacy (the
+	// hand-rolled runLoop) or LoopADK (runAgent). Both pass the
+	// conformance suite during the transition; config flips it.
+	loop string
+}
+
+// Engine run paths (`engine_loop`): the hand-rolled loop and the ADK spine.
+const (
+	LoopLegacy = "legacy"
+	LoopADK    = "adk"
+)
+
+// SetLoop selects the run path (config `engine_loop`). Unknown values are
+// a typed error; the daemon applies it at construction.
+func (a *Adapter) SetLoop(loop string) error {
+	switch loop {
+	case LoopLegacy, LoopADK:
+		a.loop = loop
+		return nil
+	}
+	return fmt.Errorf("engine: unknown engine_loop %q (want %q or %q)", loop, LoopADK, LoopLegacy)
 }
 
 // DefaultDepthCap bounds delegation depth until the daemon applies the
@@ -93,7 +113,7 @@ const DefaultDepthCap = 1
 func New(provStore ProviderStore, st *store.Store, bus *eventbus.Bus, toolProv tools.Provider, snapFn func() registry.Snapshot) *Adapter {
 	return &Adapter{
 		provStore: provStore, st: st, bus: bus, toolProv: toolProv,
-		snapFn: snapFn, depthCap: DefaultDepthCap,
+		snapFn: snapFn, depthCap: DefaultDepthCap, loop: LoopLegacy,
 		cancels: map[string]context.CancelFunc{},
 		models:  map[string]chatGenerator{},
 		idGen:   func() string { return fmt.Sprintf("evt-%d-%d", time.Now().UnixNano(), nextID()) },
@@ -200,81 +220,17 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 	return events, nil
 }
 
-// runLoop is the ONE bounded loop for roots and children: returns the
-// final answer text ("" on failure/cancellation). Children reuse it via
-// the delegate tool with their own execution record and wiring.
+// runLoop is the LEGACY bounded loop for roots and children (the
+// hand-rolled ReAct path kept selectable by `engine_loop: legacy` for one
+// soak cycle; the ADK twin is runAgent): returns the final answer text
+// ("" on failure/cancellation). Children reuse it via the delegate tool
+// with their own execution record and wiring.
 func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent, in runInput) (string, error) {
-	// Attribution for this run: host-level events (ward transitions)
-	// and — for the root — the execution row's agent column (rows are
-	// created before the run knows its agent).
-	a.setRunAttribution(in.sessionID, in)
-	if !in.isChild {
-		_ = a.st.SetExecutionAgent(in.execID, in.agent()) //nolint:errcheck // provenance only; attribution still rides the events
-	}
-
-	emit := func(kind domain.TimelineEventKind, text string) {
-		chanKind, agent := kind, in.agent()
-		if in.isChild {
-			// Child steps surface in the parent's stream as delegation
-			// events (the durable rows keep the original kinds under
-			// the child's execution, attributed by agent).
-			chanKind = domain.EventDelegation
-		}
-		evt := domain.TimelineEvent{
-			ID: a.idGen(), SessionID: in.sessionID, ExecutionID: in.execID, Kind: chanKind,
-			Text: text, Agent: agent,
-		}
-		// ATTEMPTED-durable-first (F-15, pinned by characterization tests):
-		// the append error is IGNORED — publish and stream happen anyway, so
-		// clients may observe events that failed to persist. The chat site
-		// does the OPPOSITE (skips publish on append failure). The
-		// retry/log/publish-anyway policy is owned by follow-up
-		// backend-engine-run-ownership.
-		payload, _ := json.Marshal(map[string]any{"text": text, "agent": agent})
-		_ = a.st.AppendEvent(store.Event{
-			ID: evt.ID, SessionID: in.sessionID, ExecutionID: in.execID,
-			Kind: string(kind), Payload: string(payload),
-		})
-		if a.bus != nil {
-			_ = a.bus.Publish(context.Background(), evt) // ctx-ok: F-15 fire-and-forget emit
-		}
-		select {
-		case events <- evt:
-		case <-ctx.Done():
-		}
-	}
-
-	// Build or reuse the chat model (cached per provider+model+key to
-	// avoid re-initializing the HTTP client on every run).
-	modelKey := in.providerName + "/" + in.modelID + "/" + hashToken(in.token)
-	a.mu.Lock()
-	chatModel, ok := a.models[modelKey]
-	a.mu.Unlock()
-	if !ok {
-		var err error
-		chatModel, err = a.newModel(ctx, in.prov, in.token, in.modelID)
-		if err != nil {
-			emit(domain.EventAgentStep, "engine: failed to create chat model: "+err.Error())
-			_ = a.st.FinishExecution(in.execID, "failed", err.Error(), 0, 0)
-			return "", fmt.Errorf("engine: chat model: %w", err)
-		}
-		a.mu.Lock()
-		a.models[modelKey] = chatModel
-		a.mu.Unlock()
-	}
-
-	// Append the goal as the opening user message.
-	var err error
-	_, err = a.st.Append(store.Message{
-		ID: fmt.Sprintf("msg-goal-%d-%d", time.Now().UnixNano(), nextID()), SessionID: in.sessionID,
-		ExecutionID: in.execID, Role: "user", Agent: in.agent(), Content: in.goal,
-	})
+	s, err := a.prepareRun(ctx, events, in)
 	if err != nil {
-		emit(domain.EventAgentStep, "engine: failed to persist goal: "+err.Error())
-		_ = a.st.FinishExecution(in.execID, "failed", err.Error(), 0, 0)
-		return "", fmt.Errorf("engine: persist goal: %w", err)
+		return "", err
 	}
-	emit(domain.EventSession, fmt.Sprintf("goal: %s", in.goal))
+	emit, chatModel := s.emit, s.chatModel
 
 	// Progress-aware bounded loop (the operator's agentzero shape):
 	// soft budget nudges, auto-extension for productive work, early
@@ -282,14 +238,8 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 	var tokensIn, tokensOut int64
 	var childMsgs []*schema.Message // child's retained conversation (P1-2)
 	pendingNudge := ""              // the require_tool_use nudge (first completion only) rides the next step
-	softBudget := in.maxSteps       // from the intent complexity (0 = default)
-	if softBudget <= 0 || softBudget > MaxSteps {
-		softBudget = MaxSteps
-	}
-	hardBudget := softBudget * 2                   // hard stop at 2x soft
-	tracker := progress.New()                      // per-run scoring
-	maxExtensions := 3                             // productive agents can earn up to 3 windows
-	steps := hardBudget + maxExtensions*softBudget // absolute ceiling
+	softBudget, hardBudget, steps := budgetFor(in.maxSteps)
+	tracker := progress.New() // per-run scoring
 	for step := 0; step < steps; step++ {
 		if ctx.Err() != nil {
 			emit(domain.EventSession, "run cancelled")
@@ -342,33 +292,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 		var opts []model.Option
 		var offered []tools.Tool
 		if step < steps-1 && step < hardBudget-1 { // suppress tools only near the absolute ceiling
-			if in.toolAllow != nil && len(in.toolAllow) == 0 {
-				offered = nil // tools: [] is an EXPLICIT no-tools inventory (the WHOLE plane: ward, MCP)
-				// Delegation is governed by the DEPTH grant, not the tool
-				// allowlist: an orchestrator with tools:[] still delegates.
-				if in.depth < in.grant && in.depth < a.depthCap && a.snapFn != nil {
-					offered = append(offered, a.delegateTool(ctx, events, in))
-				}
-			} else {
-				offered = engine.FilterTools(a.toolProv, in.toolAllow)
-				// The agent allowlist governs the COMPLETE inventory:
-				// ward tools (incl. shell) and the MCP plane pass
-				// through it too — a restrictive agent gets only what
-				// it declared.
-				ward := filterWardTools(wardToolSet(in), in.toolAllow)
-				offered = append(offered, ward...)
-				if in.depth < in.grant && in.depth < a.depthCap && a.snapFn != nil {
-					offered = append(offered, a.delegateTool(ctx, events, in))
-				}
-				// The retrieval plane (ward-v2): live MCP tools on engine
-				// runs — root AND delegated children share the plane
-				// (delegation-truthfulness: a research child must be able
-				// to search); the agent's allowlist still bounds it.
-				// Quick chat (the chat service's lean plane) never mounts them.
-				if a.mcpTools != nil {
-					offered = append(offered, filterWardTools(a.mcpTools(), in.toolAllow)...)
-				}
-			}
+			offered = a.offeredTools(ctx, events, in)
 			// Inject progress nudges (advisory user messages, not system
 			// prompts — the model sees them as steering, not overrides).
 			if nudge := tracker.Nudge(step, softBudget, hardBudget); nudge != "" {

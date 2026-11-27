@@ -15,6 +15,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"zbot/backend/internal/domain"
+	"zbot/backend/internal/engine"
 	"zbot/backend/internal/store"
 	"zbot/backend/internal/tools"
 )
@@ -60,17 +61,20 @@ func usageOrNull(rm *schema.ResponseMeta, prompt bool) sql.NullInt64 {
 // child's call surfaces as a delegation event in the parent's stream),
 // and appends the transcript's tool row.
 func (a *Adapter) emitToolCall(ctx context.Context, events chan domain.TimelineEvent, in runInput, tc schema.ToolCall, content string) {
-	payload, _ := json.Marshal(map[string]any{"tool": tc.Function.Name, "output": content, "agent": in.agent()})
-	_ = a.st.AppendEvent(store.Event{
-		ID: a.idGen(), SessionID: in.sessionID, ExecutionID: in.execID,
-		Kind: "tool_call", Payload: string(payload),
-	})
 	toolEvt := domain.TimelineEvent{
 		ID: a.idGen(), SessionID: in.sessionID, ExecutionID: in.execID, Kind: domain.EventToolCall,
 		Text:     tc.Function.Name, // the name rides Text too: every SSE consumer (UI work stream, /v1 frames) renders it
 		Agent:    in.agent(),
 		ToolCall: &domain.ToolCallPayload{Tool: tc.Function.Name, Output: content},
 	}
+	// ONE identity per event: the durable row and the published/streamed
+	// event share the ID (engine-adk-spine; the row used to mint its own,
+	// which made an SSE tool_call uncorrelatable with the stored event).
+	payload, _ := json.Marshal(map[string]any{"tool": tc.Function.Name, "output": content, "agent": in.agent()})
+	_ = a.st.AppendEvent(store.Event{
+		ID: toolEvt.ID, SessionID: in.sessionID, ExecutionID: in.execID,
+		Kind: "tool_call", Payload: string(payload),
+	})
 	if in.isChild {
 		// Child tool calls surface as delegation events (the durable row
 		// keeps "tool_call" under the child's execution).
@@ -88,4 +92,31 @@ func (a *Adapter) emitToolCall(ctx context.Context, events chan domain.TimelineE
 		ExecutionID: in.execID, Role: "tool", Agent: in.agent(), Content: content,
 		ToolCallID: tc.ID, ToolName: tc.Function.Name,
 	})
+}
+
+// offeredTools assembles this run's EXECUTABLE inventory (the offered
+// set is also the execution inventory — an allowlist binds execution,
+// not just the menu): the builtin provider through the agent allowlist,
+// the ward plane, the depth-granted delegate tool and the live MCP
+// plane (root AND children share it; the allowlist bounds all of it).
+// `tools: []` is an EXPLICIT no-tools inventory — but delegation is
+// governed by the DEPTH grant, not the allowlist: an orchestrator with
+// tools:[] still delegates.
+func (a *Adapter) offeredTools(ctx context.Context, events chan domain.TimelineEvent, in runInput) []tools.Tool {
+	var offered []tools.Tool
+	if in.toolAllow != nil && len(in.toolAllow) == 0 {
+		if in.depth < in.grant && in.depth < a.depthCap && a.snapFn != nil {
+			offered = append(offered, a.delegateTool(ctx, events, in))
+		}
+		return offered
+	}
+	offered = engine.FilterTools(a.toolProv, in.toolAllow)
+	offered = append(offered, filterWardTools(wardToolSet(in), in.toolAllow)...)
+	if in.depth < in.grant && in.depth < a.depthCap && a.snapFn != nil {
+		offered = append(offered, a.delegateTool(ctx, events, in))
+	}
+	if a.mcpTools != nil {
+		offered = append(offered, filterWardTools(a.mcpTools(), in.toolAllow)...)
+	}
+	return offered
 }

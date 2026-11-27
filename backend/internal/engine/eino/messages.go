@@ -1,7 +1,6 @@
 package eino
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/cloudwego/eino/schema"
@@ -32,20 +31,7 @@ func (a *Adapter) buildMessages(in runInput, childMsgs []*schema.Message) ([]*sc
 		if hw.Summary != nil {
 			msgs = append(msgs, schema.SystemMessage(hw.Summary.Content))
 		}
-		for _, m := range hw.Rows {
-			switch m.Role {
-			case "user":
-				msgs = append(msgs, schema.UserMessage(m.Content))
-			case "assistant":
-				am := &schema.Message{Role: schema.Assistant, Content: m.Content}
-				if m.ToolCalls != "" {
-					_ = json.Unmarshal([]byte(m.ToolCalls), &am.ToolCalls)
-				}
-				msgs = append(msgs, am)
-			case "tool":
-				msgs = append(msgs, &schema.Message{Role: schema.Tool, Content: m.Content, ToolCallID: m.ToolCallID, ToolName: m.ToolName})
-			}
-		}
+		msgs = append(msgs, rowsToMessages(hw.Rows)...)
 	}
 
 	return msgs, childMsgs, nil
