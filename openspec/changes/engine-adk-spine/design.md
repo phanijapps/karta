@@ -83,8 +83,8 @@ characterizations).
 | Delegation depth cap (`max_depth=1`) | `BeforeAgent` grant logic (unchanged semantics: root delegates, children never) | The hold is not lifted by this change. |
 | Ward packet / ward guard on delegate desc | Instruction composition (unchanged this change) + tool description guard on the per-agent tools | Mid-run ward-switch packet staleness is pre-existing; noted as a follow-up (transient-injection middleware). |
 | `## Skills` bodies (18.8 KB/step) | `skill` middleware with our Backend over `~/.zbot/skills/**`, scoped to the analyst's recommended skills (D3) | sysprompt stops composing bodies for engine runs (`skills.injection`); the `Skills provided in context:` line stays. Chat keeps bodies. |
-| Tool-result caps (head + pointer, ranged re-read) | `reduction` middleware (truncation; Backend = one `Write` bridged to a session-scoped offload dir) + `offset`/`limit` on wardtools read | Placeholder text is the middleware's; our read tool gains range params so the pointer is actionable. |
-| Child compaction + root in-run compaction | `summarization` middleware (both roots and children; model = run's own unless `compaction.summarizer`) | Emits its own events (verified `TypedSendEvent`) — the driver maps them to timeline compaction events so rule 4 (no silent work) holds. |
+| Tool-result caps (head + pointer, ranged re-read) | `reduction` middleware — LANDED: byte cap, head + tail previews + path; the ORIGINAL bytes offloaded to a per-run `os.Root` (canonical, kernel-bounded) and re-read in BYTE ranges through `karta_read_file` (the solar dumps were single lines) | Placeholder text is the middleware's; `delegate_*` and `karta_skill` results exempt from both phases. |
+| Child compaction + root in-run compaction (`domain.Compactor` bridge) | LANDED: the kernel policy `internal/compaction` behind `domain.Compactor` (new — the constitution's Compaction Rule), bridged thinly by `mw_compaction.go`; NOT Eino's summarization middleware (gate G4 F1) | Roots AND children (children run on the spine since slice 2); each pass is one durable `compaction_triggered` event with stats; PreCompact honored by the policy (no daemon runner yet — G5 R2-1). |
 | Role-scoped tool menus (G9) | Phase 1: the existing per-agent allowlist at `BeforeAgent` (already role-scoped); analyst `recommended_capabilities` mounting lands with S2/S3 | `toolsearch` deferred — ~18 tools don't need a search meta-tool yet. |
 | Plan events (S2) | Out of scope (`plantask` later, in S2) | — |
 
@@ -112,7 +112,7 @@ driver (seeding, event translation, terminal states, the nudge re-run), and
 the legacy loop retained behind the flag. Children still run the legacy loop
 (the delegate tool's Exec calls it — both paths coexist in the package).
 
-**Slice 1 — the four pay-now middlewares.** `reduction` (+ ranged reads,
+**Slice 1 — the four pay-now middlewares (plan; as built below).** `reduction` (+ ranged reads,
 config `compaction.tool_result_cap`), `skill` (+ sysprompt seam + config
 `skills.injection`), `summarization` (+ timeline events, config
 `compaction.summarizer`), reasoning effort (frontmatter `reasoning_effort`,

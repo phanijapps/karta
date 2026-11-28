@@ -250,3 +250,35 @@ Shipped as `delegation-truthfulness` (Q1 + Q2a + the depth knob).
 - Run data: `executions`, `messages` for `research-1795639221673033347-1`
 - agentzero lessons 2026-09-08 (prose instead of tool calls) —
   `intent-analysis-enhancement-plan.md` §0
+
+## 8. What landed for Q2b — the ADK spine (engine-adk-spine, 2026-11-27)
+
+The context-budget levers of §4 ship as middlewares on the Eino ADK spine
+(`engine_loop: adk`, the default; the legacy loop stays selectable for one
+soak cycle). Each lever is a test-pinned mechanism, measurable per step
+through the per-step usage on rows (§3a):
+
+| Lever (§3a number) | Mechanism | Knob |
+|---|---|---|
+| Tool-result caps (≈300k on the solar run) | `reduction`: results over the byte cap become a head + tail preview + a path; the original bytes offload to a per-run `os.Root` and re-read in byte ranges via `karta_read_file` | `compaction.tool_result_cap` (12 KB) |
+| Skills injection (≈70k) | `skill`: the recommended skills load on demand through `karta_skill` (names in the prompt, bodies only when called) | `skills.injection: progressive` |
+| Child + root compaction | `internal/compaction` behind `domain.Compactor` (instruction kept, old messages summarized, tail verbatim), bridged by the spine; each pass a `compaction_triggered` event | `compaction.max_context_tokens − reserve`; `compaction.summarizer` (D4) |
+| Reasoning effort (≈20k completion) | `reasoning_effort` per agent rides every model call (`low`, `medium`, `high`, `none`) | agent frontmatter; builder seed `low` |
+| Delegation as context isolation (≈500k) | children run on the spine with the same levers; one task tool per agent (`delegate_<agent>`) | `delegation.max_depth` (1 — the hold) |
+
+**Measured on the live stack (2026-11-27, zai/glm-5.3-flash):** a
+5-model-call research run with one delegation cost 64.2k prompt / 930
+completion tokens in 17 s (root 40.8k in, analyst 1.9k, child 21.5k /
+21 out). The child's entire bill was a quarter of the root's two steps —
+delegation isolates context as designed. What the run also shows: the
+FIXED overhead per step is still ≈20k tokens for a ward-hosted root (the
+ward packet plus ~20 tool schemas, 9 of them the live brave-mcp plane) —
+the caps and skills act on history growth and the skills section, not on
+schema cost. Role-scoped tool menus (G9, S3) are the lever for that.
+
+**To re-measure against §3a:** `cd frontend && GOAL="<the solar goal>"
+node tests/_live/karta-live.mjs` writes `/tmp/karta-live-report.json`
+(per-row usage, lifecycle, kinds) and screenshots; compare step-1 prompt
+(fixed overhead), final context, completion split, truncation notices
+(`<persisted-output>`), `karta_skill` loads and `compaction_triggered`
+events against the §3a table. Operator task (2.5).

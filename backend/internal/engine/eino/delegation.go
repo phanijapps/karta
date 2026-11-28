@@ -111,38 +111,39 @@ func delegatableNames(snap registry.Snapshot) []string {
 }
 
 // delegateToolName is the per-agent tool's wire name: `delegate_` + the
-// agent name (characters outside [A-Za-z0-9_-] become `_`). The shared
-// prefix is what the UI recognizes as a delegation (legacy rows say
-// `delegate_agent`). Two agent names can map to ONE wire name (`a.b` and
-// `a_b`), and "agent" maps to the dispatch name — such agents are not
-// offered as their own tool (perAgentDelegationTools reports them); they
-// stay reachable through the dispatch alias.
+// agent name VERBATIM. The shared prefix is what the UI recognizes as a
+// delegation (legacy rows say `delegate_agent`), and the suffix is what
+// it shows as the agent — so a name with characters outside
+// [A-Za-z0-9_-] (`a.b`), or literally "agent" (the dispatch name), gets
+// NO tool of its own (""; perAgentDelegationTools reports it): the UI
+// would otherwise attribute the child's rows to a rewritten name. Such
+// agents stay reachable through the dispatch alias.
 func delegateToolName(agent string) string {
-	var b strings.Builder
-	b.WriteString("delegate_")
+	if agent == "agent" || agent == "" {
+		return ""
+	}
 	for _, r := range agent {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
-			b.WriteRune(r)
 		default:
-			b.WriteByte('_')
+			return ""
 		}
 	}
-	return b.String()
+	return "delegate_" + agent
 }
 
 // perAgentDelegationTools builds one task tool per delegatable agent
-// (ADK spine, decision D1). An agent whose wire name collides — with the
-// dispatch name or with an earlier agent's name — is skipped and
-// reported in the second list (the driver names the drops on the stream);
-// it stays reachable through the dispatch alias.
+// (ADK spine, decision D1). An agent with no usable wire name — a name
+// that is not verbatim-safe, "agent", or one that collides with an earlier
+// agent's — is skipped and reported in the second list (the driver names
+// the drops on the stream); it stays reachable through the dispatch alias.
 func (a *Adapter) perAgentDelegationTools(ctx context.Context, events chan domain.TimelineEvent, parent runInput) (tools_ []tools.Tool, collided []string) {
 	snap := a.snapFn()
 	taken := map[string]bool{dispatchDelegateTool: true}
 	var out []tools.Tool
 	for _, name := range delegatableNames(snap) {
 		wire := delegateToolName(name)
-		if taken[wire] {
+		if wire == "" || taken[wire] {
 			collided = append(collided, name)
 			continue
 		}

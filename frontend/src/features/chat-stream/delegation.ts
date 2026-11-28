@@ -5,7 +5,10 @@
  *    rows): the target agent rides the call's `agent` argument.
  *  - `delegate_<agent>` — the per-agent task tools of the ADK spine
  *    (engine-adk-spine, decision D1): the target is the name's suffix,
- *    the only argument is `task`.
+ *    the only argument is `task`. The engine offers such a tool only
+ *    when the suffix IS the registry name verbatim (names with other
+ *    characters, the literal name `agent`, and collisions get no tool and
+ *    stay reachable through the dispatch form).
  *
  * Rows and events that predate the spine keep working; a session that
  * runs on the spine shows the same pills, groups and slideouts.

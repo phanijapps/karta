@@ -49,6 +49,11 @@ type runState struct {
 	stripMsg          *schema.Message     // the continuation run's require_tool_use nudge (removed by identity after its first model call; root runs; nil = none)
 	pendingIDs        map[string][]string // latest intent's tool name → queued call IDs (refusal rows pair with them)
 
+	// reportedDrops remembers the reserved-name drops and wire-name
+	// collisions already reported on the stream (once each per run), so a
+	// live inventory change mid-run reports only what is new.
+	reportedDrops map[string]bool
+
 	// foreign names the tool infos middlewares add themselves (the skill
 	// tool, injected at BeforeAgent): kept across calls by the budget's
 	// refresh while the user's live inventory is re-derived. Captured once,

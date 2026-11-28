@@ -41,18 +41,11 @@ func (a *Adapter) runAgent(ctx context.Context, events chan domain.TimelineEvent
 		_ = a.st.FinishExecution(in.execID, "failed", err.Error(), 0, 0)
 		return "", err
 	}
-	offered, dropped, collided := a.inventory(ctx, events, in)
-	if len(dropped) > 0 {
-		names := make([]string, 0, len(dropped))
-		for _, t := range dropped {
-			names = append(names, t.Def().Name)
-		}
-		s.emit(domain.EventAgentStep, "engine: tools with the reserved "+reservedToolPrefix+" prefix are not offered: "+strings.Join(names, ", "))
-	}
-	if len(collided) > 0 {
-		s.emit(domain.EventAgentStep, "engine: agents without their own delegation tool (wire-name collision; reachable as "+dispatchDelegateTool+"): "+strings.Join(collided, ", "))
-	}
 	st := newRunState(in.maxSteps)
+	offered, dropped, collided := a.inventory(ctx, events, in)
+	if line := a.reportDrops(st, dropped, collided); line != "" {
+		s.emit(domain.EventAgentStep, line)
+	}
 	base := baseModelOf(s.chatModel)
 	// One offload directory per run (the continuation shares it): oversized
 	// tool results live here for the run's duration only — the durable rows
@@ -204,6 +197,13 @@ func (a *Adapter) runOnce(ctx context.Context, s *runSetup, in runInput, base mo
 	budget.refresh = func(state *adk.ChatModelAgentState) {
 		if st.suppress {
 			return
+		}
+		// A live inventory change (a reserved-prefixed MCP tool probed
+		// mid-run, a roster hot-reload) reports only what is newly dropped.
+		if _, dropped, collided := a.inventory(ctx, s.events, in); len(dropped)+len(collided) > 0 {
+			if line := a.reportDrops(st, dropped, collided); line != "" {
+				s.emit(domain.EventAgentStep, line)
+			}
 		}
 		if st.foreign == nil {
 			// First call: whatever the middlewares added beyond the compiled
@@ -382,4 +382,35 @@ func (a *Adapter) emitCompaction(ctx context.Context, events chan domain.Timelin
 	case events <- evt:
 	case <-ctx.Done():
 	}
+}
+
+// reportDrops formats the reserved-name / wire-name report for what has not
+// been reported yet in this run ("" when nothing new); it remembers what it
+// reported.
+func (a *Adapter) reportDrops(st *runState, dropped []tools.Tool, collided []string) string {
+	if st.reportedDrops == nil {
+		st.reportedDrops = map[string]bool{}
+	}
+	var names []string
+	for _, t := range dropped {
+		if n := t.Def().Name; !st.reportedDrops["tool:"+n] {
+			st.reportedDrops["tool:"+n] = true
+			names = append(names, n)
+		}
+	}
+	var agents []string
+	for _, n := range collided {
+		if !st.reportedDrops["agent:"+n] {
+			st.reportedDrops["agent:"+n] = true
+			agents = append(agents, n)
+		}
+	}
+	var parts []string
+	if len(names) > 0 {
+		parts = append(parts, "engine: tools with the reserved "+reservedToolPrefix+" prefix are not offered: "+strings.Join(names, ", "))
+	}
+	if len(agents) > 0 {
+		parts = append(parts, "engine: agents without their own delegation tool (name not verbatim-safe or colliding; reachable as "+dispatchDelegateTool+"): "+strings.Join(agents, ", "))
+	}
+	return strings.Join(parts, "\n")
 }

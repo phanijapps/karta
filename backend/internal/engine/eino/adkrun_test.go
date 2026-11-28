@@ -21,6 +21,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
+	"zbot/backend/internal/compaction"
 	"zbot/backend/internal/domain"
 	"zbot/backend/internal/providers"
 	"zbot/backend/internal/registry"
@@ -825,17 +826,20 @@ func TestADKDelegationToolNamesCollideSafely(t *testing.T) {
 		}
 	}
 	sort.Strings(advertised)
+	// `a.b` is not verbatim-safe (the UI would attribute its child's rows to
+	// a rewritten name) and `agent` is the dispatch name: neither gets a
+	// tool; `a_b` is safe and does.
 	if strings.Join(advertised, ",") != "delegate_a_b,delegate_planner,delegate_researcher" {
 		t.Fatalf("offered delegation tools: %v", advertised)
 	}
 	var report string
 	for _, evt := range events {
-		if strings.Contains(evt.Text, "wire-name collision") {
+		if strings.Contains(evt.Text, "without their own delegation tool") {
 			report = evt.Text
 		}
 	}
-	if !strings.Contains(report, "a_b") || !strings.Contains(report, "agent") || strings.Contains(report, "a.b") {
-		t.Fatalf("the collision report names the skipped agents only: %q", report)
+	if !strings.Contains(report, "a.b") || !strings.Contains(report, "agent") || strings.Contains(report, "a_b") {
+		t.Fatalf("the report names the skipped agents only: %q", report)
 	}
 	var folded bool
 	for _, evt := range events {
@@ -890,5 +894,121 @@ func TestADKHallucinatedDelegationToolListsOffered(t *testing.T) {
 	res := lastToolResult(gen.calls[1])
 	if res == nil || !strings.Contains(res.Content, "not offered") || !strings.Contains(res.Content, "delegation tools offered: ") || !strings.Contains(res.Content, "delegate_researcher") {
 		t.Fatalf("the refusal must list the offered delegation tools: %q", res.Content)
+	}
+}
+
+// TestADKChildCompactionIsObserved (final gate): a delegated child that
+// crosses the budget on the spine compacts in-run — the pass is a durable
+// compaction_triggered event ATTRIBUTED to the child's execution, and the
+// child's next call sees the summary (specs/agent-engine "Children compact
+// in-run").
+func TestADKChildCompactionIsObserved(t *testing.T) {
+	t.Parallel()
+	snap := agentSnap()
+	snap.Agents["researcher"] = registry.AgentSpec{Name: "researcher", SystemPrompt: "You research.", Description: "Gathers evidence.", Tools: []string{"big"}}
+	big := namedTool{name: "big", out: strings.Repeat("word ", 300)} // ~300 tokens a round
+	sum := &fakeSummarizer{}
+	policy := &compaction.Service{Summarizer: sum, KeepRecent: 2}
+	gen := &scriptedGen{routingGenerator: routingGenerator{scripts: scripts()}}
+	gen.scripts = map[string][]fakeGenStep{
+		"adk-child-sum": {
+			{toolCall: "delegate_researcher", args: `{"task":"child-task rounds"}`},
+			{content: "root done"},
+		},
+		"child-task": {{toolCall: "big", args: `{"n":1}`}, {toolCall: "big", args: `{"n":2}`}, {toolCall: "big", args: `{"n":3}`}, {content: "child done"}},
+	}
+	a := newADKDelegating(t, gen, func() registry.Snapshot { return snap })
+	a.toolProv = &liveProvider{ts: []tools.Tool{big}}
+	a.SetRunOptions(RunOptions{SummarizeAt: 500})
+	a.SetCompactorFactory(func(p, m string) domain.Compactor { return policy.For(compaction.ModelRef{Provider: p, Model: m}) })
+	events := drainEvents(t, mustRun(t, a, domain.GoalRequest{SessionID: "adk-child-sum", Goal: "adk-child-sum goal", Model: "prov/m1"}))
+	var childCompactions int
+	var childExec string
+	for _, evt := range events {
+		if evt.Kind == domain.EventDelegationStarted && evt.Delegation != nil {
+			childExec = evt.Delegation.ExecutionID
+		}
+	}
+	for _, evt := range events {
+		// A child's steps surface as delegation events in the parent's stream;
+		// the durable row keeps compaction_triggered under the child execution.
+		if evt.Kind == domain.EventDelegation && evt.Text != "" && strings.Contains(evt.Text, "context summarized in-run") {
+			if evt.Agent != "researcher" || evt.ExecutionID != childExec || evt.Compaction == nil {
+				t.Fatalf("the child's compaction must be attributed to the child (exec %s): agent %q exec %q compaction %+v", childExec, evt.Agent, evt.ExecutionID, evt.Compaction)
+			}
+			childCompactions++
+		}
+	}
+	if childCompactions == 0 {
+		t.Fatalf("the child's in-run compaction must be observable: %+v", events)
+	}
+	durable, _ := a.st.Events("adk-child-sum", "", 100)
+	var onChildRecord bool
+	for _, e := range durable {
+		if e.Kind == string(domain.EventCompactionTriggered) && e.ExecutionID == childExec {
+			onChildRecord = true
+		}
+	}
+	if !onChildRecord {
+		t.Fatalf("the compaction row must be durable under the child execution %s: %+v", childExec, durable)
+	}
+	if sum.calls == 0 {
+		t.Fatal("the policy summarized")
+	}
+	// The child's LAST model call (root0, child0..3, root1 share the
+	// generator) must see the summary and no longer the first round's
+	// result — the rewritten history is what the model actually reads.
+	childLast := gen.calls[len(gen.calls)-2]
+	var sawSummary bool
+	toolResults := 0
+	for _, m := range childLast {
+		if m.Role == schema.System && strings.Contains(m.Content, compaction.SummaryHeader+"SUMMARY TEXT") {
+			sawSummary = true
+		}
+		if m.Role == schema.Tool {
+			toolResults++
+		}
+	}
+	// Uncompacted, the child's fourth call would carry three tool results;
+	// after the pass only the kept tail's one remains, under the summary.
+	if !sawSummary || toolResults != 1 {
+		t.Fatalf("the child's next call must read the summary with one kept result (got %d tool results, summary %v): %+v", toolResults, sawSummary, childLast)
+	}
+	if !strings.Contains(events[len(events)-1].Text, "run completed") {
+		t.Fatalf("the parent completes: %+v", events[len(events)-1])
+	}
+}
+
+// TestADKMidRunReservedDropIsReportedOnce (final gate): a reserved-prefixed
+// tool that appears mid-run is reported when it appears — once — and never
+// offered.
+func TestADKMidRunReservedDropIsReportedOnce(t *testing.T) {
+	t.Parallel()
+	live := &liveProvider{}
+	gen := &toolsGen{routingGenerator: routingGenerator{scripts: scripts()}}
+	gen.scripts = map[string][]fakeGenStep{"adk-midrun": {{toolCall: "clock.now", args: `{}`}, {toolCall: "clock.now", args: `{}`}, {content: "done"}}}
+	gen.before = func(call int) {
+		if call == 1 {
+			live.set(namedTool{name: "karta_impostor", out: "x"}) // appears mid-run
+		}
+	}
+	a := newADKDelegating(t, gen, nil)
+	a.toolProv = live
+	events := drainEvents(t, mustRun(t, a, domain.GoalRequest{SessionID: "adk-midrun", Goal: "adk-midrun goal", Model: "prov/m1"}))
+	var reports int
+	for _, evt := range events {
+		if strings.Contains(evt.Text, "reserved karta_ prefix") && strings.Contains(evt.Text, "karta_impostor") {
+			reports++
+		}
+	}
+	if reports != 1 {
+		t.Fatalf("the mid-run drop is reported exactly once: %d", reports)
+	}
+	for i := 1; i < len(gen.tools); i++ {
+		for _, ti := range gen.tools[i] {
+			if ti.Name == "karta_impostor" {
+				t.Fatalf("call %d must not advertise the reserved tool", i)
+			}
+		}
 	}
 }

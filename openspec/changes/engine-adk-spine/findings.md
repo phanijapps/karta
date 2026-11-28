@@ -128,3 +128,14 @@ current UTC time using the clock tool …". Session `research-179582733227274470
   prompt tokens: the ward packet + ~20 tool schemas incl. the 9 live brave-mcp
   tools); the caps/skills levers act on history growth and the skills section,
   not on schema cost — the solar re-measurement (2.5) is where that shows.
+
+## G8 — final DEFINITION-OF-DONE pass (zbot-reviewer on gpt-6.1-terra, whole change)
+
+| ID | Sev | Finding | Disposition |
+|---|---|---|---|
+| F1 | P1 | The proposal's pre-archive criterion — the solar re-measurement recorded in the change — is open (operator task 2.5). | **Operator decision (signoff.md §6)**: the measurement costs ~1M tokens on the operator's account; the change archives with the levers test-pinned and the delegation path live-verified (the other levers not yet measured live), the measurement protocol recorded (run-quality-research.md §8) — or the archive waits for it. Not the implementer's call. |
+| F2 | P1 | The "Children compact in-run" scenario had no direct evidence (the compaction test ran a root). | **Fixed**: `TestADKChildCompactionIsObserved` — a delegated child crosses the budget on the spine; the pass is a delegation-kind event attributed to the child's execution, durable under it, and the policy summarized. |
+| F3 | P1 | G5 R2-1 (no `domain.HookRunner` in the daemon) was recorded as a P1. | **Operator decision (signoff.md §6)**: it is pre-existing, change-independent infrastructure (`backend/AGENTS.md` now states it does not exist); proposed reclassification to "out of scope — follow-up hook-runner". |
+| F4 | P2 | A non-colliding SANITIZED agent name (`a.b` → `delegate_a_b`) would mislead the UI's attribution. | **Fixed**: such names get NO tool of their own (reported, alias-served) — every offered suffix is the registry name verbatim; docs and `delegation.ts` say so; `TestADKDelegationToolNamesCollideSafely` updated. |
+| F5 | P2 | Reserved-name / collision drops were reported only for the initial inventory. | **Fixed**: the per-call refresh reports newly dropped names once each (`reportDrops`, `runState.reportedDrops`); `TestADKMidRunReservedDropIsReportedOnce`. |
+| F6 | P2 | Stale wording: the mapping rows (once-per-run inventory, Eino summarization), task 2.1 (line wrapping, `read_file`). | **Fixed**: mapping rows marked LANDED with the as-built mechanism; task 2.1 rewritten. |

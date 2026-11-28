@@ -47,15 +47,17 @@
 
 ## 2. Slice 1 — the four pay-now middlewares
 
-- [x] 2.1 `reduction` + ranged reads: byte cap (`compaction.tool_result_cap`,
-  default 12 KB) → `<persisted-output>` head + tail + path; offload to a
-  per-run temp dir (lines wrapped at 1000 bytes); `read_file` (offset/
-  limit) restricted to that root. `delegate_agent`/`skill` exempt. Verify:
-  `TestADKToolResultCapOffloadsAndRereads` (a 30 KB single-line dump;
-  durable row keeps the whole dump; offload removed with the run),
-  `TestADKReadFileRefusesPathsOutsideOffload`. (The ward `read` tool's
-  own ranged params were superseded: the cap offloads every oversized
-  result regardless of tool, and the reader serves all of them.)
+- [x] 2.1 `reduction`: byte cap (`compaction.tool_result_cap`, default
+  12 KB) → `<persisted-output>` head + tail + path; the ORIGINAL bytes
+  offloaded to a per-run `os.Root` (canonical, kernel-bounded, removed
+  with the run); `karta_read_file` serves BYTE ranges confined to that
+  root. `delegate_*`/`karta_skill` exempt from both phases. Verify:
+  `TestADKToolResultCapOffloadsAndRereads` (a 30 KB single-line dump; the
+  durable row keeps the whole dump; the offload goes away),
+  `TestADKOffloadRootIsCanonicalAndConfined`, `TestClampRangeEdges`,
+  `TestADKFoldBackIsNeverCapped`. (The ward `read` tool's own ranged
+  params were superseded: the cap offloads every oversized result
+  regardless of tool, and the reader serves all of them.)
 - [x] 2.2 `skill` middleware over the registry's provisioned skills,
   scoped to `GoalRequest.Skills` (the wrapper sets it from the analysis
   when `skills.injection: progressive` on the ADK loop; empty = all);
@@ -115,19 +117,20 @@
 
 ## 4. Slice 3 — soak, measurement, archive
 
-- [ ] 4.1 Solar-run re-measurement; record the before/after table in this
-  change; `run-quality-research.md` addendum pointing at it.
-- [ ] 4.2 Docs: `engine/eino/AGENTS.md` rewritten for the spine; mapping
-  table in design.md marked landed; SESSION-HANDOFF refreshed.
-- [ ] 4.3 Final zbot-reviewer read-only pass; fix all P0/P1; P2s in
-  findings.md; `task verify` green (dev stack stopped); `openspec
-  archive -y` + scenario audit (MODIFIED deltas keep every original
-  scenario).
-
-## Constraints honored throughout
-
-- Only `backend/internal/engine/eino/` imports eino (`task gates:backend`
-  constitution check).
-- No live API calls in tests — fake models throughout.
-- Stage files explicitly (never `git add -A`); `backend/zbotd` never
-  committed from a local build.
+- [x] 4.1 Measurement record: the live run's numbers (64.2k prompt / 930
+  completion / 17 s / 1 delegation; per-execution usage) in findings.md
+  "Live verification"; the re-measurement protocol and the lever table in
+  `run-quality-research.md` §8. The SOLAR re-measurement itself is the
+  operator's (2.5) — the signoff records whether the archive waits for it.
+- [x] 4.2 Docs: `engine/eino/AGENTS.md` (the spine, slice by slice),
+  `internal/compaction/AGENTS.md`, `backend/AGENTS.md` Compaction Rule,
+  intent/registry/config/frontend AGENTS.md; design.md mapping rows
+  marked LANDED; `docs/SESSION-HANDOFF.md` refreshed for the next session.
+- [x] 4.3 Final zbot-reviewer pass (G8): P1 F2 fixed with a test; P2s
+  F4–F6 fixed; F1/F3 are operator decisions (signoff.md §6). `task verify`
+  exit 0 on the final tree (log `/tmp/task-verify-final.log`, 140 s:
+  10 steps, 29 backend packages under -race, LadybugDB suite, 109 e2e,
+  0 FAIL, no drift). Screenshots:
+  `/tmp/karta-signoff-{1-thread-work,2-slideout,3-context,4-settings-agents}.png`.
+- [ ] 4.4 Archive (`openspec archive -y` + the scenario audit) — after the
+  operator's signoff (signoff.md).
