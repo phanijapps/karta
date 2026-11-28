@@ -276,9 +276,39 @@ ward packet plus ~20 tool schemas, 9 of them the live brave-mcp plane) —
 the caps and skills act on history growth and the skills section, not on
 schema cost. Role-scoped tool menus (G9, S3) are the lever for that.
 
-**To re-measure against §3a:** `cd frontend && GOAL="<the solar goal>"
-node tests/_live/karta-live.mjs` writes `/tmp/karta-live-report.json`
-(per-row usage, lifecycle, kinds) and screenshots; compare step-1 prompt
-(fixed overhead), final context, completion split, truncation notices
-(`<persisted-output>`), `karta_skill` loads and `compaction_triggered`
-events against the §3a table. Operator task (2.5).
+**Worked example (2026-11-27, zai/glm-5.3-flash, cap on):** "read
+sources/solar-articles3.json (91 KB) and tell me in three lines what it
+contains" — the `read` row kept all 90,925 bytes; the next model call cost
+15,608 prompt tokens (+3.1k for the capped notice) where the legacy loop
+would have carried ≈23k (+20k), and the model then ran a `python3 -c
+"import json…"` to extract the structure instead of paging the dump. The
+whole run: 58.2k prompt / 737 completion / 14 s.
+
+**To re-measure the solar run against §3a:** the original goal (from the
+session `research-1795696099774376404-1`):
+
+> Research the current state of India's solar module manufacturing as of
+> November 2026: domestic module and cell capacity (GW) by producer, the
+> PLI scheme allocations and their commissioning status, the import duties
+> and domestic-content rules affecting Chinese cells, and the module price
+> trend over the last 12 months. Cross-check every capacity figure against
+> at least two sources and flag any that disagree. Then write a briefing
+> with a capacity-timeline chart and a risk table, saved in the ward as
+> outputs/solar-india-brief-2026-11-26.md and
+> outputs/solar-capacity-timeline.png, with the sourced evidence in
+> sources/solar-evidence-2026-11-26.md — every claim in the evidence file
+> with its URL, source name and date.
+
+`cd frontend && OUT=/tmp/karta-solar GOAL="$(cat /tmp/solar-goal.txt)" node
+tests/_live/karta-live.mjs` (paste the goal into that file; ~10–20 min on the
+default model), then read the per-step usage straight from the store:
+
+    python3 - <<'EOF'
+    import sqlite3; c=sqlite3.connect('file:~/.zbot/data/zbot.db?mode=ro'.replace('~','/home/videogamer'), uri=True)
+    sid='<the session id the script printed>'
+    for r in c.execute("select seq, role, agent, prompt_tokens, completion_tokens, length(content), tool_name from messages where session_id=? order by seq",(sid,)): print(r)
+    EOF
+
+Compare with §3a: step-1 prompt (fixed overhead), final context (983k → ?),
+completion split (reasoning share), `<persisted-output>` notices, `karta_skill`
+loads, `compaction_triggered` events. Operator task (2.5).

@@ -139,3 +139,26 @@ current UTC time using the clock tool …". Session `research-179582733227274470
 | F4 | P2 | A non-colliding SANITIZED agent name (`a.b` → `delegate_a_b`) would mislead the UI's attribution. | **Fixed**: such names get NO tool of their own (reported, alias-served) — every offered suffix is the registry name verbatim; docs and `delegation.ts` say so; `TestADKDelegationToolNamesCollideSafely` updated. |
 | F5 | P2 | Reserved-name / collision drops were reported only for the initial inventory. | **Fixed**: the per-call refresh reports newly dropped names once each (`reportDrops`, `runState.reportedDrops`); `TestADKMidRunReservedDropIsReportedOnce`. |
 | F6 | P2 | Stale wording: the mapping rows (once-per-run inventory, Eino summarization), task 2.1 (line wrapping, `read_file`). | **Fixed**: mapping rows marked LANDED with the as-built mechanism; task 2.1 rewritten. |
+
+## Measurement example — the cap on a real run (2026-11-27, operator decision 3 applied)
+
+`compaction.summarizer: ollama/glm-5.3-flash:cloud` set in config.yaml (D4); the
+daemon reloaded it. Example run (the live script, `OUT=/tmp/karta-example`):
+"In the india-analysis ward, read sources/solar-articles3.json and tell me in
+three lines what it contains. Read it directly yourself; do not delegate." —
+zai/glm-5.3-flash, S, 4 model calls, 14 s, **58.2k prompt · 737 completion**.
+
+| seq | step | prompt tokens | the row |
+|---|---|---|---|
+| 2 | `ward_use` intent | 11,915 | fixed overhead (ward packet + ~20 tool schemas) |
+| 4 | `read` intent | 12,478 | +0.6k (the ward packet) |
+| 5 | `read` result | — | **90,925 bytes kept durably** |
+| 6 | `shell` intent | **15,608** | **+3.1k**: the model saw the capped notice (12 KB cap → head + tail preview), not 91 KB |
+| 8 | the answer | 16,328 | the model ran `python3 -c "import json…"` to extract the structure — "scripts that extract facts instead of dumping texts" (research §4 lever 2), unprompted |
+
+On the legacy loop step 6 would have carried the whole file (≈23k tokens):
+≈35k instead of 15.6k — and it would have ridden every later step. Step-1
+overhead (11.9k) is still the ward packet + schemas: the caps and skills do not
+touch schema cost (role-scoped menus, G9, do). Screenshot
+`/tmp/karta-example-thread.png`. The SOLAR re-measurement (2.5) uses the same
+script with the original goal — see run-quality-research.md §8.

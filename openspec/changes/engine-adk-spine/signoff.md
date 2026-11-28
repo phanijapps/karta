@@ -126,6 +126,11 @@ gpt-6.1-terra (G8) — NOT READY → fixed except the two operator decisions.
 Operator: ______________________  Date: __________
 
 - [ ] Decision 1 (measurement): archive now / hold for the measurement
-- [ ] Decision 2 (hook runner): out of scope, follow-up / other
-- [ ] Decision 3 (D4): `compaction.summarizer` set in config.yaml
+    (operator: "I need example" → the worked example and the exact solar
+    command are in findings.md "Measurement example" and
+    run-quality-research.md §8; the decision is still open)
+- [x] Decision 2 (hook runner): out of scope, follow-up "hook-runner"
+    (operator, 2026-11-27: "I know 2 hasn't been implemented")
+- [x] Decision 3 (D4): `compaction.summarizer: ollama/glm-5.3-flash:cloud`
+    set in config.yaml (operator: "I am fine with 3"); daemon reloaded
 - [ ] Archive approved → `openspec archive -y engine-adk-spine` + scenario audit
