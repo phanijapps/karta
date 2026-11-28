@@ -108,6 +108,10 @@
   `TestContractSuite` runs the legacy path explicitly. UI: the
   `delegate_` prefix recognized (`delegation.ts`; svelte-check + build +
   the full e2e suite 109 green incl. the new `delegation-tools.spec.ts`).
+  **Live**: a real research run on the dev stack through the browser
+  (`tests/_live/karta-live.mjs`) — per-agent tool, child on the spine,
+  lifecycle + receipts, attributed frames, pills/slideout/Work tab
+  (findings.md "Live verification").
 
 ## 4. Slice 3 — soak, measurement, archive
 

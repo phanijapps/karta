@@ -52,3 +52,11 @@ daemon, no per-feature API clients.
   registry name verbatim. `tests/delegation-tools.spec.ts` pins the
   per-agent shape (pills, slideout, Work nesting and turn boundary,
   Context roster); `run-legibility.spec.ts` keeps the legacy shape.
+
+- `tests/_live/karta-live.mjs` is NOT an e2e spec (Playwright ignores the
+  name): it drives the REAL UI against the live daemon (New Research → a
+  goal → the run to completion), records every SSE frame the page sees,
+  reads the transcript and session state back, and writes a report +
+  screenshots to /tmp. `GOAL="…" node tests/_live/karta-live.mjs` from
+  frontend/ — the operator's measurement runs (engine-adk-spine 2.5) use
+  it; it costs real tokens on the configured default model.

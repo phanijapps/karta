@@ -98,3 +98,33 @@ cannot be a cross-install default — set it in config.yaml for D4.
 | S-F4 | P2 (sol) | Suffix extraction would mis-map names the engine rewrites. | **Moot by construction**: the engine offers no tool for a colliding name (T-F1), so every offered suffix is the registry name verbatim; documented in `delegation.ts` and frontend/AGENTS.md. |
 | S-F5 | P2 (sol) | WorkSteps' expanded details kept two legacy-only branches (raw task JSON; duplicated report text). | **Fixed**: both branches use the helpers. |
 | S-F6 | P2 (sol) | No e2e fixture exercised a per-agent call. | **Fixed**: `tests/delegation-tools.spec.ts` — two per-agent calls in one root row (pills, slideout, Work nesting + turn boundary, Context roster); the full suite is 109 green. |
+
+## Live verification — slice 2 on the real stack (2026-11-27)
+
+`frontend/tests/_live/karta-live.mjs` (Playwright, headless Chromium) against the
+dev stack on the slice-2 code (`engine_loop` absent → `adk`; default model
+`zai/glm-5.3-flash`): goal "Delegate to the builder agent the task: report the
+current UTC time using the clock tool …". Session `research-1795827332272744706-1`,
+17 s, **run completed**, 0 console errors.
+
+- Transcript (10 rows, every row attributed): root `ward_use` → `local-llm-tools`
+  entered → root intent **`delegate_builder-agent`** (the per-agent tool — the
+  spine's signature; the legacy loop writes `delegate_agent`) → the child's rows
+  under `exec-child-builder-agent-…` (`clock.now` → `2026-11-28T00:55:46Z` → its
+  answer) → the fold-back with the host's deliverables-check line → the root's
+  answer. Executions: root 40.8k in / 692 out, analyst 1.9k / 217, child 21.5k /
+  21 — "Session: 64.2k prompt · 930 completion tokens · 1 delegation · 17 s".
+- Every SSE frame carried `agent` + `execution_id` (replay + live; no gaps).
+- UI: the analysis chip (S, ward), the `builder-agent` pill, THE ANSWER with
+  Thinking + Narration, the Work tab (ward entered, "Delegated builder-agent",
+  the analysis card with per-execution usage, the DELEGATIONS card
+  `completed · 21.5k → 21 · 3 s · clock.now ×1`), the slideout (task, the
+  child's call, the report). Screenshots: `/tmp/karta-live-{thread,slideout,work}.png`;
+  report `/tmp/karta-live-report.json`.
+- Observed, PRE-EXISTING (handoff §4.4, not this change): the receipts regex
+  flags `clock.now` as a deliverable ("✗ not on disk") — the slash-or-known-
+  extension fix belongs to that open item.
+- The fixed per-step overhead is still visible (the root's two steps ≈ 40.7k
+  prompt tokens: the ward packet + ~20 tool schemas incl. the 9 live brave-mcp
+  tools); the caps/skills levers act on history growth and the skills section,
+  not on schema cost — the solar re-measurement (2.5) is where that shows.
