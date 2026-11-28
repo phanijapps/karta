@@ -82,41 +82,37 @@ func (m *persistenceMW) unknownHandler() func(context.Context, string, string) (
 	}
 }
 
-// execute is the legacy execOffered round against the live inventory:
-// withdrawn (near the ceiling), an empty plane, or not offered → the typed
-// ErrToolNotOffered text as the result; otherwise the tool's output or
-// its error as "error: …". Every outcome is recorded with the tracker
-// (the stuck kill's failing-call scoring) and surfaces as a tool_call
-// row + event, exactly like the legacy loop.
+// execute is the legacy execOffered round against the live inventory,
+// through THE tool-call seam (PreToolUse → the call → record + row →
+// PostToolUse, hooks.go): withdrawn near the ceiling → the typed
+// ErrToolNotOffered text as the result; otherwise the tool's output or its
+// error as "error: …". Every outcome is recorded with the tracker and
+// surfaces as a tool_call row + event, exactly like the legacy loop.
 func (m *persistenceMW) execute(ctx context.Context, name, argsJSON, callID string, endpoint adk.InvokableToolCallEndpoint) string {
-	var res tools.Result
-	switch {
-	case m.st.suppress:
-		res = tools.Result{Err: fmt.Errorf("%w: %q", ErrToolNotOffered, name)}
-	case strings.HasPrefix(name, "delegate_") && !m.offeredName(name) && name != dispatchDelegateTool:
-		// A hallucinated delegation tool: the typed refusal names what IS
-		// offered (the spec's "lists configured agents").
-		res = tools.Result{Err: fmt.Errorf("%w: %q (delegation tools offered: %s)", ErrToolNotOffered, name, strings.Join(m.delegationToolNames(), ", "))}
-	case endpoint != nil && m.st.foreign[name]:
-		// A middleware-injected tool (the skill middleware's `skill`) is not
-		// part of the user's plane: run its own endpoint. Its error (an
-		// unknown skill) becomes the model-facing text like any tool error.
-		out, err := endpoint(ctx, argsJSON)
-		res = tools.Result{Output: out, Err: err}
-	case name == dispatchDelegateTool && m.a.loop == LoopADK && m.a.delegationGranted(m.in):
-		// The legacy dispatch name on the spine: an alias for prompts that
-		// still call it (the per-agent tools are what is advertised).
-		res = m.a.dispatchDelegate(ctx, m.events, m.in, argsJSON)
-	default:
-		res = execOffered(ctx, m.inventory(), name, argsJSON) // the LIVE plane (empty → not offered)
-	}
-	content, errText := res.Output, ""
-	if res.Err != nil {
-		content, errText = "error: "+res.Err.Error(), res.Err.Error()
-	}
-	m.st.tracker.Record(name, argsJSON, errText)
-	m.emitToolCall(callID, name, content)
-	return content
+	return m.a.executeTool(ctx, m.events, m.in, m.st.tracker, name, argsJSON, callID, func() tools.Result {
+		switch {
+		case m.st.suppress:
+			// Near the ceiling the inventory is withdrawn; a hallucinated
+			// call is refused exactly like an unoffered name.
+			return tools.Result{Err: fmt.Errorf("%w: %q", ErrToolNotOffered, name)}
+		case strings.HasPrefix(name, "delegate_") && !m.offeredName(name) && name != dispatchDelegateTool:
+			// A hallucinated delegation tool: the typed refusal names what IS
+			// offered (the spec's "lists configured agents").
+			return tools.Result{Err: fmt.Errorf("%w: %q (delegation tools offered: %s)", ErrToolNotOffered, name, strings.Join(m.delegationToolNames(), ", "))}
+		case name == dispatchDelegateTool && m.a.loop == LoopADK && m.a.delegationGranted(m.in):
+			// The legacy dispatch name on the spine: an alias for prompts that
+			// still call it (the per-agent tools are what is advertised).
+			return m.a.dispatchDelegate(ctx, m.events, m.in, argsJSON)
+		case endpoint != nil && m.st.foreign[name]:
+			// A middleware-injected tool (the skill middleware's `skill`) is not
+			// part of the user's plane: run its own endpoint. Its error (an
+			// unknown skill) becomes the model-facing text like any tool error.
+			out, err := endpoint(ctx, argsJSON)
+			return tools.Result{Output: out, Err: err}
+		default:
+			return execOffered(ctx, m.inventory(), name, argsJSON) // the LIVE plane (empty → not offered)
+		}
+	})
 }
 
 // inventory is the executable plane at call time: the user's live tools
@@ -144,8 +140,4 @@ func (m *persistenceMW) delegationToolNames() []string {
 		}
 	}
 	return names
-}
-
-func (m *persistenceMW) emitToolCall(callID, name, content string) {
-	m.a.emitToolCall(m.ctx, m.events, m.in, schema.ToolCall{ID: callID, Function: schema.FunctionCall{Name: name}}, content)
 }

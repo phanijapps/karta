@@ -259,6 +259,15 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 	if uerr != nil || status == "running" {
 		status = "failed"
 	}
+	// SubagentStop fires when the child returns (advisory): a block or warn
+	// appends its reason to the fold-back so the root reads it beside the
+	// report; the decision is attributed to the child.
+	stop := d.adapter.runHook(d.ctx, d.events, child, domain.HookEvent{Event: domain.HookSubagentStop, SessionID: d.parent.sessionID,
+		Payload: map[string]any{"agent": spec.Name, "status": status, "execution_id": childExec}})
+	advisory := stop.Action != domain.HookAllow && stop.Reason != ""
+	if advisory {
+		answer += "\n\nHook — " + stop.Reason // the reason already names its hooks
+	}
 	done := &domain.DelegationPayload{ChildAgent: spec.Name, Task: args.Task, ExecutionID: childExec,
 		TokensIn: tokensIn, TokensOut: tokensOut, DurationMS: time.Since(started).Milliseconds(), Status: status}
 	d.adapter.emitDelegation(d.ctx, d.events, d.parent, domain.EventDelegationCompleted, done,
@@ -267,6 +276,9 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 	// makes next) must be attributed to the parent again, not the child.
 	d.adapter.setRunAttribution(d.parent.sessionID, d.parent)
 	if err != nil {
+		if advisory { // a failed child's advisory still reaches the parent
+			return tools.Result{Err: fmt.Errorf("delegate_agent: %s: %w (hook — %s)", args.Agent, err, stop.Reason)}
+		}
 		return tools.Result{Err: fmt.Errorf("delegate_agent: %s: %w", args.Agent, err)}
 	}
 	return tools.Result{Output: answer + deliverableReceipts(d.parent, args.Task)}

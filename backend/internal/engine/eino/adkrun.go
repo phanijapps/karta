@@ -38,7 +38,7 @@ func (a *Adapter) runAgent(ctx context.Context, events chan domain.TimelineEvent
 	seed, summary, err := a.seedMessages(in)
 	if err != nil {
 		s.emit(domain.EventAgentStep, "engine: "+err.Error())
-		_ = a.st.FinishExecution(in.execID, "failed", err.Error(), 0, 0)
+		a.finishRun(ctx, s.events, in, "failed", err.Error(), 0, 0)
 		return "", err
 	}
 	st := newRunState(in.maxSteps)
@@ -95,7 +95,7 @@ func (a *Adapter) runAgent(ctx context.Context, events chan domain.TimelineEvent
 		s.emit(domain.EventAgentStep, final.Content)
 		s.emit(domain.EventSession, "run completed")
 		tokensIn, tokensOut := st.usage()
-		_ = a.st.FinishExecution(in.execID, "completed", "", tokensIn, tokensOut)
+		a.finishRun(ctx, s.events, in, "completed", "", tokensIn, tokensOut)
 		return final.Content, nil
 	}
 }
@@ -288,19 +288,19 @@ func (a *Adapter) failRun(ctx context.Context, s *runSetup, in runInput, st *run
 		// Cancelled while the model answered: never record that answer
 		// as the run's success.
 		s.emit(domain.EventSession, "run cancelled")
-		_ = a.st.FinishExecution(in.execID, "cancelled", "", tokensIn, tokensOut)
+		a.finishRun(ctx, s.events, in, "cancelled", "", tokensIn, tokensOut)
 		return fmt.Errorf("engine: cancelled: %w", err)
 	case errors.As(err, &stuck):
 		s.emit(domain.EventAgentStep, "engine: stopping — agent stuck (progress score "+fmt.Sprint(stuck.score)+")")
-		_ = a.st.FinishExecution(in.execID, "failed", "stuck: no progress", tokensIn, tokensOut)
+		a.finishRun(ctx, s.events, in, "failed", "stuck: no progress", tokensIn, tokensOut)
 		return stuck
 	case errors.Is(err, adk.ErrExceedMaxIterations):
 		s.emit(domain.EventSession, "run stopped: step bound reached")
-		_ = a.st.FinishExecution(in.execID, "failed", "step bound reached", tokensIn, tokensOut)
+		a.finishRun(ctx, s.events, in, "failed", "step bound reached", tokensIn, tokensOut)
 		return fmt.Errorf("engine: step bound reached: %w", err)
 	default:
 		s.emit(domain.EventAgentStep, "engine: model error: "+err.Error())
-		_ = a.st.FinishExecution(in.execID, "failed", err.Error(), tokensIn, tokensOut)
+		a.finishRun(ctx, s.events, in, "failed", err.Error(), tokensIn, tokensOut)
 		return fmt.Errorf("engine: model error: %w", err)
 	}
 }
@@ -343,6 +343,17 @@ func (a *Adapter) seedMessages(in runInput) (seed []*schema.Message, summary str
 // rowsToMessages converts history rows (user/assistant/tool) into the
 // model's message shapes — assistant intent rows keep their tool calls.
 func rowsToMessages(rows []store.Message) []*schema.Message {
+	return rowsToMessagesOverlay(rows, nil)
+}
+
+// rowsToMessagesOverlay is rowsToMessages with what the MODEL saw per
+// tool-call OCCURRENCE overlaid (call id → contents in order): the legacy
+// root re-reads durable rows, which keep the REAL outputs, so a PostToolUse
+// block's replacement is applied here — by occurrence, since a model may
+// reuse a call id within a run (an allowed result must never inherit an
+// earlier block, nor the reverse).
+func rowsToMessagesOverlay(rows []store.Message, modelFacing map[string][]string) []*schema.Message {
+	seen := map[string]int{}
 	msgs := make([]*schema.Message, 0, len(rows))
 	for _, m := range rows {
 		switch m.Role {
@@ -355,7 +366,12 @@ func rowsToMessages(rows []store.Message) []*schema.Message {
 			}
 			msgs = append(msgs, am)
 		case "tool":
-			msgs = append(msgs, &schema.Message{Role: schema.Tool, Content: m.Content, ToolCallID: m.ToolCallID, ToolName: m.ToolName})
+			content := m.Content
+			if q := modelFacing[m.ToolCallID]; seen[m.ToolCallID] < len(q) {
+				content = q[seen[m.ToolCallID]] // what the model saw for THIS occurrence
+				seen[m.ToolCallID]++
+			}
+			msgs = append(msgs, &schema.Message{Role: schema.Tool, Content: content, ToolCallID: m.ToolCallID, ToolName: m.ToolName})
 		}
 	}
 	return msgs

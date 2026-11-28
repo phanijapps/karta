@@ -11,7 +11,7 @@ import (
 // prompt + the delegated task only (the parent embeds needed context
 // in the task; inheriting the whole session transcript pollutes the
 // child and bills the parent's history twice).
-func (a *Adapter) buildMessages(in runInput, childMsgs []*schema.Message) ([]*schema.Message, []*schema.Message, error) {
+func (a *Adapter) buildMessages(in runInput, childMsgs []*schema.Message, modelFacing map[string][]string) ([]*schema.Message, []*schema.Message, error) {
 	var msgs []*schema.Message
 	if in.isChild && childMsgs != nil {
 		msgs = childMsgs // retained child conversation (tool rounds feed back)
@@ -31,7 +31,7 @@ func (a *Adapter) buildMessages(in runInput, childMsgs []*schema.Message) ([]*sc
 		if hw.Summary != nil {
 			msgs = append(msgs, schema.SystemMessage(hw.Summary.Content))
 		}
-		msgs = append(msgs, rowsToMessages(hw.Rows)...)
+		msgs = append(msgs, rowsToMessagesOverlay(hw.Rows, modelFacing)...)
 	}
 
 	return msgs, childMsgs, nil

@@ -42,10 +42,10 @@ type Service struct {
 	// DefaultModel, when set, summarizes instead of the per-call run model
 	// (the cheap summarizer, D4).
 	DefaultModel *ModelRef
-	// Hooks, when set, sees PreCompact before each pass; a block decision
-	// skips the pass.
-	Hooks domain.HookRunner
-	ref   ModelRef
+	ref          ModelRef
+	// Hooks are NOT raised here: the engine's compaction bridge raises
+	// PreCompact through the hook runner (one emitting seam — the decision
+	// reaches the Timeline with the run's attribution; hook-runner R3).
 }
 
 // For binds the service to a run's model (the per-call ref the Summarizer
@@ -114,15 +114,6 @@ func (s *Service) Compact(ctx context.Context, messages []domain.Message, budget
 		return messages, domain.CompactionStats{Strategy: "none", TokensBefore: before, TokensAfter: before, MessagesBefore: len(messages), MessagesAfter: len(messages)}, ErrNothingToSummarize
 	}
 	old, tail := messages[prefix:split], messages[split:]
-	if s.Hooks != nil {
-		decision, err := s.Hooks.Run(ctx, domain.HookEvent{Event: domain.HookPreCompact, Payload: map[string]any{"messages": len(old), "tokens": Tokens(old)}})
-		if err != nil {
-			return messages, domain.CompactionStats{Strategy: "error"}, fmt.Errorf("compaction: pre-compact hook: %w", err)
-		}
-		if decision.Action == domain.HookBlock {
-			return messages, domain.CompactionStats{Strategy: "blocked", TokensBefore: before, TokensAfter: before, MessagesBefore: len(messages), MessagesAfter: len(messages)}, nil
-		}
-	}
 	ref := s.ref
 	if s.DefaultModel != nil {
 		ref = *s.DefaultModel

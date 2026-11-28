@@ -72,6 +72,10 @@ func (a *Adapter) prepareRun(ctx context.Context, events chan domain.TimelineEve
 		}
 	}
 
+	// SessionStart first, before anything can fail: every SessionEnd then
+	// has its start on the record.
+	a.sessionStart(ctx, events, in)
+
 	// Build or reuse the chat model (cached per provider+model+key to
 	// avoid re-initializing the HTTP client on every run).
 	modelKey := in.providerName + "/" + in.modelID + "/" + hashToken(in.token)
@@ -83,7 +87,7 @@ func (a *Adapter) prepareRun(ctx context.Context, events chan domain.TimelineEve
 		chatModel, err = a.newModel(ctx, in.prov, in.token, in.modelID)
 		if err != nil {
 			s.emit(domain.EventAgentStep, "engine: failed to create chat model: "+err.Error())
-			_ = a.st.FinishExecution(in.execID, "failed", err.Error(), 0, 0)
+			a.finishRun(ctx, events, in, "failed", err.Error(), 0, 0)
 			return nil, fmt.Errorf("engine: chat model: %w", err)
 		}
 		a.mu.Lock()
@@ -99,7 +103,7 @@ func (a *Adapter) prepareRun(ctx context.Context, events chan domain.TimelineEve
 	})
 	if err != nil {
 		s.emit(domain.EventAgentStep, "engine: failed to persist goal: "+err.Error())
-		_ = a.st.FinishExecution(in.execID, "failed", err.Error(), 0, 0)
+		a.finishRun(ctx, events, in, "failed", err.Error(), 0, 0)
 		return nil, fmt.Errorf("engine: persist goal: %w", err)
 	}
 	s.emit(domain.EventSession, fmt.Sprintf("goal: %s", in.goal))

@@ -20,9 +20,10 @@ Compaction logic lives in `internal/compaction/` and implements
 engine adapter — including a framework's own summarization middleware
 (engine-adk-spine G4); engines integrate it via a thin middleware adapter
 (Eino: `internal/engine/eino/mw_compaction.go`, a `ChatModelAgentMiddleware`
-`BeforeModel` hook) that leaves the policy to the service (which fires
-`PreCompact` hooks) and emits a `CompactionTriggered` event (tokens
-before/after, strategy). The daemon wires the policy's summarizer model
+`BeforeModel` hook) that leaves the policy to the service, raises
+`PreCompact` through the hook runner itself (one emitting seam — the decision
+is a `hook_decision` event with the run's attribution; a block skips the pass)
+and emits a `CompactionTriggered` event (tokens before/after, strategy). The daemon wires the policy's summarizer model
 (`compaction.summarizer`); adapters only bind it to the run's model.
 
 ## Downward Dependency Graph
@@ -90,9 +91,17 @@ name their owning follow-up, never left as silent comments.
   zero imports from other internal packages.
 - The registry (`internal/registry/`) loads `~/.zbot/config/**` plus the top-level skills/hooks roots with `fsnotify`
   hot-reload; zero hardcoded agents, prompts, skills, hooks, or MCPs.
-- Hook execution (`internal/hooks/`, implementing `domain.HookRunner`) follows
-  the exit-code contract: 0 allow, 2 block (stderr → agent as recoverable
-  error), other non-zero warn-and-continue. STATUS: the runner is not
-  implemented yet — manifests are validated (`registry/hooks.go`) and the
-  seams accept a runner (`compaction.Service.Hooks`), but nothing executes
-  hooks today (engine-adk-spine G5 R2-1; follow-up: hook-runner).
+- Hook execution (`internal/hooks.Runner`, implementing `domain.HookRunner`)
+  follows the exit-code contract: the manifest's `command` runs through
+  `sh -c` in the manifest's directory with the `HookEvent` as JSON on stdin;
+  exit 0 allow, exit 2 block (stderr → the agent as a recoverable error),
+  any other non-zero exit or the timeout (`timeout_ms`, default 10 s,
+  clamped 1–60 s) warn-and-continue; several matching hooks combine block >
+  warn > allow with per-hook reasons. A hook failure is a DECISION, never a
+  run failure. The `matcher` applies to the event's subject (tool name for
+  Pre/PostToolUse, agent name for SubagentStop; ignored otherwise). Seams:
+  Pre/PostToolUse in the engine's tool wrapper, SessionStart/End at the
+  root run's edges (advisory), SubagentStop on the delegation fold-back
+  (advisory), PreCompact in the compaction policy (block skips the pass).
+  Every decision is a durable-first `hook_decision` event. Operator
+  reference: docs/development/hooks.md (hook-runner).

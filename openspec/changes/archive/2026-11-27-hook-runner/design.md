@@ -46,16 +46,16 @@ roster and emits the decision (see Observability); every seam calls it.
 
 | Event | Fires | Semantics |
 |---|---|---|
-| PreToolUse | in the tool wrapper (`persistenceMW.execute`) before ANY execution — the live plane, the dispatch alias and the foreign (skill) path alike; `ToolInput` = the parsed arguments | block → NOT executed; the model sees `error: blocked by hook: <reason>` as the tool result; recorded and emitted like a refusal (a `tool_call` row/event with the text). warn → proceed. |
+| PreToolUse | in THE tool-call seam (`executeTool`, hooks.go) before ANY execution — used by the spine's tool wrapper AND the legacy loop; the live plane, the dispatch alias and the foreign (skill) path alike; `ToolInput` = the parsed arguments | block → NOT executed; the model sees `error: blocked by hook: <reason>` as the tool result; recorded and emitted like a refusal (a `tool_call` row/event with the text). warn → proceed. |
 | PostToolUse | after execution, `Payload["output"]` = the first 4 KB of the result | block → the MODEL-FACING result becomes `error: blocked by hook: <reason>`; the durable row keeps the real output. warn → proceed. |
 | SessionStart | `prepareRun`, root runs only; `Payload{goal}` (first 120 chars) | advisory: block reads as warn |
 | SessionEnd | every root terminal (completed / cancelled / failed / stuck / step bound) via one `finishRun` wrapper around `FinishExecution`; `Payload{status, tokens_in, tokens_out}` | advisory |
 | SubagentStop | `delegateTool.Exec` after the child returns, before the fold-back; `Payload{agent, status, execution_id}` | advisory: block/warn → `Hook (<keys>): <reason>` appended to the fold-back |
-| PreCompact | the compaction policy (`Service.Hooks`), block skips the pass | as built in engine-adk-spine |
+| PreCompact | the compaction BRIDGE raises it through `runHook` (emitted with the run's attribution) before asking the policy; block skips the pass. The policy carries NO hooks (one emitting seam — G2 R3) | |
 
-Legacy loop: SessionStart/End fire there too (the wrapper is shared); the
-legacy loop has no tool wrapper, so Pre/PostToolUse apply to the spine only
-— the legacy loop is deleted after the soak.
+Legacy loop: every seam fires there too — it runs its tool calls through
+the same `executeTool` (a configured block protects both paths while both
+exist).
 
 ## Observability (constitution rule 4)
 
@@ -73,13 +73,22 @@ other steps. No contract change: the schema is used as is.
    timeout bounds it (default 10 s); manifests set `timeout_ms`.
 2. **Shell surface**: `sh -c` runs whatever the manifest says — it is the
    operator's own `~/.zbot/hooks/`, the same trust level as `~/.zbot/agents`
-   prompts and the ward `shell` tool.
+   prompts and the ward `shell` tool. The environment is inherited,
+   including any `api_key_env` provider credential (documented in the
+   operator reference; gate F8).
 3. **Blocking loops**: a PostToolUse block replaces the model-facing result;
    a model that retries the same call re-triggers PreToolUse — the stuck
    tracker and the step bound bound it (same as any failing call).
 4. **Output size**: bounded at 16 KB per stream and 2 KB per reason.
-5. **Legacy path drift**: Pre/PostToolUse do not fire on the legacy loop —
-   documented; the loop goes away after the soak.
+5. **Terminal hooks on a cancelled run** (gate F2): the roster EXECUTES
+   under `context.WithoutCancel` — an audit or cleanup command must run
+   even when the run was cancelled; each hook's own manifest timeout bounds
+   it (no aggregate cap: a slow earlier hook must never downgrade a later
+   blocking one to a warning — G3). STREAMING keeps the run's cancellable
+   context (a vanished consumer can never wedge a full channel — G2 R1).
+7. **Process groups** (gate F3): the hook runs in its own process group
+   and a timeout kills the group, so a compound command's children do not
+   outlive it.
 
 ## Decisions (defaults taken; say otherwise to change)
 

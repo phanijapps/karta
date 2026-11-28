@@ -119,43 +119,6 @@ func TestCompactNothingToSummarize(t *testing.T) {
 	}
 }
 
-type fakeHooks struct {
-	got   domain.HookEvent
-	block bool
-	err   error
-}
-
-func (h *fakeHooks) Run(_ context.Context, e domain.HookEvent) (domain.HookDecision, error) {
-	h.got = e
-	if h.err != nil {
-		return domain.HookDecision{}, h.err
-	}
-	if h.block {
-		return domain.HookDecision{Action: domain.HookBlock, Reason: "no"}, nil
-	}
-	return domain.HookDecision{Action: domain.HookAllow}, nil
-}
-
-// PreCompact fires before the pass with the size of what is summarized;
-// block skips it (strategy "blocked", input unchanged), an error surfaces.
-func TestCompactHooks(t *testing.T) {
-	hooks := &fakeHooks{block: true}
-	sum := &fakeSummarizer{}
-	in := msgs(8)
-	s := &Service{Summarizer: sum, KeepRecent: 2, Hooks: hooks}
-	out, stats, err := s.Compact(context.Background(), in, domain.TokenBudget{})
-	if err != nil || stats.Strategy != "blocked" || len(out) != len(in) || sum.calls != 0 {
-		t.Fatalf("a block skips the pass: stats %+v err %v calls %d", stats, err, sum.calls)
-	}
-	if hooks.got.Event != domain.HookPreCompact || hooks.got.Payload["messages"] != 6 { // 9 messages − the system − the 2-message tail (cut at the next user message)
-		t.Fatalf("the hook sees the pass: %+v", hooks.got)
-	}
-	hooks.block, hooks.err = false, errors.New("hook boom")
-	if _, _, err := s.Compact(context.Background(), in, domain.TokenBudget{}); err == nil {
-		t.Fatal("a failing hook surfaces its error")
-	}
-}
-
 // A failing summarizer returns the input unchanged with the error.
 func TestCompactSummarizerError(t *testing.T) {
 	s := &Service{Summarizer: &fakeSummarizer{err: errors.New("model down")}, KeepRecent: 2}

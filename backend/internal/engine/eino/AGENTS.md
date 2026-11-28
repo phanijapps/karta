@@ -242,3 +242,30 @@ checks, and durable-first event emission.
     exempt from both reduction phases (the receipts sit at the fold-back's
     END). A hallucinated `delegate_<unknown>` is refused naming the
     delegation tools that ARE offered.
+- **Hooks (hook-runner)** — `SetHookRunner` wires `internal/hooks.Runner`;
+  `hooks.go` holds the seams: `runHook` (run + emit; a runner error is a
+  warn), `emitHook` (durable-first `hook_decision` with the decision —
+  its `context` names the hooks and carries the event payload — attributed;
+  a child's decisions surface as delegation-kind events), `finishRun` (the
+  ONE exit of every run on both loops: SessionEnd for roots, then
+  `FinishExecution`), `sessionStart` (prepareRun, roots). THE tool-call
+  seam is `executeTool` — used by the spine's tool wrapper
+  (`persistenceMW.execute`) AND the legacy loop: PreToolUse before every
+  executed or refused call (a block never executes; the model sees the
+  reason as `error: blocked by hook: …`, recorded like a refusal) and
+  PostToolUse after it with the output (a block replaces the MODEL-FACING
+  result only; the durable row keeps the real output). `delegateTool.Exec` raises
+  SubagentStop after the child returns (advisory: block/warn appends
+  `Hook — <reason>` to the fold-back, or to the error when the child
+  failed). The compaction bridge (`mw_compaction.go`) raises PreCompact
+  through `runHook` BEFORE asking the policy — the ONE emitting seam; the
+  policy has no hooks of its own. `runHook` executes the roster under an
+  UNCANCELLABLE context — each hook bounded by its OWN manifest timeout,
+  no aggregate cap (a slow earlier hook must never downgrade a later
+  blocking one) — but STREAMS on the run's own cancellable ctx (a
+  vanished consumer can never wedge a full channel). A PostToolUse block
+  replaces the model-facing result on both paths (the legacy root
+  overlays it on the rows it re-reads: `blockedResults`).
+  Tests: `hooks_test.go` with the real runner over manifests in a temp
+  dir (both run paths; the roster executes uncancellable under each hook's
+  own timeout, streaming stays cancellable).

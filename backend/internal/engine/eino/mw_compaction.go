@@ -43,6 +43,14 @@ func (m *compactionMW) BeforeModelRewriteState(ctx context.Context, state *adk.C
 	if !m.compactor.ShouldCompact(ctx, cs) {
 		return ctx, state, nil
 	}
+	// PreCompact is raised HERE (through runHook: every decision is emitted
+	// with the run's attribution) — the policy carries no hooks, so a pass
+	// raises the event exactly once (one emitting seam).
+	ev := domain.HookEvent{Event: domain.HookPreCompact, SessionID: m.in.sessionID, Payload: map[string]any{"messages": len(dm), "tokens": cs.TotalTokens}}
+	if d := m.a.runHook(ctx, m.events, m.in, ev); d.Action == domain.HookBlock {
+		m.emit(domain.EventAgentStep, "engine: in-run compaction blocked by a PreCompact hook — "+d.Reason)
+		return ctx, state, nil
+	}
 	out, stats, err := m.compactor.Compact(ctx, dm, m.budget)
 	switch {
 	case err != nil:
@@ -51,10 +59,7 @@ func (m *compactionMW) BeforeModelRewriteState(ctx context.Context, state *adk.C
 		}
 		return ctx, state, nil
 	case stats.Strategy != "summarize":
-		if stats.Strategy == "blocked" {
-			m.emit(domain.EventAgentStep, "engine: in-run compaction blocked by a PreCompact hook")
-		}
-		return ctx, state, nil
+		return ctx, state, nil // nothing to do
 	}
 	// The policy's contract: [verbatim system prefix] + [summary] + [verbatim
 	// suffix]. Rebuild with OUR originals for the suffix.

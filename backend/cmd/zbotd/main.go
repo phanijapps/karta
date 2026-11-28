@@ -29,6 +29,7 @@ import (
 	"zbot/backend/internal/compaction"
 	"zbot/backend/internal/config"
 	"zbot/backend/internal/eventbus"
+	"zbot/backend/internal/hooks"
 	"zbot/backend/internal/mcpclient"
 	"zbot/backend/internal/providers"
 	"zbot/backend/internal/registry"
@@ -233,6 +234,10 @@ func run(ctx context.Context, homeFlag string) error {
 	// domain.Compactor — the Compaction Rule) bound per run to the run's
 	// model for the summary; `compaction.summarizer` overrides it with a
 	// cheap model (decision D4). The adapter only bridges it.
+	hookRunner := &hooks.Runner{Snapshot: reg.Snapshot}
+	eng.SetHookRunner(hookRunner)
+	// The policy's own Hooks stays nil: the engine's compaction bridge raises
+	// PreCompact through runHook so the decision is emitted with attribution.
 	compactor := &compaction.Service{Summarizer: compaction.LLMSummarizer{Completer: llmCaller{provStore, providers.NewChatClient()}}}
 	if cfg.Compaction.Summarizer != "" {
 		p, m, _ := strings.Cut(cfg.Compaction.Summarizer, "/") // syntax validated at load

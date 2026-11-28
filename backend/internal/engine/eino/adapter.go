@@ -93,6 +93,9 @@ type Adapter struct {
 	// effortOpt is the option the usage wrapper appends for an agent's
 	// reasoning_effort (DefaultEffortOption; tests substitute a recorder).
 	effortOpt EffortOption
+	// hooks raises lifecycle events (internal/hooks by default; nil = no
+	// hooks). The seams live in hooks.go.
+	hooks domain.HookRunner
 }
 
 // SetCompactorFactory wires the in-run compaction policy
@@ -265,13 +268,18 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 	// kill ONLY when the progress tracker says the agent is stuck.
 	var tokensIn, tokensOut int64
 	var childMsgs []*schema.Message // child's retained conversation (P1-2)
-	pendingNudge := ""              // the require_tool_use nudge (first completion only) rides the next step
+	// What the MODEL saw per tool-call occurrence (call id → contents in
+	// order): the legacy root re-reads durable rows, which keep the REAL
+	// outputs, so a PostToolUse block's replacement is overlaid from here.
+	// Keyed by occurrence because a model may reuse a call id within a run.
+	modelFacing := map[string][]string{}
+	pendingNudge := "" // the require_tool_use nudge (first completion only) rides the next step
 	softBudget, hardBudget, steps := budgetFor(in.maxSteps)
 	tracker := progress.New() // per-run scoring
 	for step := 0; step < steps; step++ {
 		if ctx.Err() != nil {
 			emit(domain.EventSession, "run cancelled")
-			_ = a.st.FinishExecution(in.execID, "cancelled", "", tokensIn, tokensOut)
+			a.finishRun(ctx, events, in, "cancelled", "", tokensIn, tokensOut)
 			return "", fmt.Errorf("engine: cancelled")
 		}
 
@@ -279,7 +287,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 		// 1. Kill only when genuinely stuck (warned + sinking score).
 		if tracker.ShouldStop() {
 			emit(domain.EventAgentStep, "engine: stopping — agent stuck (progress score "+fmt.Sprint(tracker.Score())+")")
-			_ = a.st.FinishExecution(in.execID, "failed", "stuck: no progress", tokensIn, tokensOut)
+			a.finishRun(ctx, events, in, "failed", "stuck: no progress", tokensIn, tokensOut)
 			return "", fmt.Errorf("engine: stuck (score %d after %d iterations)", tracker.Score(), tracker.Iterations())
 		}
 		// 2. At the soft budget: extend if productive, nudge otherwise.
@@ -297,10 +305,10 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 		// session transcript pollutes the child and bills the parent's
 		// history twice).
 		var msgs []*schema.Message
-		msgs, childMsgs, err = a.buildMessages(in, childMsgs)
+		msgs, childMsgs, err = a.buildMessages(in, childMsgs, modelFacing)
 		if err != nil {
 			emit(domain.EventAgentStep, "engine: "+err.Error())
-			_ = a.st.FinishExecution(in.execID, "failed", err.Error(), tokensIn, tokensOut)
+			a.finishRun(ctx, events, in, "failed", err.Error(), tokensIn, tokensOut)
 			return "", err
 		}
 		// The require_tool_use nudge rides one user message (advisory
@@ -343,17 +351,17 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 			// Cancelled while the model answered: never record that
 			// answer as the run's success.
 			emit(domain.EventSession, "run cancelled")
-			_ = a.st.FinishExecution(in.execID, "cancelled", "", tokensIn, tokensOut)
+			a.finishRun(ctx, events, in, "cancelled", "", tokensIn, tokensOut)
 			return "", fmt.Errorf("engine: cancelled: %w", ctx.Err())
 		}
 		if err != nil {
 			if ctx.Err() != nil {
 				emit(domain.EventSession, "run cancelled")
-				_ = a.st.FinishExecution(in.execID, "cancelled", "", tokensIn, tokensOut)
+				a.finishRun(ctx, events, in, "cancelled", "", tokensIn, tokensOut)
 				return "", fmt.Errorf("engine: cancelled: %w", ctx.Err())
 			}
 			emit(domain.EventAgentStep, "engine: model error: "+err.Error())
-			_ = a.st.FinishExecution(in.execID, "failed", err.Error(), tokensIn, tokensOut)
+			a.finishRun(ctx, events, in, "failed", err.Error(), tokensIn, tokensOut)
 			return "", fmt.Errorf("engine: model error: %w", err)
 		}
 		if out.ResponseMeta != nil && out.ResponseMeta.Usage != nil {
@@ -397,7 +405,7 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 			})
 			emit(domain.EventAgentStep, out.Content)
 			emit(domain.EventSession, "run completed")
-			_ = a.st.FinishExecution(in.execID, "completed", "", tokensIn, tokensOut)
+			a.finishRun(ctx, events, in, "completed", "", tokensIn, tokensOut)
 			return out.Content, nil
 		}
 
@@ -415,15 +423,14 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 		}
 
 		for _, tc := range out.ToolCalls {
-			result := execOffered(ctx, offered, tc.Function.Name, tc.Function.Arguments)
-			content := result.Output
-			errText := ""
-			if result.Err != nil {
-				content = "error: " + result.Err.Error()
-				errText = result.Err.Error()
+			// The shared tool-call seam: PreToolUse → the call → record + row
+			// → PostToolUse (a configured block protects this loop too).
+			content := a.executeTool(ctx, events, in, tracker, tc.Function.Name, tc.Function.Arguments, tc.ID, func() tools.Result {
+				return execOffered(ctx, offered, tc.Function.Name, tc.Function.Arguments)
+			})
+			if !in.isChild {
+				modelFacing[tc.ID] = append(modelFacing[tc.ID], content)
 			}
-			tracker.Record(tc.Function.Name, tc.Function.Arguments, errText)
-			a.emitToolCall(ctx, events, in, tc, content)
 			if in.isChild {
 				childMsgs = append(childMsgs, &schema.Message{
 					Role: schema.Tool, Content: content, ToolCallID: tc.ID, ToolName: tc.Function.Name,
@@ -434,6 +441,6 @@ func (a *Adapter) runLoop(ctx context.Context, events chan domain.TimelineEvent,
 
 	// Step bound reached.
 	emit(domain.EventSession, "run stopped: step bound reached")
-	_ = a.st.FinishExecution(in.execID, "failed", "step bound reached", tokensIn, tokensOut)
+	a.finishRun(ctx, events, in, "failed", "step bound reached", tokensIn, tokensOut)
 	return "", fmt.Errorf("engine: step bound reached")
 }

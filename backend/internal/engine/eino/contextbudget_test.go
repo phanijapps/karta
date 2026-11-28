@@ -334,44 +334,6 @@ func TestADKInRunCompactionEmitsCompaction(t *testing.T) {
 	}
 }
 
-// A blocked PreCompact hook (through the policy) skips the pass and says
-// so on the stream — never a run failure.
-func TestADKInRunCompactionBlockedByHook(t *testing.T) {
-	t.Parallel()
-	big := namedTool{name: "big", out: strings.Repeat("word ", 300)}
-	policy := &compaction.Service{Summarizer: &fakeSummarizer{}, KeepRecent: 2, Hooks: blockingHooks{}}
-	gen := &stepGen{}
-	gen.next = func(call int, msgs []*schema.Message) *schema.Message {
-		if call < 3 {
-			return toolCallMsg("big", `{"round":`+string(rune('0'+call))+`}`)
-		}
-		return &schema.Message{Content: "done"}
-	}
-	a := newBudgetAdapter(t, func(string) chatGenerator { return gen }, nil)
-	a.toolProv = &liveProvider{ts: []tools.Tool{big}}
-	a.SetRunOptions(RunOptions{SummarizeAt: 500})
-	a.SetCompactorFactory(func(p, m string) domain.Compactor { return policy.For(compaction.ModelRef{Provider: p, Model: m}) })
-	events := drainEvents(t, mustRun(t, a, domain.GoalRequest{SessionID: "adk-blocked", Goal: "adk-blocked goal", Model: "prov/m1"}))
-	var blocked, compacted bool
-	for _, evt := range events {
-		if strings.Contains(evt.Text, "blocked by a PreCompact hook") {
-			blocked = true
-		}
-		if evt.Kind == domain.EventCompactionTriggered {
-			compacted = true
-		}
-	}
-	if !blocked || compacted || !strings.Contains(events[len(events)-1].Text, "run completed") {
-		t.Fatalf("a block skips the pass and the run completes: %+v", events)
-	}
-}
-
-type blockingHooks struct{}
-
-func (blockingHooks) Run(context.Context, domain.HookEvent) (domain.HookDecision, error) {
-	return domain.HookDecision{Action: domain.HookBlock}, nil
-}
-
 // TestADKReasoningEffortRidesTheCalls: an agent's reasoning_effort rides
 // every model call as an option; an agent without one sends none.
 func TestADKReasoningEffortRidesTheCalls(t *testing.T) {

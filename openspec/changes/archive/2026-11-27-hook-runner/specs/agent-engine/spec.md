@@ -3,9 +3,9 @@
 ## ADDED Requirements
 
 ### Requirement: Tool calls pass through hooks
-On the ADK path every tool call SHALL raise PreToolUse before execution —
-on the live plane, the dispatch alias and middleware-injected tools alike
-— and PostToolUse after it with the output in the payload. A PreToolUse
+Every tool call, on either run path, SHALL raise PreToolUse before
+execution — on the live plane, the dispatch alias and middleware-injected
+tools alike — and PostToolUse after it with the output in the payload. A PreToolUse
 block SHALL NOT execute the call: the model sees the hook's reason as a
 recoverable tool error, recorded like a refusal. A PostToolUse block SHALL
 replace the model-facing result with the reason while the durable row keeps

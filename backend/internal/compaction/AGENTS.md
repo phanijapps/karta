@@ -15,8 +15,9 @@ never hold the policy.
 - CONTRACT bridges rely on: `Compact` returns `[instruction prefix] +
   [ONE summary message] + [a verbatim suffix of the input]`, so a bridge
   keeps its structured originals (tool calls, tool results) for the tail.
-- `Hooks` (a `domain.HookRunner`, optional) sees `PreCompact` before each
-  pass; `block` skips the pass (strategy "blocked"), an error surfaces.
+- Hooks are NOT raised here: the engine's compaction bridge raises
+  `PreCompact` through the hook runner before asking the policy (one
+  emitting seam — hook-runner R3), so a block never reaches `Compact`.
 - `LLMSummarizer` is the model seam (a `Completer` — the daemon's caller);
   `Service.For(ref)` binds a run's model, `DefaultModel` overrides it
   with the cheap summarizer (`compaction.summarizer`, decision D4).
