@@ -10,6 +10,7 @@ package eino
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"zbot/backend/internal/domain"
+	"zbot/backend/internal/providers"
 	"zbot/backend/internal/registry"
 	"zbot/backend/internal/store"
 	"zbot/backend/internal/tools"
@@ -67,8 +69,8 @@ func drainEvents(t *testing.T, ch <-chan domain.TimelineEvent) []domain.Timeline
 func TestSetLoopRejectsUnknown(t *testing.T) {
 	t.Parallel()
 	a := New(fakeProviderStore{}, nil, nil, tools.BuiltinProvider{}, nil)
-	if a.loop != LoopLegacy {
-		t.Fatalf("the transition default must be %q, got %q", LoopLegacy, a.loop)
+	if a.loop != LoopADK {
+		t.Fatalf("the default must be the spine (%q), got %q", LoopADK, a.loop)
 	}
 	if err := a.SetLoop("spaghetti"); err == nil || !strings.Contains(err.Error(), "engine_loop") {
 		t.Fatalf("unknown loop must be a typed error naming the knob: %v", err)
@@ -605,19 +607,20 @@ func TestADKInventoryFollowsTheRegistry(t *testing.T) {
 		}
 	}
 	drainEvents(t, mustRun(t, a, domain.GoalRequest{SessionID: "adk-live", Goal: "adk-live goal", Model: "prov/m1"}))
-	delegateDesc := func(call int) string {
+	// The spine's delegation surface is one task tool per delegatable agent
+	// (decision D1): the planner's own tool appears once the roster has it.
+	names := func(call int) string {
+		var out []string
 		for _, ti := range gen.tools[call] {
-			if ti.Name == "delegate_agent" {
-				return ti.Desc
-			}
+			out = append(out, ti.Name)
 		}
-		return ""
+		return strings.Join(out, ",")
 	}
-	if d := delegateDesc(0); d == "" || strings.Contains(d, "planner") {
-		t.Fatalf("call 0 offers the delegate tool without the planner: %q", d)
+	if d := names(0); d == "" || strings.Contains(d, "delegate_planner") || !strings.Contains(d, "delegate_researcher") {
+		t.Fatalf("call 0 offers the researcher's tool without the planner's: %q", d)
 	}
-	if d := delegateDesc(1); !strings.Contains(d, "planner") {
-		t.Fatalf("call 1 must advertise the planner: %q", d)
+	if d := names(1); !strings.Contains(d, "delegate_planner") {
+		t.Fatalf("call 1 must advertise the planner's tool: %q", d)
 	}
 }
 
@@ -749,5 +752,143 @@ func TestADKEventsAreDurableBeforePublication(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the bus subscription never drained")
+	}
+}
+
+// TestPerAgentDelegationToolParamsExposed: on the spine each delegatable
+// agent is its own tool — `delegate_<agent>` with a real {task} schema,
+// no agent argument to get wrong (decision D1), and the system agent
+// (the analyst) never among them.
+func TestPerAgentDelegationToolParamsExposed(t *testing.T) {
+	t.Parallel()
+	ti := &capturedToolInfos{}
+	gen := &routingGenerator{scripts: map[string][]fakeGenStep{"delegate-params": {{content: "done"}}}}
+	snap := agentSnap()
+	snap.Agents["intent-analyst"] = registry.AgentSpec{Name: "intent-analyst", Description: "host-run step"}
+	a := newDelegatingAdapter(t, gen, func() registry.Snapshot { return snap })
+	a.newModel = func(context.Context, providers.Provider, string, string) (chatGenerator, error) { return ti, nil }
+	drainEvents(t, mustRun(t, a, domain.GoalRequest{SessionID: "params-adk", Goal: "delegate-params goal", Model: "prov/m1"}))
+	ti.mu.Lock()
+	defer ti.mu.Unlock()
+	seen := map[string]*schema.ToolInfo{}
+	for _, info := range ti.infos {
+		seen[info.Name] = info
+	}
+	for _, want := range []string{"delegate_researcher", "delegate_planner"} {
+		info, ok := seen[want]
+		if !ok || info.ParamsOneOf == nil {
+			t.Fatalf("%s must be offered with params: %+v", want, seen)
+		}
+		sch, err := info.ToJSONSchema()
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(sch)
+		if !strings.Contains(string(raw), `"task"`) || strings.Contains(string(raw), `"agent"`) {
+			t.Fatalf("%s takes {task} only: %s", want, raw)
+		}
+	}
+	if _, ok := seen["delegate_agent"]; ok {
+		t.Fatal("the spine advertises per-agent tools, not the dispatch name")
+	}
+	for name := range seen {
+		if strings.Contains(name, "analyst") {
+			t.Fatalf("a system agent is never a delegation tool: %q", name)
+		}
+	}
+}
+
+// TestADKDelegationToolNamesCollideSafely (gate G7 F1): two agent names
+// that map to one wire name, and an agent literally named "agent" (the
+// dispatch name), get no tool of their own — reported once on the stream —
+// and stay reachable through the dispatch alias.
+func TestADKDelegationToolNamesCollideSafely(t *testing.T) {
+	t.Parallel()
+	snap := agentSnap()
+	snap.Agents["a.b"] = registry.AgentSpec{Name: "a.b", SystemPrompt: "A.", Description: "dotted", MaxDepth: 0}
+	snap.Agents["a_b"] = registry.AgentSpec{Name: "a_b", SystemPrompt: "B.", Description: "underscored", MaxDepth: 0}
+	snap.Agents["agent"] = registry.AgentSpec{Name: "agent", SystemPrompt: "C.", Description: "the reserved name", MaxDepth: 0}
+	gen := &toolsGen{routingGenerator: routingGenerator{scripts: scripts()}}
+	gen.scripts = map[string][]fakeGenStep{
+		"adk-collide": {
+			{toolCall: "delegate_agent", args: `{"agent":"a_b","task":"child-task collide"}`}, // the alias serves the skipped agent
+			{content: "root done"},
+		},
+		"child-task": {{content: "child done"}},
+	}
+	a := newADKDelegating(t, gen, func() registry.Snapshot { return snap })
+	events := drainEvents(t, mustRun(t, a, domain.GoalRequest{SessionID: "adk-collide", Goal: "adk-collide goal", Model: "prov/m1"}))
+	var advertised []string
+	for _, ti := range gen.tools[0] {
+		if strings.HasPrefix(ti.Name, "delegate_") {
+			advertised = append(advertised, ti.Name)
+		}
+	}
+	sort.Strings(advertised)
+	if strings.Join(advertised, ",") != "delegate_a_b,delegate_planner,delegate_researcher" {
+		t.Fatalf("offered delegation tools: %v", advertised)
+	}
+	var report string
+	for _, evt := range events {
+		if strings.Contains(evt.Text, "wire-name collision") {
+			report = evt.Text
+		}
+	}
+	if !strings.Contains(report, "a_b") || !strings.Contains(report, "agent") || strings.Contains(report, "a.b") {
+		t.Fatalf("the collision report names the skipped agents only: %q", report)
+	}
+	var folded bool
+	for _, evt := range events {
+		if evt.Kind == domain.EventToolCall && evt.ToolCall != nil && evt.ToolCall.Tool == "delegate_agent" && strings.Contains(evt.ToolCall.Output, "child done") {
+			folded = true
+		}
+	}
+	if !folded {
+		t.Fatalf("the skipped agent must still be reachable through the alias: %+v", events)
+	}
+}
+
+// TestADKFoldBackIsNeverCapped (gate G7 F2): a child's long answer rides
+// back to the parent in full — every delegation tool is exempt from the
+// caps, so the deliverable receipts at its end survive.
+func TestADKFoldBackIsNeverCapped(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("finding ", 4000) // ~28 KB
+	gen := &scriptedGen{routingGenerator: routingGenerator{scripts: scripts()}}
+	gen.scripts = map[string][]fakeGenStep{
+		"adk-fold": {
+			{toolCall: "delegate_researcher", args: `{"task":"child-task long"}`},
+			{content: "root done"},
+		},
+		"child-task": {{content: long}},
+	}
+	a := newADKDelegating(t, gen, agentSnap)
+	a.SetRunOptions(RunOptions{ToolResultCap: 4096})
+	drainEvents(t, mustRun(t, a, domain.GoalRequest{SessionID: "adk-fold", Goal: "adk-fold goal", Model: "prov/m1"}))
+	// Calls interleave root/child on the shared generator: the LAST call is
+	// the root's, after the fold-back.
+	if len(gen.calls) < 3 {
+		t.Fatalf("root, child, root: %d calls", len(gen.calls))
+	}
+	res := lastToolResult(gen.calls[len(gen.calls)-1])
+	if res == nil {
+		t.Fatal("the root's final call must see the fold-back result")
+	}
+	if len(res.Content) < len(long) || strings.Contains(res.Content, "<persisted-output>") {
+		t.Fatalf("the fold-back must reach the parent uncapped: %d bytes", len(res.Content))
+	}
+}
+
+// TestADKHallucinatedDelegationToolListsOffered (gate G7 F3): a call to a
+// delegation tool that does not exist is refused naming what IS offered.
+func TestADKHallucinatedDelegationToolListsOffered(t *testing.T) {
+	t.Parallel()
+	gen := &scriptedGen{routingGenerator: routingGenerator{scripts: scripts()}}
+	gen.scripts = map[string][]fakeGenStep{"adk-ghost": {{toolCall: "delegate_ghost", args: `{"task":"x"}`}, {content: "done"}}}
+	a := newADKDelegating(t, gen, agentSnap)
+	drainEvents(t, mustRun(t, a, domain.GoalRequest{SessionID: "adk-ghost", Goal: "adk-ghost goal", Model: "prov/m1"}))
+	res := lastToolResult(gen.calls[1])
+	if res == nil || !strings.Contains(res.Content, "not offered") || !strings.Contains(res.Content, "delegation tools offered: ") || !strings.Contains(res.Content, "delegate_researcher") {
+		t.Fatalf("the refusal must list the offered delegation tools: %q", res.Content)
 	}
 }

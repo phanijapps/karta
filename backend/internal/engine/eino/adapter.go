@@ -102,6 +102,16 @@ func (a *Adapter) SetCompactorFactory(f func(providerName, modelID string) domai
 	a.compactorFor = f
 }
 
+// runChild runs a delegated child on the engine's run path: the ADK spine
+// when it is the loop — children get the spine's middlewares (caps,
+// skills, compaction, effort; slice 2) — the legacy loop otherwise.
+func (a *Adapter) runChild(ctx context.Context, events chan domain.TimelineEvent, in runInput) (string, error) {
+	if a.loop == LoopADK {
+		return a.runAgent(ctx, events, in)
+	}
+	return a.runLoop(ctx, events, in)
+}
+
 // Engine run paths (`engine_loop`): the hand-rolled loop and the ADK spine.
 const (
 	LoopLegacy = "legacy"
@@ -129,7 +139,7 @@ const DefaultDepthCap = 1
 func New(provStore ProviderStore, st *store.Store, bus *eventbus.Bus, toolProv tools.Provider, snapFn func() registry.Snapshot) *Adapter {
 	return &Adapter{
 		provStore: provStore, st: st, bus: bus, toolProv: toolProv,
-		snapFn: snapFn, depthCap: DefaultDepthCap, loop: LoopLegacy, effortOpt: DefaultEffortOption,
+		snapFn: snapFn, depthCap: DefaultDepthCap, loop: LoopADK, effortOpt: DefaultEffortOption,
 		cancels: map[string]context.CancelFunc{},
 		models:  map[string]chatGenerator{},
 		idGen:   func() string { return fmt.Sprintf("evt-%d-%d", time.Now().UnixNano(), nextID()) },

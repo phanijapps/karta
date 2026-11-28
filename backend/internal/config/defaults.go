@@ -14,8 +14,8 @@ type DelegationConfig struct {
 
 // Engine run paths (engine-adk-spine). The hand-rolled ReAct loop
 // (legacy) and the Eino ADK spine (adk) coexist behind domain.AgentEngine
-// for one soak cycle; both pass the conformance suite. The default is
-// legacy until the delegation slice lands, then flips to adk.
+// for one soak cycle; both pass the conformance suite. The default is adk
+// since the delegation slice (engine-adk-spine); legacy stays selectable.
 const (
 	LoopLegacy = "legacy"
 	LoopADK    = "adk"
@@ -27,7 +27,7 @@ const (
 func Default() Config {
 	return Config{
 		Engine:       "eino",
-		EngineLoop:   LoopLegacy,
+		EngineLoop:   LoopADK,
 		Delegation:   DelegationConfig{MaxDepth: DefaultDelegationMaxDepth},
 		Server:       ServerConfig{Address: "127.0.0.1:8787"},
 		Compaction:   CompactionConfig{MaxContextTokens: 128000, ReserveOutputTokens: 8192, ToolResultCap: DefaultToolResultCap},

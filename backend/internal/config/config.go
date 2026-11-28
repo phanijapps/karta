@@ -293,7 +293,7 @@ func Load(paths Paths) (Config, error) {
 		return Config{}, fmt.Errorf("config: %s: engine must be set", paths.ConfigFile)
 	}
 	if cfg.EngineLoop == "" {
-		cfg.EngineLoop = LoopLegacy // absent key: the transition default
+		cfg.EngineLoop = LoopADK // absent key: the spine (slice 2 flipped the default; legacy stays selectable for the soak cycle)
 	} else if cfg.EngineLoop != LoopLegacy && cfg.EngineLoop != LoopADK {
 		return Config{}, fmt.Errorf("config: %s: engine_loop must be one of %q, %q (got %q)", paths.ConfigFile, LoopADK, LoopLegacy, cfg.EngineLoop)
 	}

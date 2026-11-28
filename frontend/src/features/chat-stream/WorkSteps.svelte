@@ -8,6 +8,7 @@
   import { buildSteps, describeCall, outcomeHint, taskGist, type Step } from './steps';
   import { renderMarkdown } from '../../shared/markdown/render';
   import type { ChatMessage } from '../../shared/api/client';
+  import { isDelegationTool, delegationTarget } from './delegation';
 
   let { messages, liveTurnId = undefined }: { messages: ChatMessage[]; liveTurnId?: string } = $props();
 
@@ -64,7 +65,7 @@
     // The verb comes from the STEP's own tool (the first call's) — a
     // merged group is one kind of action even if a stray call differs.
     const verb = describeCall({ id: '', name: s.tool, args: {} }).verb;
-    if (s.tool === 'delegate_agent') {
+    if (isDelegationTool(s.tool)) {
       return { verb, object: described.map((d) => d.object).filter(Boolean).join('; ') };
     }
     if (objects.length === 0) return { verb, object: s.tool };
@@ -86,7 +87,7 @@
     {@const hint = outcomeHint(s.tool, s.outcomes)}
     {@const isMerge = count(s) > 1}
     {@const hasDetail = s.narration || s.reasoning || s.outcomes.length || s.calls.length > 1}
-    <div class="step" class:live={s.live} class:delegation={s.tool === 'delegate_agent'} class:nested={false}>
+    <div class="step" class:live={s.live} class:delegation={isDelegationTool(s.tool)} class:nested={false}>
       <button
         type="button"
         class="step-row"
@@ -96,7 +97,7 @@
         disabled={!hasDetail && s.children.length === 0}
       >
         <span class="step-icon" aria-hidden="true">
-          {#if s.tool === 'delegate_agent'}<Users size={13} />{:else}<Wrench size={13} />{/if}
+          {#if isDelegationTool(s.tool)}<Users size={13} />{:else}<Wrench size={13} />{/if}
         </span>
         <span class="step-text">
           <span class="verb">{l.verb}</span>
@@ -127,11 +128,11 @@
               <div class="call-head">
                 <code class="raw">{c.name}</code>
                 <span class="call-args">
-                  {#if c.name === 'delegate_agent' && c.args.agent}{String(c.args.agent)}{#if c.args.task} — {taskGist(String(c.args.task), 80)}{/if}{:else}{JSON.stringify(c.args).slice(0, 160)}{JSON.stringify(c.args).length > 160 ? '…' : ''}{/if}
+                  {#if isDelegationTool(c.name) && delegationTarget(c.name, c.args)}{delegationTarget(c.name, c.args)}{#if c.args.task} — {taskGist(String(c.args.task), 80)}{/if}{:else}{JSON.stringify(c.args).slice(0, 160)}{JSON.stringify(c.args).length > 160 ? '…' : ''}{/if}
                 </span>
               </div>
               {#each outs as o (o.callId + i)}
-                {#if c.name === 'delegate_agent' && !o.isError}
+                {#if isDelegationTool(c.name) && !o.isError}
                   <!-- The child's report is already the thread's report card;
                        the tool result is the same text (stored twice by
                        design) — a reference, not a second copy. -->

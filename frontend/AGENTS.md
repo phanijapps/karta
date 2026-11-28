@@ -41,3 +41,14 @@ daemon, no per-feature API clients.
   outside that adapter may import Wails APIs.
 - `vite.config.ts` uses `server.port = Number(process.env.WAILS_VITE_PORT) ||
   9245` with `strictPort: true`; static output lands in `frontend/dist/`.
+
+- Delegation tools on the wire come in two shapes — the legacy dispatch
+  tool `delegate_agent` (agent in the args) and the ADK spine's per-agent
+  tools `delegate_<agent>` (agent in the name, `task` the only argument;
+  engine-adk-spine D1). Never key a surface on the literal name: use
+  `features/chat-stream/delegation.ts` (`isDelegationTool`,
+  `delegationTarget`). The engine does not offer a tool for an agent
+  whose wire name would collide, so a per-agent suffix is always the
+  registry name verbatim. `tests/delegation-tools.spec.ts` pins the
+  per-agent shape (pills, slideout, Work nesting and turn boundary,
+  Context roster); `run-legibility.spec.ts` keeps the legacy shape.

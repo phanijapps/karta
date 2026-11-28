@@ -205,3 +205,40 @@ checks, and durable-first event emission.
     without analysis or with `tools: []`), the compaction bridge (event +
     stats, structured tail intact, a blocked hook), effort per agent,
     `clampRange` edges.
+
+- **Slice 2 — delegation on the spine (decision D1)**: on the ADK loop
+  `inventory()` offers ONE task tool per delegatable agent —
+  `delegate_<agent>` with `{task}` (`perAgentDelegationTools`,
+  `delegateToolName`: the `delegate_` prefix is what the UI recognizes as
+  a delegation; an agent literally named `agent` would collide with the
+  dispatch name and is not offered as its own tool). The legacy loop keeps
+  its single `delegate_agent` dispatch tool. On the spine the dispatch
+  name stays CALLABLE as an alias for prompts that still use it:
+  `persistenceMW.execute` routes it to `dispatchDelegate` when the run
+  may delegate. Both shapes share `delegateTool.Exec` — the validation
+  (unknown / system / undescribed agents typed), the child execution
+  record, `delegation_started`/`completed`, deliverable receipts and the
+  parent-attribution restore are unchanged.
+  - `runChild` runs the delegated child on the engine's run path: the
+    spine when it is the loop (`runAgent` — children get the caps, the
+    skill tool, in-run compaction and their `reasoning_effort`: tasks
+    2.3b), the legacy loop otherwise. Children are separate agent runs
+    driven by their own driver loop inside the tool call (NOT
+    `adk.NewAgentTool`, which would fold child events into the parent's
+    stream and bypass the driver's terminal handling); their steps
+    surface in the parent's stream as delegation-kind events through the
+    same emit closure, their rows persist under the child's execution.
+  - `engine_loop` defaults to `adk` (config + `New`); the legacy path is
+    exercised explicitly by `TestContractSuite` (`suiteFixture(t,
+    LoopLegacy)`) and by the legacy-only dispatch test; every other
+    adapter test now runs on the spine.
+
+  - Wire-name collisions (gate G7 F1): two agent names can map to one
+    `delegate_<…>` name (`a.b` and `a_b`), and "agent" maps to the
+    dispatch name — such agents get NO tool of their own; `inventory()`
+    returns them as `collided`, the driver reports them once on the
+    stream, and they stay reachable through the dispatch alias. Every
+    delegation tool on the plane — per-agent names and the alias — is
+    exempt from both reduction phases (the receipts sit at the fold-back's
+    END). A hallucinated `delegate_<unknown>` is refused naming the
+    delegation tools that ARE offered.

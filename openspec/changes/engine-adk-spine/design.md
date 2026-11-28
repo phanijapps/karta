@@ -79,7 +79,7 @@ characterizations).
 | Assistant rows (intent/final, reasoning, per-step usage) | Intent rows: the persistence middleware's `AfterModelRewriteState` (runs inside the model call, before the event reaches the driver — durable-first holds); final + nudge rows: the driver | Row identity: same fields, same IDs scheme. |
 | Tool rows + `tool_call` events + attribution | `WrapInvokableToolCall` wrapper (persist row, emit event, tracker.Record) | Our `tools.Tool` adapter implements `InvokableTool`, so the hook fires for every tool. |
 | Durable-first emit + bus + channel + attribution | Run driver: consumes the Runner's event iterator → AppendEvent → publish → stream (same order, same F-15 posture) | Message ROWS persist in middlewares; EVENT rows persist in the driver/wrappers. Both attempted-durable-first. |
-| Delegation (delegate tool, lifecycle events, receipts, fold-back) | Per-agent `adk.NewAgentTool` (D1); our tool decorator creates the child execution, emits `delegation_started/completed`, appends `deliverableReceipts`, folds back | `EmitInternalEvents: true` → child steps surface in the parent's stream (translated with child attribution). Cancel propagates via ctx. |
+| Delegation (delegate tool, lifecycle events, receipts, fold-back) | Per-agent task tools `delegate_<agent>` `{task}` (D1) sharing `delegateTool.Exec`; the child runs as its own spine agent INSIDE the tool call (`runChild` → `runAgent`), not `adk.NewAgentTool` | Child steps surface in the parent's stream as delegation-kind events through the child's own emit closure (the AgentTool/EmitInternalEvents route would fold them into the parent's event loop and bypass the driver's terminal handling). The dispatch name `delegate_agent` stays callable as an alias. Cancel propagates via ctx. |
 | Delegation depth cap (`max_depth=1`) | `BeforeAgent` grant logic (unchanged semantics: root delegates, children never) | The hold is not lifted by this change. |
 | Ward packet / ward guard on delegate desc | Instruction composition (unchanged this change) + tool description guard on the per-agent tools | Mid-run ward-switch packet staleness is pre-existing; noted as a follow-up (transient-injection middleware). |
 | `## Skills` bodies (18.8 KB/step) | `skill` middleware with our Backend over `~/.zbot/skills/**`, scoped to the analyst's recommended skills (D3) | sysprompt stops composing bodies for engine runs (`skills.injection`); the `Skills provided in context:` line stays. Chat keeps bodies. |
@@ -147,11 +147,19 @@ byte-identical copies). Open for the operator: the Ollama-cloud
 measurement run (2.5), and setting `compaction.summarizer` in config.yaml
 (D4 — the shipped default is "the run's own model").
 
-**Slice 2 — delegation on the spine.** Per-agent AgentTools (or dispatch
-tool per D1) with the lifecycle/receipts decorator; `EmitInternalEvents`
-translation; child runs get the full middleware chain (compaction included);
-depth grant in `BeforeAgent`. Gate: contracttest delegation group green on
-the ADK path; `engine_loop` default flips to `adk`.
+**Slice 2 — delegation on the spine (as built).** Per-agent task tools
+`delegate_<agent>` (D1) share `delegateTool.Exec` with the legacy dispatch
+tool — validation, child execution, lifecycle events, receipts and the
+attribution restore are the same code. Children run as their own spine
+agents inside the tool call (`runChild`), so they get the caps, skills,
+compaction and effort (2.3b); their steps reach the parent's stream as
+delegation events through the child's emit closure (no `AgentTool`/
+`EmitInternalEvents`: that route would mix child events into the parent's
+driver loop). The dispatch name stays callable as an alias for prompts
+that still use it. The depth grant is checked where the inventory is
+assembled (`delegationGranted`, unchanged semantics). The UI recognizes
+both shapes by the `delegate_` prefix (`features/chat-stream/delegation.ts`).
+`engine_loop` defaults to `adk`; the legacy suite runs explicitly.
 
 **Slice 3 — soak, measurement, docs, flip.** Re-run the solar scenario;
 record per-step fixed overhead / context growth / completion split against

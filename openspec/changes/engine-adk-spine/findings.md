@@ -83,3 +83,18 @@ cannot be a cross-install default — set it in config.yaml for D4.
 | R3-2 | P2 | `rawInventory` duplicated the assembly (drift risk) and omitted the delegate tool. | **Fixed**: `inventory()` assembles ONCE and returns kept + dropped; `offeredTools` wraps it. |
 | R3-3 | P2 | The reserved-name test asserted the tool's OUTPUT, not its name. | **Fixed**: asserts `karta_skill` is absent from the advertised user inventory. |
 | R3-4 | P2 | `backend/AGENTS.md` claimed `internal/hooks/` implements `domain.HookRunner`. | **Fixed**: the entry now states the runner is not implemented (seams exist; nothing executes hooks) — consistent with G5 R2-1. |
+
+## G7 — slice 2 phase gates (terra: backend; sol: frontend)
+
+| ID | Sev | Finding | Disposition |
+|---|---|---|---|
+| T-F1 | P1 (terra) | Per-agent wire names were not collision-free (`a.b` / `a_b` → one name; an agent named `agent` silently dropped). | **Fixed**: colliding agents get no tool of their own, are reported once on the stream and stay reachable through the dispatch alias (`inventory` returns `collided`); `TestADKDelegationToolNamesCollideSafely`. |
+| T-F2 | P1 (terra) | Reduction exempted only `delegate_agent`; per-agent fold-backs (receipts at their END) could be capped or cleared. | **Fixed**: the exemption list is derived from the plane (every `delegate_*` + the alias + the skill tool); `TestADKFoldBackIsNeverCapped` (a 28 KB child answer reaches the parent whole). |
+| T-F3 | P2 (terra) | A hallucinated `delegate_<unknown>` fell to the generic refusal (the spec promises "lists configured agents"). | **Fixed**: the refusal names the delegation tools offered; `TestADKHallucinatedDelegationToolListsOffered`. |
+| T-F4 | P2 (terra) | tasks.md lost 2.4/2.5 in a slice rewrite. | **Fixed**: 2.4 (implementation) checked; 2.5 (operator verification + measurement) restored as open. |
+| S-F1 | P1 (sol) | The Work panel closed delegations only on `delegate_agent` results — after a per-agent result, later user turns were absorbed into the old turn. | **Fixed**: `ContextPanel` uses `isDelegationTool`; pinned by the new e2e spec (two Work turns). |
+| S-F2 | P2 (sol) | The Context tab's Agents roster keyed on `delegate_agent` + `args.agent`. | **Fixed**: derives both shapes (`delegationTarget`); pinned. |
+| S-F3 | P2 (sol) | `toAgent` matched the step's representative tool, not each call — a row with two delegations nested only the first agent's rows. | **Fixed**: per-call matching; pinned (the builder's rows nest under the shared step). |
+| S-F4 | P2 (sol) | Suffix extraction would mis-map names the engine rewrites. | **Moot by construction**: the engine offers no tool for a colliding name (T-F1), so every offered suffix is the registry name verbatim; documented in `delegation.ts` and frontend/AGENTS.md. |
+| S-F5 | P2 (sol) | WorkSteps' expanded details kept two legacy-only branches (raw task JSON; duplicated report text). | **Fixed**: both branches use the helpers. |
+| S-F6 | P2 (sol) | No e2e fixture exercised a per-agent call. | **Fixed**: `tests/delegation-tools.spec.ts` — two per-agent calls in one root row (pills, slideout, Work nesting + turn boundary, Context roster); the full suite is 109 green. |

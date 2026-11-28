@@ -5,6 +5,7 @@
 // messages — no contract, no backend. Pairing: intent rows carry
 // tool_calls (ids), result rows carry tool_call_id.
 import type { ChatMessage } from "../../shared/api/client";
+import { isDelegationTool, delegationTarget } from './delegation';
 
 export type ToolCall = {
   id: string;
@@ -46,6 +47,11 @@ export type Step = {
 export function describeCall(call: ToolCall, outcome?: CallOutcome): { verb: string; object: string } {
   const a = call.args ?? {};
   const s = (v: unknown) => (typeof v === "string" ? v : "");
+  // Delegations come in two shapes (`delegate_agent`, `delegate_<agent>`)
+  // — matched by prefix, so they sit outside the name switch.
+  if (isDelegationTool(call.name)) {
+    return { verb: "Delegated", object: [delegationTarget(call.name, a), s(a.task) ? `— ${taskGist(s(a.task), 60)}` : ""].filter(Boolean).join(" ") };
+  }
   switch (call.name) {
     case "ward_use":
     case "wards":
@@ -63,8 +69,6 @@ export function describeCall(call: ToolCall, outcome?: CallOutcome): { verb: str
     case "shell":
     case "ward_shell":
       return { verb: "Ran", object: shortCmd(s(a.command)) };
-    case "delegate_agent":
-      return { verb: "Delegated", object: [s(a.agent), s(a.task) ? `— ${taskGist(s(a.task), 60)}` : ""].filter(Boolean).join(" ") };
     case "memory_remember":
       return { verb: "Remembered", object: "to memory" };
     case "memory_recall":
@@ -104,7 +108,7 @@ export function outcomeHint(tool: string, outcomes: CallOutcome[]): string {
     case tool.startsWith("mcp_"):
       if (/no results|bot detection|blocked/i.test(last)) return "no results";
       return "results";
-    case tool === "delegate_agent":
+    case isDelegationTool(tool):
       return "done";
     case tool === "read" || tool === "ward_read":
       return `${last.length} chars`;
@@ -193,14 +197,14 @@ export function buildSteps(messages: ChatMessage[], liveTurnId?: string): Step[]
       // execution), so order never matters and a root-attributed step
       // never nests. Legacy rows (no agent) keep adjacency: an open
       // delegation until its result lands.
-      const openDelegate = delegate && delegate.tool === "delegate_agent" && pendingDelegateResultIds.length > 0 ? delegate : null;
+      const openDelegate = delegate && isDelegationTool(delegate.tool) && pendingDelegateResultIds.length > 0 ? delegate : null;
       if (step.agent !== "root" && step.agent !== "" && step.executionId) {
         const claimed = new Set(boundDelegates.values());
         let target: Step | undefined = boundDelegates.get(step.executionId);
         if (!target) {
           // The open delegation if it is to this agent; else the nearest
           // unclaimed delegation to this agent.
-          const toAgent = (x: Step) => x.tool === "delegate_agent" && x.calls.some((c) => String(c.args.agent ?? "") === step.agent);
+          const toAgent = (x: Step) => x.calls.some((c) => isDelegationTool(c.name) && delegationTarget(c.name, c.args) === step.agent);
           if (openDelegate && toAgent(openDelegate)) target = openDelegate;
           else target = [...steps].reverse().find((x) => toAgent(x) && !claimed.has(x));
           if (target) boundDelegates.set(step.executionId, target);
@@ -209,7 +213,7 @@ export function buildSteps(messages: ChatMessage[], liveTurnId?: string): Step[]
         else steps.push(step);
       } else if (step.agent === "" && openDelegate) {
         openDelegate.children.push(step);
-      } else if (step.tool !== "delegate_agent" && steps.length > 0 && steps[steps.length - 1].tool === step.tool && steps[steps.length - 1].agent === step.agent && !steps[steps.length - 1].live) {
+      } else if (!isDelegationTool(step.tool) && steps.length > 0 && steps[steps.length - 1].tool === step.tool && steps[steps.length - 1].agent === step.agent && !steps[steps.length - 1].live) {
         // (Delegations never merge: each is its own step with its children.)
         const prev = steps[steps.length - 1];
         prev.calls.push(...step.calls);
@@ -219,7 +223,7 @@ export function buildSteps(messages: ChatMessage[], liveTurnId?: string): Step[]
         if (step.reasoning) prev.reasoning = (prev.reasoning + "\n" + step.reasoning).trim();
       } else {
         steps.push(step);
-        if (step.tool === "delegate_agent") {
+        if (isDelegationTool(step.tool)) {
           delegate = step;
           pendingDelegateResultIds = calls.map((c) => c.id);
         }
@@ -238,8 +242,9 @@ export function buildSteps(messages: ChatMessage[], liveTurnId?: string): Step[]
   return steps;
 }
 
-/** One delegation as the thread shows it: the root's `delegate_agent`
- *  call, the agent it went to, the child's rows, and the report. */
+/** One delegation as the thread shows it: the root's delegation call
+ *  (`delegate_agent` or a per-agent `delegate_<agent>` tool), the agent it
+ *  went to, the child's rows, and the report. */
 export type DelegationGroup = {
   callId: string;
   agent: string;
@@ -270,11 +275,11 @@ export function delegationGroups(rows: ChatMessage[]): DelegationGroup[] {
     if (m.role === "assistant" && m.tool_calls) {
       let isDelegateIntent = false;
       for (const c of parseCalls(m)) {
-        if (c.name !== "delegate_agent") continue;
+        if (!isDelegationTool(c.name)) continue;
         isDelegateIntent = true;
         const g: DelegationGroup = {
           callId: c.id,
-          agent: String(c.args.agent ?? "agent"),
+          agent: delegationTarget(c.name, c.args) || "agent",
           task: String(c.args.task ?? ""),
           executionId: "",
           intent: m,
@@ -287,7 +292,7 @@ export function delegationGroups(rows: ChatMessage[]): DelegationGroup[] {
       }
       if (isDelegateIntent) continue; // the root's intent row is not a child row
     }
-    if (m.role === "tool" && m.tool_name === "delegate_agent") {
+    if (m.role === "tool" && isDelegationTool(m.tool_name)) {
       // The result row: by its call id when supplied (an unknown id
       // matches nothing — never another delegation's result); legacy
       // rows without ids take the most recent group still waiting.
@@ -339,7 +344,7 @@ export function openDelegationTracker() {
   const open: string[] = [];
   return {
     openIntent(calls: ToolCall[]) {
-      for (const c of calls) if (c.name === "delegate_agent") open.push(c.id);
+      for (const c of calls) if (isDelegationTool(c.name)) open.push(c.id);
     },
     closeResult(m: ChatMessage) {
       if (m.tool_call_id) {

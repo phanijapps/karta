@@ -4,6 +4,7 @@
   import type { Sessions } from '../entities/session/session.svelte';
   import WorkSteps from '../features/chat-stream/WorkSteps.svelte';
   import { openDelegationTracker, parseCalls, taskGist } from '../features/chat-stream/steps';
+  import { isDelegationTool, delegationTarget } from '../features/chat-stream/delegation';
   import { createTimeline } from '../shared/sse/timeline.svelte';
   import { analysisText, fmtTokens, isAnalysisKind } from '../entities/timeline-event/analysisText';
   import { fmtDuration } from '../entities/timeline-event/duration';
@@ -153,10 +154,12 @@
       try {
         const calls = JSON.parse(m.tool_calls) as Array<{ function?: { name?: string; arguments?: string } }>;
         for (const c of calls) {
-          if (c.function?.name !== 'delegate_agent') continue;
+          const fn = c.function;
+          if (!fn || !isDelegationTool(fn.name)) continue;
           try {
-            const args = JSON.parse(c.function.arguments ?? '{}') as { agent?: string; task?: string };
-            if (args.agent) out.push({ agent: args.agent, task: args.task ?? '', gist: taskGist(args.task ?? '', 110) });
+            const args = JSON.parse(fn.arguments ?? '{}') as { agent?: string; task?: string };
+            const agent = delegationTarget(fn.name ?? '', args);
+            if (agent) out.push({ agent, task: args.task ?? '', gist: taskGist(args.task ?? '', 110) });
           } catch { /* skip malformed */ }
         }
       } catch { /* skip malformed */ }
@@ -187,7 +190,7 @@
       }
       if (!cur) continue;
       if (m.role === 'assistant' && m.tool_calls) open.openIntent(parseCalls(m));
-      if (m.role === 'tool' && m.tool_name === 'delegate_agent') open.closeResult(m);
+      if (m.role === 'tool' && isDelegationTool(m.tool_name)) open.closeResult(m);
       if (m.role === 'assistant' && !m.tool_calls && (m.content || '').trim() !== '' && open.size === 0) continue; // the ANSWER stays in the chat
       cur.rows.push(m);
     }

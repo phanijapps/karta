@@ -736,8 +736,8 @@ func TestEngineLoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.EngineLoop != LoopLegacy {
-		t.Fatalf("absent engine_loop must default to %q, got %q", LoopLegacy, cfg.EngineLoop)
+	if cfg.EngineLoop != LoopADK {
+		t.Fatalf("absent engine_loop must default to %q (the spine), got %q", LoopADK, cfg.EngineLoop)
 	}
 	writeConfig(t, paths, "engine: eino\nengine_loop: adk\nserver:\n    address: 127.0.0.1:9999\n")
 	if cfg, err = Load(paths); err != nil || cfg.EngineLoop != LoopADK {
@@ -747,8 +747,8 @@ func TestEngineLoop(t *testing.T) {
 	if _, err = Load(paths); err == nil || !strings.Contains(err.Error(), "engine_loop") {
 		t.Fatalf("unknown engine_loop must fail loudly naming the key: %v", err)
 	}
-	if d := Default(); d.EngineLoop != LoopLegacy {
-		t.Fatalf("Default().EngineLoop must be %q (the documented default), got %q", LoopLegacy, d.EngineLoop)
+	if d := Default(); d.EngineLoop != LoopADK {
+		t.Fatalf("Default().EngineLoop must be %q (the documented default), got %q", LoopADK, d.EngineLoop)
 	}
 }
 

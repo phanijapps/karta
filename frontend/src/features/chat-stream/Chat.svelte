@@ -9,6 +9,7 @@
   import { renderMarkdown } from '../../shared/markdown/render';
   import type { Sessions } from '../../entities/session/session.svelte';
   import type { ChatMessage, IntentAnalysisPayload } from '../../shared/api/client';
+  import { isDelegationTool } from './delegation';
   let { sessions, onresearch }: { sessions: Sessions; onresearch?: () => void } = $props();
   let draft = $state('');
   let sending = $state(false);
@@ -128,7 +129,7 @@
       }
       if (!cur) continue;
       if (m.role === 'assistant' && m.tool_calls) open.openIntent(parseCalls(m));
-      if (m.role === 'tool' && m.tool_name === 'delegate_agent') open.closeResult(m);
+      if (m.role === 'tool' && isDelegationTool(m.tool_name)) open.closeResult(m);
       if (m.role === 'assistant' && !m.tool_calls && (m.content || '').trim() !== '' && (!m.agent || m.agent === 'root') && open.size === 0) cur.answers.push(m);
       else cur.rows.push(m); // tool rows, intents, and sub-agent reports (shown via the delegation pills)
     }

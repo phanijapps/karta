@@ -41,13 +41,16 @@ func (a *Adapter) runAgent(ctx context.Context, events chan domain.TimelineEvent
 		_ = a.st.FinishExecution(in.execID, "failed", err.Error(), 0, 0)
 		return "", err
 	}
-	offered, dropped := a.inventory(ctx, events, in)
+	offered, dropped, collided := a.inventory(ctx, events, in)
 	if len(dropped) > 0 {
 		names := make([]string, 0, len(dropped))
 		for _, t := range dropped {
 			names = append(names, t.Def().Name)
 		}
 		s.emit(domain.EventAgentStep, "engine: tools with the reserved "+reservedToolPrefix+" prefix are not offered: "+strings.Join(names, ", "))
+	}
+	if len(collided) > 0 {
+		s.emit(domain.EventAgentStep, "engine: agents without their own delegation tool (wire-name collision; reachable as "+dispatchDelegateTool+"): "+strings.Join(collided, ", "))
 	}
 	st := newRunState(in.maxSteps)
 	base := baseModelOf(s.chatModel)
@@ -123,17 +126,25 @@ func (a *Adapter) runOnce(ctx context.Context, s *runSetup, in runInput, base mo
 	var budgeting []adk.ChatModelAgentMiddleware
 	if offload != nil && !noTools {
 		extras = append(extras, readFileTool{offload: offload})
+		exempt := []string{dispatchDelegateTool, skillToolName}
+		for _, t := range offered {
+			if strings.HasPrefix(t.Def().Name, "delegate_") {
+				exempt = append(exempt, t.Def().Name)
+			}
+		}
 		red, err := reduction.New(ctx, &reduction.Config{
 			Backend:           offloadBackend{offload: offload},
 			ReadFileToolName:  readFileToolName,
 			RootDir:           offload.dir,
 			MaxLengthForTrunc: a.opts.ToolResultCap,
 			MaxTokensForClear: int64(a.summarizeAt()), // tool results alone never fill the window
-			// The delegate fold-back carries the deliverable receipts at its
-			// END (a head-only preview would cut them); a loaded skill body is
-			// exactly what the model asked for. Exempt from BOTH phases.
-			TruncExcludeTools: []string{"delegate_agent", skillToolName},
-			ClearExcludeTools: []string{"delegate_agent", skillToolName},
+			// The delegation fold-backs carry the deliverable receipts at
+			// their END (a head-only preview would cut them); a loaded skill
+			// body is exactly what the model asked for. Exempt from BOTH
+			// phases: every delegation tool on the plane (the per-agent
+			// names and the dispatch alias).
+			TruncExcludeTools: exempt,
+			ClearExcludeTools: exempt,
 		})
 		if err != nil {
 			return nil, a.failRun(ctx, s, in, st, fmt.Errorf("reduction middleware: %w", err))

@@ -71,37 +71,43 @@
   PreCompact hooks honored; each pass → one durable `compaction_triggered`
   event with before/after stats. Verify: `compaction` package tests,
   `TestADKInRunCompactionEmitsCompaction`, `TestADKInRunCompactionBlockedByHook`.
-- [ ] 2.3b CHILD runs get in-run compaction, progressive skills and the
-  effort when they move to the spine (slice 2) — children still run the
-  legacy loop today (gate G4 F5: recorded, not claimed).
-- [x] 2.4 Reasoning effort: `reasoning_effort` on the agent spec (strict,
-  per-file error; `low|medium|high|none`) rides every ROOT call via
-  `WrapModel` (children: slice 2); builder seed `low` with a
-  once-per-home upgrade. Verify: `TestAgentSpecReasoningEffort`,
-  `TestADKReasoningEffortRidesTheCalls`, `TestSeedEffortUpgrade`.
-  **Operator task remains**: confirm Ollama cloud honors `reasoning_effort`
-  per pinned model (docs say ≥ 0.31 does; 0.34.2 installed) and record the
-  completion-token drop on the builder path.
-- [ ] 2.5 Operator measurement run (solar scenario); record per-step
-  numbers against §3a in this change. Phase gate: gpt-6.1-terra.
-
+- [x] 2.3b CHILD runs get in-run compaction, progressive skills and the
+  effort — they run on the spine since slice 2 (`runChild` → `runAgent`).
+- [x] 2.4 Reasoning effort (implementation): `reasoning_effort` on the
+  agent spec (strict, per-file error; `low|medium|high|none`) rides every
+  model call via `WrapModel` (roots since slice 1, children since slice
+  2); builder seed `low` with a once-per-home upgrade. Verify:
+  `TestAgentSpecReasoningEffort`, `TestADKReasoningEffortRidesTheCalls`,
+  `TestSeedEffortUpgrade`.
+- [ ] 2.5 Operator: confirm Ollama cloud honors `reasoning_effort` per
+  pinned model (docs: ≥ 0.31 does; 0.34.2 installed) and record the
+  completion-token drop on the builder path; then the solar measurement
+  run (step-1 prompt, final context, completion split, skill loads,
+  truncations, compaction events) recorded in this change.
 ## 3. Slice 2 — delegation on the spine
 
-- [ ] 3.1 Per-agent task tools (per D1) with the lifecycle decorator:
-  child execution creation, `delegation_started/completed` (usage from the
-  store, stored-status wins), deliverable receipts on fold-back, ward
-  guard in descriptions. Verify: contracttest delegation group green on
-  the ADK path.
-- [ ] 3.2 `EmitInternalEvents` translation: child steps surface as
-  delegation-kind events with child attribution; child rows persist under
-  the child execution; no double persistence. Verify: delegation_cases
-  tests green.
-- [ ] 3.3 Depth grant in `BeforeAgent` (`max_depth` hold unchanged);
-  system-role agents never offered; `require_tool_use` nudge works for
-  children (re-run under the child execution). Verify: depth refusal
-  invisible; analyst absent; nudge-once scenario.
-- [ ] 3.4 Flip `engine_loop` default to `adk`. Phase gate:
-  gpt-6.1-terra.
+- [x] 3.1 Per-agent task tools `delegate_<agent>` `{task}` (D1) sharing
+  `delegateTool.Exec`: child execution creation, `delegation_started/
+  completed` (usage from the store, stored-status wins), deliverable
+  receipts on fold-back, ward guard in descriptions; the dispatch name
+  stays callable as an alias. Verify: `TestPerAgentDelegationToolParamsExposed`,
+  `TestContractSuiteADK` delegation group, the legacy delegation tests
+  (now running on the spine): depth refusal invisible, unknown target
+  typed, system agent refused, receipts, fold-back.
+- [x] 3.2 Children run as their own spine agents (`runChild`): steps
+  surface as delegation-kind events with child attribution; rows persist
+  under the child execution (the legacy delegation tests on the spine:
+  `TestDelegateAndFoldBack`, `TestToolFreeFirstAnswerNudgedOnce` — the
+  nudge continuation under the child execution). No `EmitInternalEvents`
+  needed (recorded in design.md).
+- [x] 3.3 Depth grant where the inventory is assembled (hold unchanged);
+  system-role agents never offered; the nudge works for children.
+  Verify: `TestDelegationDepthGrantAndCap`, `TestContractSuiteADK/
+  Delegation/DepthRefused`, the nudge test above.
+- [x] 3.4 `engine_loop` default → `adk` (config + `Default` + `New`);
+  `TestContractSuite` runs the legacy path explicitly. UI: the
+  `delegate_` prefix recognized (`delegation.ts`; svelte-check + build +
+  the full e2e suite 109 green incl. the new `delegation-tools.spec.ts`).
 
 ## 4. Slice 3 — soak, measurement, archive
 

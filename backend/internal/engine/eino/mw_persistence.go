@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"
@@ -92,12 +93,20 @@ func (m *persistenceMW) execute(ctx context.Context, name, argsJSON, callID stri
 	switch {
 	case m.st.suppress:
 		res = tools.Result{Err: fmt.Errorf("%w: %q", ErrToolNotOffered, name)}
+	case strings.HasPrefix(name, "delegate_") && !m.offeredName(name) && name != dispatchDelegateTool:
+		// A hallucinated delegation tool: the typed refusal names what IS
+		// offered (the spec's "lists configured agents").
+		res = tools.Result{Err: fmt.Errorf("%w: %q (delegation tools offered: %s)", ErrToolNotOffered, name, strings.Join(m.delegationToolNames(), ", "))}
 	case endpoint != nil && m.st.foreign[name]:
 		// A middleware-injected tool (the skill middleware's `skill`) is not
 		// part of the user's plane: run its own endpoint. Its error (an
 		// unknown skill) becomes the model-facing text like any tool error.
 		out, err := endpoint(ctx, argsJSON)
 		res = tools.Result{Output: out, Err: err}
+	case name == dispatchDelegateTool && m.a.loop == LoopADK && m.a.delegationGranted(m.in):
+		// The legacy dispatch name on the spine: an alias for prompts that
+		// still call it (the per-agent tools are what is advertised).
+		res = m.a.dispatchDelegate(ctx, m.events, m.in, argsJSON)
 	default:
 		res = execOffered(ctx, m.inventory(), name, argsJSON) // the LIVE plane (empty → not offered)
 	}
@@ -114,6 +123,27 @@ func (m *persistenceMW) execute(ctx context.Context, name, argsJSON, callID stri
 // plus the engine's extras (the offload reader).
 func (m *persistenceMW) inventory() []tools.Tool {
 	return append(m.a.offeredTools(m.ctx, m.events, m.in), m.extras...)
+}
+
+func (m *persistenceMW) offeredName(name string) bool {
+	for _, t := range m.inventory() {
+		if t.Def().Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// delegationToolNames lists the delegation tools on the plane (the
+// per-agent `delegate_<agent>` tools; the dispatch name on the legacy loop).
+func (m *persistenceMW) delegationToolNames() []string {
+	var names []string
+	for _, t := range m.inventory() {
+		if n := t.Def().Name; strings.HasPrefix(n, "delegate_") {
+			names = append(names, n)
+		}
+	}
+	return names
 }
 
 func (m *persistenceMW) emitToolCall(callID, name, content string) {

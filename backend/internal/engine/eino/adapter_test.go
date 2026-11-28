@@ -239,7 +239,7 @@ func drainUntilClosed(ch <-chan domain.TimelineEvent, timeout time.Duration) boo
 // REAL adapter (fake deps, default id generator) on the legacy loop;
 // TestContractSuiteADK runs it on the ADK spine (engine-adk-spine) —
 // both paths must stay green throughout the transition.
-func TestContractSuite(t *testing.T)    { contracttest.Suite(t, suiteFixture(t, "")) }
+func TestContractSuite(t *testing.T)    { contracttest.Suite(t, suiteFixture(t, LoopLegacy)) } // the soak-cycle path, explicit
 func TestContractSuiteADK(t *testing.T) { contracttest.Suite(t, suiteFixture(t, LoopADK)) }
 
 func suiteFixture(t *testing.T, loop string) contracttest.Fixture {
@@ -799,7 +799,9 @@ func (h *delegEngineHolder) Cancel(ctx context.Context, sessionID string) error 
 // --- Gate-fix tests (P1/P2 from the delegation review) -----------------------
 
 // P1-1: offered tool defs carry REAL parameter schemas — a provider sees
-// delegate_agent's required agent/task properties.
+// the dispatch tool's required agent/task properties (the legacy loop's
+// surface; on the spine each agent is its own tool — see
+// TestPerAgentDelegationToolParamsExposed).
 func TestDelegateToolParamsExposed(t *testing.T) {
 	t.Parallel()
 	ti := &capturedToolInfos{}
@@ -811,6 +813,9 @@ func TestDelegateToolParamsExposed(t *testing.T) {
 		"child-task": {{content: "child answer"}},
 	}}
 	a := newDelegatingAdapter(t, gen, agentSnap)
+	if err := a.SetLoop(LoopLegacy); err != nil {
+		t.Fatal(err)
+	}
 	a.newModel = func(context.Context, providers.Provider, string, string) (chatGenerator, error) {
 		return ti, nil
 	}
@@ -899,12 +904,20 @@ func TestExplicitEmptyAllowlistGrantsNoTools(t *testing.T) {
 	drainUntilClosed(chO, 5*time.Second)
 	genO.mu.Lock()
 	defer genO.mu.Unlock()
-	if len(genO.infos) != 1 || genO.infos[0].Name != "delegate_agent" {
-		var names []string
-		for _, ti := range genO.infos {
-			names = append(names, ti.Name)
+	var names []string
+	for _, ti := range genO.infos {
+		names = append(names, ti.Name)
+	}
+	// Only delegation machinery: the legacy dispatch tool, or (the spine,
+	// decision D1) one task tool per delegatable agent.
+	want := map[string]bool{"delegate_orchestrator": true, "delegate_planner": true, "delegate_researcher": true}
+	if len(names) == 0 || len(names) != len(want) {
+		t.Fatalf("orchestrator (tools:[], max_depth:1) must be offered ONLY the delegation tools %v, got %v", want, names)
+	}
+	for _, n := range names {
+		if !want[n] {
+			t.Fatalf("unexpected tool %q (want only delegation tools %v)", n, want)
 		}
-		t.Fatalf("orchestrator (tools:[], max_depth:1) must be offered ONLY delegate_agent, got %v", names)
 	}
 }
 

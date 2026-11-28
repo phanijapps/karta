@@ -104,26 +104,29 @@ func (a *Adapter) emitToolCall(ctx context.Context, events chan domain.TimelineE
 // governed by the DEPTH grant, not the allowlist: an orchestrator with
 // tools:[] still delegates.
 func (a *Adapter) offeredTools(ctx context.Context, events chan domain.TimelineEvent, in runInput) []tools.Tool {
-	kept, _ := a.inventory(ctx, events, in)
+	kept, _, _ := a.inventory(ctx, events, in)
 	return kept
 }
 
 // inventory assembles the plane ONCE and splits it: tools kept, and the
 // reserved-prefixed user tools dropped (the ADK driver names the drops on
 // the stream; the legacy loop drops silently).
-func (a *Adapter) inventory(ctx context.Context, events chan domain.TimelineEvent, in runInput) (kept, dropped []tools.Tool) {
-	var offered []tools.Tool
+func (a *Adapter) inventory(ctx context.Context, events chan domain.TimelineEvent, in runInput) (kept, dropped []tools.Tool, collided []string) {
+	var offered []tools.Tool // collided (the named return) holds agents whose wire name collides
 	if in.toolAllow != nil && len(in.toolAllow) == 0 {
-		if in.depth < in.grant && in.depth < a.depthCap && a.snapFn != nil {
-			offered = append(offered, a.delegateTool(ctx, events, in))
+		if a.delegationGranted(in) {
+			offered, collided = a.delegationTools(ctx, events, in)
 		}
-		return offered, nil
+		return offered, nil, collided
 	}
 	offered = engine.FilterTools(a.toolProv, in.toolAllow)
 	offered = append(offered, filterWardTools(wardToolSet(in), in.toolAllow)...)
-	if in.depth < in.grant && in.depth < a.depthCap && a.snapFn != nil {
-		offered = append(offered, a.delegateTool(ctx, events, in))
+	if a.delegationGranted(in) {
+		var dt []tools.Tool
+		dt, collided = a.delegationTools(ctx, events, in)
+		offered = append(offered, dt...)
 	}
+
 	if a.mcpTools != nil {
 		offered = append(offered, filterWardTools(a.mcpTools(), in.toolAllow)...)
 	}
@@ -136,5 +139,27 @@ func (a *Adapter) inventory(ctx context.Context, events chan domain.TimelineEven
 		}
 		kept = append(kept, t)
 	}
-	return kept, dropped
+	return kept, dropped, collided
+}
+
+// delegationGranted: this run may delegate (agent grant, bounded by the
+// operator's depth cap) and there is a roster to read.
+func (a *Adapter) delegationGranted(in runInput) bool {
+	return in.depth < in.grant && in.depth < a.depthCap && a.snapFn != nil
+}
+
+// delegationTools: the spine's per-agent task tools (decision D1); the
+// legacy loop keeps its single dispatch tool.
+func (a *Adapter) delegationTools(ctx context.Context, events chan domain.TimelineEvent, in runInput) (tools_ []tools.Tool, collided []string) {
+	if a.loop == LoopADK {
+		return a.perAgentDelegationTools(ctx, events, in)
+	}
+	return []tools.Tool{a.delegateTool(ctx, events, in)}, nil
+}
+
+// dispatchDelegate runs the legacy dispatch form (`delegate_agent`,
+// {agent, task}) — on the spine it is the alias prompts that still name
+// it reach through the unknown-tool handler.
+func (a *Adapter) dispatchDelegate(ctx context.Context, events chan domain.TimelineEvent, in runInput, argsJSON string) tools.Result {
+	return a.delegateTool(ctx, events, in).Exec(ctx, argsJSON)
 }

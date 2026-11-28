@@ -54,13 +54,7 @@ func agentList(snap registry.Snapshot) string {
 // table of delegatable agents (description required to be offered;
 // system-role agents are host-run steps and never listed).
 func delegateDescription(snap registry.Snapshot) string {
-	names := make([]string, 0, len(snap.Agents))
-	for n, spec := range snap.Agents {
-		if spec.Description != "" && !registry.IsSystemAgent(n) {
-			names = append(names, n)
-		}
-	}
-	sort.Strings(names)
+	names := delegatableNames(snap)
 	var b strings.Builder
 	b.WriteString("Delegate a self-contained task to a specialist agent and receive its final answer. Agents: ")
 	for i, n := range names {
@@ -91,6 +85,71 @@ type delegateTool struct {
 	parent  runInput
 	snap    registry.Snapshot
 	desc    string
+	// target names the agent this tool delegates to — the per-agent task
+	// tool of the ADK spine (decision D1: `delegate_<agent>`, args {task}).
+	// Empty = the legacy dispatch tool (`delegate_agent`, args {agent,
+	// task}): the legacy loop's surface, and on the spine still CALLABLE
+	// for prompts that name it (routed through the unknown-tool handler).
+	target string
+}
+
+// dispatchDelegateTool is the legacy dispatch tool's name.
+const dispatchDelegateTool = "delegate_agent"
+
+// delegatableNames lists the agents offered for delegation, sorted: a
+// description is the eligibility contract; system-role agents are host-run
+// steps and never workers.
+func delegatableNames(snap registry.Snapshot) []string {
+	names := make([]string, 0, len(snap.Agents))
+	for n, spec := range snap.Agents {
+		if spec.Description != "" && !registry.IsSystemAgent(n) {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// delegateToolName is the per-agent tool's wire name: `delegate_` + the
+// agent name (characters outside [A-Za-z0-9_-] become `_`). The shared
+// prefix is what the UI recognizes as a delegation (legacy rows say
+// `delegate_agent`). Two agent names can map to ONE wire name (`a.b` and
+// `a_b`), and "agent" maps to the dispatch name — such agents are not
+// offered as their own tool (perAgentDelegationTools reports them); they
+// stay reachable through the dispatch alias.
+func delegateToolName(agent string) string {
+	var b strings.Builder
+	b.WriteString("delegate_")
+	for _, r := range agent {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
+
+// perAgentDelegationTools builds one task tool per delegatable agent
+// (ADK spine, decision D1). An agent whose wire name collides — with the
+// dispatch name or with an earlier agent's name — is skipped and
+// reported in the second list (the driver names the drops on the stream);
+// it stays reachable through the dispatch alias.
+func (a *Adapter) perAgentDelegationTools(ctx context.Context, events chan domain.TimelineEvent, parent runInput) (tools_ []tools.Tool, collided []string) {
+	snap := a.snapFn()
+	taken := map[string]bool{dispatchDelegateTool: true}
+	var out []tools.Tool
+	for _, name := range delegatableNames(snap) {
+		wire := delegateToolName(name)
+		if taken[wire] {
+			collided = append(collided, name)
+			continue
+		}
+		taken[wire] = true
+		out = append(out, delegateTool{adapter: a, ctx: ctx, events: events, parent: parent, snap: snap, target: name})
+	}
+	return out, collided
 }
 
 // refreshed re-reads the registry snapshot: on the ADK path the tool is
@@ -106,14 +165,21 @@ func (d delegateTool) refreshed() delegateTool {
 }
 
 func (d delegateTool) Def() tools.Def {
-	desc := d.desc
+	name, desc, params := dispatchDelegateTool, d.refreshed().desc, `{"type":"object","properties":{"agent":{"type":"string","description":"agent name"},"task":{"type":"string","description":"complete, self-contained task"}},"required":["agent","task"]}`
+	if d.target != "" {
+		if spec, ok := d.refreshed().snap.Agents[d.target]; ok {
+			desc = spec.Description
+		}
+		name = delegateToolName(d.target)
+		params = `{"type":"object","properties":{"task":{"type":"string","description":"complete, self-contained task"}},"required":["task"]}`
+	}
 	if d.parent.wardHost != nil && d.parent.wardHost.Active() != nil {
 		// The ward guard: children act INSIDE the ward through the file
 		// and shell tools; entering/switching/creating wards is the
 		// root's structural call (children don't get ward_use/create).
 		desc += "\n\nWard: this run is hosted in a ward. Delegated agents work inside it (read/write/list/shell); they cannot enter, switch, or create wards — that is the root's call. State the ward and the task's file targets in the task text."
 	}
-	return tools.Def{Name: "delegate_agent", Description: desc, ParamsJSON: `{"type":"object","properties":{"agent":{"type":"string","description":"agent name"},"task":{"type":"string","description":"complete, self-contained task"}},"required":["agent","task"]}`}
+	return tools.Def{Name: name, Description: desc + "\n\nDelegate a self-contained task to this agent and receive its final answer. The child cannot be interrupted mid-answer; give it complete context.", ParamsJSON: params}
 }
 
 // Exec runs the named agent as a CHILD of the parent's execution: its own
@@ -125,8 +191,13 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 		Agent string `json:"agent"`
 		Task  string `json:"task"`
 	}
-	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil || args.Agent == "" || args.Task == "" {
-		return tools.Result{Err: fmt.Errorf("delegate_agent: arguments must be {agent, task}: %w", err)}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil || args.Task == "" {
+		return tools.Result{Err: fmt.Errorf("%s: arguments must be {%s, task}: %w", d.Def().Name, map[bool]string{true: "task", false: "agent"}[d.target != ""], err)}
+	}
+	if d.target != "" {
+		args.Agent = d.target
+	} else if args.Agent == "" {
+		return tools.Result{Err: fmt.Errorf("%s: arguments must be {agent, task}", dispatchDelegateTool)}
 	}
 	spec, ok := d.snap.Agents[args.Agent]
 	if !ok {
@@ -180,7 +251,7 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 	d.adapter.emitDelegation(d.ctx, d.events, d.parent, domain.EventDelegationStarted,
 		&domain.DelegationPayload{ChildAgent: spec.Name, Task: args.Task, ExecutionID: childExec},
 		fmt.Sprintf("Delegated to %s: %s", spec.Name, firstLine(args.Task)))
-	answer, err := d.adapter.runLoop(d.ctx, d.events, child)
+	answer, err := d.adapter.runChild(d.ctx, d.events, child)
 	// The stored terminal status wins (a cancelled child reads
 	// "cancelled"); "failed" only when no reliable status exists.
 	tokensIn, tokensOut, status, uerr := d.adapter.st.ExecutionUsage(childExec)
