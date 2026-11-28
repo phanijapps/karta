@@ -75,10 +75,12 @@ playbook). New in this change:
    follow-up change removes `runLoop`, `buildMessages`' legacy half, the
    `engine_loop` knob and the `LoopLegacy` suite fixture; closes F-26 for
    good (the ADK path keys models on provider+model+token; add BaseURL).
-3. **Hook runner** (`internal/hooks/` implementing `domain.HookRunner` —
-   `backend/AGENTS.md` now says it does not exist): `PreCompact`,
-   `PreToolUse`, `PostToolUse` are honored by the seams (compaction policy,
-   the eino-engine-adapter skill's plan) but nothing executes hooks.
+3. ~~Hook runner~~ — DONE (`hook-runner`, archived `2026-11-27-hook-runner`):
+   `internal/hooks` runs manifests by the exit-code contract; every seam
+   fires (Pre/PostToolUse on both run paths, SessionStart/End, SubagentStop,
+   PreCompact via the bridge); every decision a `hook_decision` event;
+   operator reference `docs/development/hooks.md`. `~/.zbot/hooks/` is
+   empty — the operator's manifests are the next step.
 4. **S2 — `intent-contract-v2`** (plan §3.1/§3.3): v2 fields, versioned
    parsing, bounds in code, the advisory packet, `plan_step_started/done`
    (plantask as the emitter if it fits). Then the routing sibling (D7–D9).
@@ -138,4 +140,5 @@ backend/internal/config/{context_budget, defaults}.go; backend/cmd/zbotd/main.go
 frontend/src/features/chat-stream/delegation.ts      # the delegate_ prefix rule
 frontend/tests/delegation-tools.spec.ts; frontend/tests/_live/karta-live.mjs
 openspec/changes/archive/2026-11-27-engine-adk-spine/{design.md (D1–D9, mapping), findings.md (G1–G8 + measurements), signoff.md}
+openspec/changes/archive/2026-11-27-hook-runner/{design.md, findings.md (G1–G5 + live check), signoff.md}; docs/development/hooks.md
 ```
