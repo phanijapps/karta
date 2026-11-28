@@ -125,10 +125,14 @@ gpt-6.1-terra (G8) — NOT READY → fixed except the two operator decisions.
 
 Operator: ______________________  Date: __________
 
-- [ ] Decision 1 (measurement): archive now / hold for the measurement
-    (operator: "I need example" → the worked example and the exact solar
-    command are in findings.md "Measurement example" and
-    run-quality-research.md §8; the decision is still open)
+- [x] Decision 1 (measurement): operator "run it" → the solar goal ran on
+    the spine (findings.md "Solar re-measurement"): 9 steps / 255,920 prompt
+    / 15,754 completion / 2 m 45 s — a VERIFICATION run (the ward held the
+    previous deliverables), so the total is not comparable to §3a; the
+    comparable parts: step-1 overhead −10.6%, the cap demonstrated exactly
+    on a 24.7 KB read and in the worked example (91 KB → +3.1k). Recorded;
+    the from-scratch variant (a fresh topic in a new ward) remains
+    available if wanted before the legacy deletion.
 - [x] Decision 2 (hook runner): out of scope, follow-up "hook-runner"
     (operator, 2026-11-27: "I know 2 hasn't been implemented")
 - [x] Decision 3 (D4): `compaction.summarizer: ollama/glm-5.3-flash:cloud`

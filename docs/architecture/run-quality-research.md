@@ -284,6 +284,16 @@ would have carried ≈23k (+20k), and the model then ran a `python3 -c
 "import json…"` to extract the structure instead of paging the dump. The
 whole run: 58.2k prompt / 737 completion / 14 s.
 
+**Solar re-measurement (2026-11-27, run):** 9 steps / 255,920 prompt /
+15,754 completion / 2 m 45 s on the spine — but the ward still held the
+previous run's deliverables and the model VERIFIED and refreshed them instead
+of researching from scratch, so the total is not comparable to §3a's 983k;
+comparable: step-1 overhead 12,165 vs 13,608 (−10.6%, skill bodies out,
+per-agent delegation schemas in) and the cap on a 24.7 KB read (the next step
+grew +7.4k for two reads where the legacy loop would have added ≈8.7k; the
+original run's five 25–38 KB dumps would have saved ≈300k). The from-scratch
+comparison needs a fresh topic in a new ward.
+
 **To re-measure the solar run against §3a:** the original goal (from the
 session `research-1795696099774376404-1`):
 

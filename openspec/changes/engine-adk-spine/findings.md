@@ -162,3 +162,33 @@ overhead (11.9k) is still the ward packet + schemas: the caps and skills do not
 touch schema cost (role-scoped menus, G9, do). Screenshot
 `/tmp/karta-example-thread.png`. The SOLAR re-measurement (2.5) uses the same
 script with the original goal — see run-quality-research.md §8.
+
+## Solar re-measurement (2026-11-27, operator: "run it") — with its caveat
+
+Same goal as §3a, spine (`engine_loop: adk`, caps on, D4 summarizer set),
+zai/glm-5.3-flash, ward `india-analysis` — **which still held the 2026-11-26
+run's deliverables**. The model verified and refreshed them (spot-checked 9
+headline figures against the raw fetches on disk, appended a "§9 Refresh" to
+the evidence file, `sed`-updated the brief, closed a Reuters gap, updated the
+canonical page + log) instead of researching from scratch: a DIFFERENT, cheaper
+task than the original. Not an apples-to-apples comparison — recorded as such.
+
+| | §3a (legacy, from scratch, 11-26) | spine (verification run, 11-27) |
+|---|---|---|
+| root steps | 23 | 9 |
+| root prompt | 982,769 | **255,920** |
+| root completion | 45,322 (≈80% reasoning) | 15,754 (≈67% reasoning) |
+| step-1 prompt (fixed overhead) | 13,608 | **12,165** (−1.4k: skill bodies gone; per-agent delegation schemas added) |
+| final context | 78,753 | 45,655 |
+| children | builder 75k / 24k | none (the root did it itself) |
+| wall | — | 2 m 45 s |
+
+What IS attributable to the spine on this run: the step-1 overhead (−10.6%);
+the cap on the one oversized read (24.7 KB → the next step +7.4k for two reads
+where the legacy loop would have added ≈8.7k; the original run's five 25–38 KB
+dumps would have saved ≈300k). What is NOT: the 4× total — the ward's memory
+made the task smaller. A from-scratch comparison needs a fresh topic/ward
+(offered: the same brief on Vietnam's module manufacturing in a new ward).
+Deliverables after the run: brief, evidence file, log and canonical page
+updated on disk; the chart unchanged (verified). Screenshot
+`/tmp/karta-solar-thread.png`; report `/tmp/karta-solar-report.json`.
