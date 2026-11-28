@@ -4,9 +4,10 @@
 > session needs to continue cold. Delete after reading. Decision records:
 > `docs/architecture/run-quality-research.md` (§8 = what landed for Q2b),
 > `docs/architecture/intent-analysis-enhancement-plan.md` (the analyst, S1
-> done; S2–S4 open), `run-legibility-plan.md` (shipped). The archived-or-
-> archiving change: `openspec/changes/engine-adk-spine/` (proposal, design
-> with decisions D1–D9, findings G1–G8, signoff.md).
+> done; S2–S4 open), `run-legibility-plan.md` (shipped). The archived
+> change: `openspec/changes/archive/2026-11-27-engine-adk-spine/` (proposal,
+> design with decisions D1–D9, findings G1–G8 + the measurements, signoff.md,
+> decisions.html).
 
 ## 1. Where everything stands
 
@@ -61,7 +62,7 @@ playbook). New in this change:
    host-validated: known id, tool-capable, reachable) → today's default;
    **Ollama cloud-first** (`providers[].prefer_tier`), local only when the
    run is local or cloud is down; the selected model beats the analyst for
-   the root. The deck: `openspec/changes/engine-adk-spine/decisions.html`.
+   the root. The deck: `openspec/changes/archive/2026-11-27-engine-adk-spine/decisions.html`.
 
 ## 3. Open items (prioritized)
 
@@ -136,5 +137,5 @@ backend/internal/engine/contracttest/                # the conformance suite (bo
 backend/internal/config/{context_budget, defaults}.go; backend/cmd/zbotd/main.go (wiring)
 frontend/src/features/chat-stream/delegation.ts      # the delegate_ prefix rule
 frontend/tests/delegation-tools.spec.ts; frontend/tests/_live/karta-live.mjs
-openspec/changes/engine-adk-spine/{design.md (D1–D9, mapping), findings.md (G1–G8), signoff.md}
+openspec/changes/archive/2026-11-27-engine-adk-spine/{design.md (D1–D9, mapping), findings.md (G1–G8 + measurements), signoff.md}
 ```
