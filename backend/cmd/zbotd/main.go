@@ -6,6 +6,7 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 
 	"context"
 	"errors"
@@ -25,6 +26,7 @@ import (
 	einoengine "zbot/backend/internal/engine/eino"
 
 	"zbot/backend/internal/chat"
+	"zbot/backend/internal/compaction"
 	"zbot/backend/internal/config"
 	"zbot/backend/internal/eventbus"
 	"zbot/backend/internal/mcpclient"
@@ -218,6 +220,27 @@ func run(ctx context.Context, homeFlag string) error {
 	if err := eng.SetLoop(cfg.EngineLoop); err != nil {
 		return fmt.Errorf("engine loop: %w", err)
 	}
+	// The context budget (engine-adk-spine slice 1): tool results capped
+	// by bytes (head + ranged re-read), in-run summarization for roots and
+	// children at the compaction threshold, the optional cheap summarizer
+	// (D4), skills on demand (D3). The reasoning effort (D5) is per agent.
+	eng.SetRunOptions(einoengine.RunOptions{
+		ToolResultCap:     cfg.Compaction.ToolResultCap,
+		SummarizeAt:       cfg.Compaction.MaxContextTokens - cfg.Compaction.ReserveOutputTokens,
+		ProgressiveSkills: cfg.Skills.Injection == config.SkillsProgressive,
+	})
+	// In-run compaction: the kernel policy (internal/compaction behind
+	// domain.Compactor — the Compaction Rule) bound per run to the run's
+	// model for the summary; `compaction.summarizer` overrides it with a
+	// cheap model (decision D4). The adapter only bridges it.
+	compactor := &compaction.Service{Summarizer: compaction.LLMSummarizer{Completer: llmCaller{provStore, providers.NewChatClient()}}}
+	if cfg.Compaction.Summarizer != "" {
+		p, m, _ := strings.Cut(cfg.Compaction.Summarizer, "/") // syntax validated at load
+		compactor.DefaultModel = &compaction.ModelRef{Provider: p, Model: m}
+	}
+	eng.SetCompactorFactory(func(providerName, modelID string) domain.Compactor {
+		return compactor.For(compaction.ModelRef{Provider: providerName, Model: modelID})
+	})
 
 	// Resource index: registry snapshot + probed MCP tools → chitta
 	// reserved kinds; reconciled on boot (the coalescing worker's

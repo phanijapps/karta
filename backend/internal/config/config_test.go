@@ -751,3 +751,35 @@ func TestEngineLoop(t *testing.T) {
 		t.Fatalf("Default().EngineLoop must be %q (the documented default), got %q", LoopLegacy, d.EngineLoop)
 	}
 }
+
+// skills.injection + compaction.summarizer + compaction.tool_result_cap
+// (engine-adk-spine): absent keys = progressive / the run's own model /
+// the 12 KB cap; explicit values load; unknown values fail loudly.
+func TestContextBudgetKnobs(t *testing.T) {
+	paths := NewPaths(t.TempDir())
+	writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:9999\n")
+	cfg, err := Load(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Skills.Injection != SkillsProgressive || cfg.Compaction.ToolResultCap != DefaultToolResultCap || cfg.Compaction.Summarizer != "" {
+		t.Fatalf("absent keys must default: skills=%q cap=%d summarizer=%q", cfg.Skills.Injection, cfg.Compaction.ToolResultCap, cfg.Compaction.Summarizer)
+	}
+	writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:9999\nskills:\n    injection: bodies\ncompaction:\n    max_context_tokens: 64000\n    reserve_output_tokens: 4096\n    summarizer: ollama/glm-5.3-flash:cloud\n    tool_result_cap: 4096\n")
+	cfg, err = Load(paths)
+	if err != nil || cfg.Skills.Injection != SkillsBodies || cfg.Compaction.Summarizer != "ollama/glm-5.3-flash:cloud" || cfg.Compaction.ToolResultCap != 4096 {
+		t.Fatalf("explicit knobs: %+v %v", cfg, err)
+	}
+	writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:9999\nskills:\n    injection: inline\n")
+	if _, err = Load(paths); err == nil || !strings.Contains(err.Error(), "skills.injection") {
+		t.Fatalf("unknown skills.injection must fail loudly naming the key: %v", err)
+	}
+	writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:9999\ncompaction:\n    max_context_tokens: 64000\n    reserve_output_tokens: 4096\n    summarizer: not-a-qualified-ref\n")
+	if _, err = Load(paths); err == nil || !strings.Contains(err.Error(), "summarizer") {
+		t.Fatalf("a malformed summarizer reference must fail loudly naming the key: %v", err)
+	}
+	writeConfig(t, paths, "engine: eino\nserver:\n    address: 127.0.0.1:9999\ncompaction:\n    max_context_tokens: 64000\n    reserve_output_tokens: 4096\n    tool_result_cap: -1\n")
+	if _, err = Load(paths); err == nil || !strings.Contains(err.Error(), "tool_result_cap") {
+		t.Fatalf("negative tool_result_cap must fail loudly naming the key: %v", err)
+	}
+}

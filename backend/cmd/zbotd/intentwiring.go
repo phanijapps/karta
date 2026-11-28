@@ -56,6 +56,10 @@ func wireIntentMiddleware(d intentDeps) domain.AgentEngine {
 			Snapshot:  reg.Snapshot,
 		},
 		Snapshot: reg.Snapshot,
+		// Skills on demand (engine-adk-spine D3): names in the prompt and
+		// bodies through the engine's skill tool — only on the ADK spine;
+		// the legacy loop (and skills.injection: bodies) keeps full bodies.
+		ProgressiveSkills: cfg.Skills.Injection == config.SkillsProgressive && cfg.EngineLoop == einoengine.LoopADK,
 		Wards: func() []intent.WardInfo {
 			infos, err := wardVault.Index(ctx)
 			if err != nil {

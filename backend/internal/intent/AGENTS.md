@@ -95,3 +95,11 @@ escaped advisory data.
 `Router.Bypass`, `(*Analyzer).Analyze`, `(*Wrapper).RunGoal`,
 `(*Wrapper).TestAnalysis`, `Packet.Ranked/Capped`, `ReadSettings`. The
 living spec is `openspec/specs/intent-analysis/`.
+
+- `Wrapper.ProgressiveSkills` (engine-adk-spine D3; set by the daemon
+  when `skills.injection: progressive` AND the engine loop is `adk`):
+  the composed prompt NAMES the recommended, provisioned skills
+  (`sysprompt.SkillsProgressive`, `TaskAnalysisProgressive`) instead of
+  inlining bodies, and the names ride `GoalRequest.Skills` so the
+  engine's `skill` tool offers exactly those. False keeps the bodies
+  (`sysprompt.Skills`) — the legacy loop and `skills.injection: bodies`.

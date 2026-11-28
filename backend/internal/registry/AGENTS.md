@@ -70,3 +70,7 @@ imports config.
   offers them for delegation and the intent wrapper never lists them in
   its own catalog packet.
 
+- `AgentSpec.ReasoningEffort` (`reasoning_effort`, engine-adk-spine D5):
+  `low | medium | high | none`, absent = the provider's default; an
+  unknown value fails THAT agent's load naming the field (per-file error
+  isolation) — the engine passes it to the model on every call.

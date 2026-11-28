@@ -113,6 +113,17 @@ func Compose(cfg config.SystemPromptConfig, snap registry.Snapshot) (string, err
 // sanitized contract. Fast-path (approach=simple) instructions ride
 // along, matching the operator's first-turn protocol idea.
 func TaskAnalysis(a domain.IntentAnalysis) string {
+	return taskAnalysis(a, false)
+}
+
+// TaskAnalysisProgressive is TaskAnalysis for a run whose skills arrive
+// through the `skill` tool (engine-adk-spine D3): the recommended skills
+// are named as one call away, not as provided.
+func TaskAnalysisProgressive(a domain.IntentAnalysis) string {
+	return taskAnalysis(a, true)
+}
+
+func taskAnalysis(a domain.IntentAnalysis, progressive bool) string {
 	var b strings.Builder
 	b.WriteString("## Task Analysis\n\n")
 	fmt.Fprintf(&b, "- Primary intent: %s\n", a.PrimaryIntent)
@@ -123,7 +134,9 @@ func TaskAnalysis(a domain.IntentAnalysis) string {
 		fmt.Fprintf(&b, "- Solution path: %s\n", a.SolutionPath)
 	}
 	fmt.Fprintf(&b, "- Complexity: %s (step budget honored by the runtime)\n", string(a.Complexity))
-	if len(a.RecommendedSkills) > 0 {
+	if len(a.RecommendedSkills) > 0 && progressive {
+		fmt.Fprintf(&b, "- Skills one call away (load with the karta_skill tool before relying on one): %s\n", strings.Join(a.RecommendedSkills, ", "))
+	} else if len(a.RecommendedSkills) > 0 {
 		fmt.Fprintf(&b, "- Skills provided in context: %s\n", strings.Join(a.RecommendedSkills, ", "))
 	}
 	if len(a.RecommendedAgents) > 0 {
@@ -137,17 +150,35 @@ func TaskAnalysis(a domain.IntentAnalysis) string {
 	}
 	fmt.Fprintf(&b, "- Approach: %s — %s\n", string(a.ExecutionStrategy.Approach), a.ExecutionStrategy.Explanation)
 	if a.ExecutionStrategy.Approach == "simple" {
-		b.WriteString("\nFast path: answer directly. The runtime already provided the skills above; do not plan aloud, do not delegate unless the answer truly needs it.\n")
+		if progressive {
+			b.WriteString("\nFast path: answer directly. Load a recommended skill with the karta_skill tool only if the task needs it; do not plan aloud, do not delegate unless the answer truly needs it.\n")
+		} else {
+			b.WriteString("\nFast path: answer directly. The runtime already provided the skills above; do not plan aloud, do not delegate unless the answer truly needs it.\n")
+		}
 	} else {
 		b.WriteString("\nGraph path: plan the steps, delegate self-contained tasks to the recommended agents, and verify each result before the next step.\n")
 	}
 	return b.String()
 }
 
+// SkillsProgressive renders the ## Skills section for progressive
+// injection (engine-adk-spine D3): no bodies — the names, and the
+// instruction to load one with the skill tool before relying on it. Empty
+// when nothing is recommended.
+func SkillsProgressive(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	sorted := append([]string(nil), names...)
+	sortStrings(sorted)
+	return "## Skills\n\nLoaded on demand through the karta_skill tool (call karta_skill(name) before relying on one): " + strings.Join(sorted, ", ") + "\n"
+}
+
 // Skills renders the ## Skills dynamic section: the full bodies of the
-// provisioned skills. This is the ONLY way a skill enters a run —
-// there is no load_skill tool; the runtime provides, the agent does
-// not fetch (spec: system-prompt).
+// provisioned skills. On the legacy loop (and skills.injection: bodies)
+// this is the ONLY way a skill enters a run — the runtime provides, the
+// agent does not fetch (spec: system-prompt); the ADK spine offers them
+// through the skill tool instead.
 func Skills(bodies map[string]string) string {
 	if len(bodies) == 0 {
 		return ""

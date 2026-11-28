@@ -4,7 +4,7 @@
 
 ### Requirement: Agent reasoning effort
 The agent spec (frontmatter and YAML forms) SHALL accept an optional
-`reasoning_effort` field (`low` | `medium` | `high`; absent = the
+`reasoning_effort` field (`low` | `medium` | `high` | `none`; absent = the
 provider's default). Unknown values SHALL fail the agent's load with a
 named error (per-file error isolation).
 

@@ -69,3 +69,29 @@ func TestAgentSpecRequireToolUse(t *testing.T) {
 		t.Fatal("an absent require_tool_use reads false")
 	}
 }
+
+// reasoning_effort loads from both spec forms; absent reads ""; an
+// unknown value fails THAT agent with a naming error and leaves the
+// others loaded (per-file error isolation) — engine-adk-spine D5.
+func TestAgentSpecReasoningEffort(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("builder.yaml", "name: builder\ndescription: d\nreasoning_effort: low\n")
+	write("writer.md", "---\nname: writer\ndescription: d\nreasoning_effort: none\n---\nbody\n")
+	write("plain.md", "---\nname: plain\ndescription: d\n---\nbody\n")
+	write("turbo.md", "---\nname: turbo\ndescription: d\nreasoning_effort: turbo\n---\nbody\n")
+	snap, errs := New().LoadAll(Dirs{Agents: dir})
+	if len(errs) != 1 || !strings.Contains(errs[0].Err.Error(), "reasoning_effort") || !strings.Contains(errs[0].Err.Error(), "turbo") {
+		t.Fatalf("the unknown effort fails its agent naming the field: %+v", errs)
+	}
+	if snap.Agents["builder"].ReasoningEffort != EffortLow || snap.Agents["writer"].ReasoningEffort != EffortNone || snap.Agents["plain"].ReasoningEffort != "" {
+		t.Fatalf("efforts: builder %q writer %q plain %q", snap.Agents["builder"].ReasoningEffort, snap.Agents["writer"].ReasoningEffort, snap.Agents["plain"].ReasoningEffort)
+	}
+	if _, ok := snap.Agents["turbo"]; ok {
+		t.Fatal("an invalid agent must not load")
+	}
+}

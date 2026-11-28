@@ -137,3 +137,71 @@ checks, and durable-first event emission.
     event is durable before publication — checked at bus delivery). Test
     fakes implement only `Generate`; `baseModelOf` widens them to
     `model.BaseModel`.
+
+- **The context budget (engine-adk-spine slice 1)** — `RunOptions`
+  (`SetRunOptions`, applied by the daemon from config) switches on Eino's
+  reduction middleware, the kernel compaction bridge and the effort seam;
+  the glue lives in `contextbudget.go`, the wiring in `runOnce`
+  (`adkrun.go`). Hook order is composition order: reduction → compaction
+  → persistence → budget → skill → usage (reduction shrinks tool results
+  before the policy counts them; the budget's nudge stays the last
+  message; the persistence row sees the ORIGINAL tool result before the
+  model-facing copy is capped — the durable rows keep the original).
+  - `reduction` (cap in BYTES, `compaction.tool_result_cap`, default 12 KB):
+    an oversized tool result becomes a `<persisted-output>` notice with the
+    first/last ~cap/4 bytes and a path; the ORIGINAL bytes are written by
+    `offloadBackend` under a per-run `offloadRoot` (a temp dir created
+    CANONICAL and held as an `os.Root`, whose methods can only reach
+    files BENEATH the root — escapes, symlinked directories out of the
+    tree and traversal writes are refused by the kernel-bounded root, no
+    path-name races; removed with the run). The pointer is actionable
+    through `karta_read_file` (`readFileTool`, an engine-provided extra:
+    BYTE ranges — the solar dumps were single 25–38 KB lines — always
+    advancing by a rune, opened through the same root).
+    `delegate_agent` and `karta_skill` results are exempt from BOTH
+    reduction phases (receipts sit at the fold-back's END; a loaded body
+    is what the model asked for).
+  - `skill` (progressive injection, `skills.injection: progressive`, ADK
+    path only): the `karta_skill` tool offers exactly the analysis's
+    recommended, provisioned skills (`GoalRequest.Skills`, set by the
+    intent wrapper when the analysis ran; a non-nil empty list = every
+    provisioned skill — decision D3; nil = no analysis → no skill tool).
+    The middleware injects the tool at `BeforeAgent`, so it is FOREIGN to
+    the user's plane: the budget's `refresh` captures such names once
+    (`runState.foreign`) and keeps their tool infos, and
+    `persistenceMW.execute` runs them through their own endpoint (an
+    out-of-scope skill is a typed tool error the run survives, surfaced
+    as a tool_call row/event). `tools: []` (an explicit no-tools
+    inventory) gets neither `karta_skill` nor `karta_read_file` — the
+    slice-0 invariant holds for engine extras. The `karta_` prefix is
+    RESERVED for engine tools and ENFORCED at the tool-plane boundary
+    (`withoutReserved`; the drop is reported once on the stream).
+  - In-run compaction is the constitution's thin bridge (`mw_compaction.go`),
+    NOT Eino's summarization middleware (gate G4 F1): the policy is
+    `internal/compaction` behind `domain.Compactor`, bound per run by
+    `SetCompactorFactory` (`compactorFor(provider, model)`); the bridge
+    converts state to `domain.Message` (tool calls rendered into the
+    transcript, token estimates attached), asks `ShouldCompact` against
+    `RunOptions.SummarizeAt`, and on a pass keeps the instruction, inserts
+    the ONE summary (previous summaries fold), and keeps the structured
+    tail verbatim — then emits one durable-first `compaction_triggered`
+    event with `CompactionStats`. A skipped/blocked pass is an
+    `agent_step` line, never a run failure. Which model summarizes is the
+    policy's business (`compaction.summarizer` overrides the run's model);
+    PreCompact hooks are honored by the policy but the daemon has no
+    `HookRunner` yet (G5 R2-1, recorded).
+  - Reasoning effort (D5): `reasoning_effort` on the agent spec rides
+    every ROOT model call of the run as the OpenAI-compatible
+    `reasoning_effort` option (`withEffort`, appended in `WrapModel` —
+    the one seam where call options are composed). The option is the
+    adapter's `effortOpt` field (`DefaultEffortOption`); tests substitute
+    a recorder on their own adapter. The summarizer's effort is the
+    policy's business (not forced — D5's `none` waits for the per-model
+    verification, task 2.4).
+  - Tests (`contextbudget_test.go`): cap + BYTE-range re-read of the
+    exact original + offload cleanup, reader/writer confinement (escapes,
+    symlinks, traversal, a canonical root), reserved names, skill on
+    demand (scoped, fallback, out-of-scope typed error, observable; none
+    without analysis or with `tools: []`), the compaction bridge (event +
+    stats, structured tail intact, a blocked hook), effort per agent,
+    `clampRange` edges.

@@ -119,6 +119,34 @@ config `compaction.tool_result_cap`), `skill` (+ sysprompt seam + config
 Ollama-cloud verification task). Gate: gpt-6.1-terra phase review + an
 operator measurement run recorded in the change.
 
+**Slice 1 — as built (after gate G4).** `RunOptions`
+(`SetRunOptions`) carries the daemon's knobs; `runOnce` composes the
+middlewares in hook order reduction → compaction bridge → persistence →
+budget → skill → usage (`contextbudget.go` is the glue). Reduction: byte
+cap, head + tail previews + path (Eino's `<persisted-output>` notice),
+the ORIGINAL bytes offloaded to a per-run temp dir (0700; writes confined,
+no symlink following) and removed with the run; `karta_read_file` serves
+BYTE ranges (the solar dumps were single 25–38 KB lines) confined to that
+root; `delegate_agent` and `karta_skill` exempt from both phases. Skills:
+the `karta_skill` tool over the registry's provisioned skills, scoped to
+`GoalRequest.Skills` (the intent wrapper sets it when the analysis ran and
+`skills.injection: progressive` on the ADK loop; nil = no tool, empty =
+all — decision D3); the tool is foreign to the user's plane, captured once
+(`runState.foreign`) and passed through to its own endpoint; `tools: []`
+gets no engine extras. In-run compaction is the constitution's thin
+bridge (`mw_compaction.go`) over the NEW kernel policy
+(`internal/compaction` behind `domain.Compactor`: instruction kept, old
+messages summarized by a `Summarizer` bound to the run's model or the cheap
+`compaction.summarizer`, previous summaries folded, the tail verbatim and
+token-bounded, never starting on a tool result; PreCompact hooks honored);
+each pass is one durable `compaction_triggered` event. Effort:
+`reasoning_effort` on the agent spec rides every root call via
+`WrapModel`; the builder seed declares `low` (once-per-home upgrade of
+byte-identical copies). Open for the operator: the Ollama-cloud
+`reasoning_effort` verification per pinned model (2.4), the solar
+measurement run (2.5), and setting `compaction.summarizer` in config.yaml
+(D4 — the shipped default is "the run's own model").
+
 **Slice 2 — delegation on the spine.** Per-agent AgentTools (or dispatch
 tool per D1) with the lifecycle/receipts decorator; `EmitInternalEvents`
 translation; child runs get the full middleware chain (compaction included);

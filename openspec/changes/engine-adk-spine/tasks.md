@@ -47,23 +47,41 @@
 
 ## 2. Slice 1 — the four pay-now middlewares
 
-- [ ] 2.1 `reduction` + ranged reads: truncation with offload Backend
-  (session-scoped), `compaction.tool_result_cap`, `offset`/`limit` on the
-  ward read tool. Verify: oversize results truncate head+pointer; ranged
-  re-read round-trips; existing wardtool tests.
-- [ ] 2.2 `skill` middleware + backend over `~/.zbot/skills/**` scoped to
-  the analyst's recommended skills; `skills.injection` config; sysprompt
-  stops composing bodies for engine runs (chat unchanged). Verify: skill
-  listed as a tool; body loads on call; `## Skills` absent from engine-run
-  prompts, present in chat.
-- [ ] 2.3 `summarization` for roots AND children; `compaction.summarizer`
-  override; timeline compaction events from the middleware's events.
-  Verify: over-threshold runs compress; compaction visible on the
-  timeline; children bounded.
-- [ ] 2.4 Reasoning effort: `reasoning_effort` frontmatter (strict decode)
-  → the model wrapper; verify Ollama cloud honors it on the openai-compat
-  endpoint (operator task; record the finding). Verify: decode tests;
-  the option reaches the wrapper.
+- [x] 2.1 `reduction` + ranged reads: byte cap (`compaction.tool_result_cap`,
+  default 12 KB) → `<persisted-output>` head + tail + path; offload to a
+  per-run temp dir (lines wrapped at 1000 bytes); `read_file` (offset/
+  limit) restricted to that root. `delegate_agent`/`skill` exempt. Verify:
+  `TestADKToolResultCapOffloadsAndRereads` (a 30 KB single-line dump;
+  durable row keeps the whole dump; offload removed with the run),
+  `TestADKReadFileRefusesPathsOutsideOffload`. (The ward `read` tool's
+  own ranged params were superseded: the cap offloads every oversized
+  result regardless of tool, and the reader serves all of them.)
+- [x] 2.2 `skill` middleware over the registry's provisioned skills,
+  scoped to `GoalRequest.Skills` (the wrapper sets it from the analysis
+  when `skills.injection: progressive` on the ADK loop; empty = all);
+  foreign-tool passthrough. Verify: `TestADKSkillToolLoadsOnDemand`
+  (scoped description, body on call, out-of-scope = typed tool error,
+  observable), `TestWrapperProgressiveSkills` (names not bodies; chat and
+  legacy unchanged).
+- [x] 2.3 In-run compaction for ROOT runs through the kernel policy —
+  `internal/compaction` behind `domain.Compactor` (gate G4 F1: the
+  constitution's Compaction Rule, not Eino's summarization middleware),
+  bridged by `mw_compaction.go`; budget `max_context_tokens − reserve`;
+  summarizer = `compaction.summarizer` (cheap, D4) or the run's model;
+  PreCompact hooks honored; each pass → one durable `compaction_triggered`
+  event with before/after stats. Verify: `compaction` package tests,
+  `TestADKInRunCompactionEmitsCompaction`, `TestADKInRunCompactionBlockedByHook`.
+- [ ] 2.3b CHILD runs get in-run compaction, progressive skills and the
+  effort when they move to the spine (slice 2) — children still run the
+  legacy loop today (gate G4 F5: recorded, not claimed).
+- [x] 2.4 Reasoning effort: `reasoning_effort` on the agent spec (strict,
+  per-file error; `low|medium|high|none`) rides every ROOT call via
+  `WrapModel` (children: slice 2); builder seed `low` with a
+  once-per-home upgrade. Verify: `TestAgentSpecReasoningEffort`,
+  `TestADKReasoningEffortRidesTheCalls`, `TestSeedEffortUpgrade`.
+  **Operator task remains**: confirm Ollama cloud honors `reasoning_effort`
+  per pinned model (docs say ≥ 0.31 does; 0.34.2 installed) and record the
+  completion-token drop on the builder path.
 - [ ] 2.5 Operator measurement run (solar scenario); record per-step
   numbers against §3a in this change. Phase gate: gpt-6.1-terra.
 

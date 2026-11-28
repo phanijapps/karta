@@ -84,6 +84,22 @@ type Adapter struct {
 	// hand-rolled runLoop) or LoopADK (runAgent). Both pass the
 	// conformance suite during the transition; config flips it.
 	loop string
+	// opts are the daemon-applied context-budget knobs (slice 1).
+	opts RunOptions
+	// compactorFor binds the kernel compaction policy to a run's model
+	// (nil = no in-run compaction). The adapter never holds the policy —
+	// the backend constitution's Compaction Rule.
+	compactorFor func(providerName, modelID string) domain.Compactor
+	// effortOpt is the option the usage wrapper appends for an agent's
+	// reasoning_effort (DefaultEffortOption; tests substitute a recorder).
+	effortOpt EffortOption
+}
+
+// SetCompactorFactory wires the in-run compaction policy
+// (internal/compaction) — the bridge (mw_compaction.go) asks it before
+// every model call once the context is over its budget.
+func (a *Adapter) SetCompactorFactory(f func(providerName, modelID string) domain.Compactor) {
+	a.compactorFor = f
 }
 
 // Engine run paths (`engine_loop`): the hand-rolled loop and the ADK spine.
@@ -113,7 +129,7 @@ const DefaultDepthCap = 1
 func New(provStore ProviderStore, st *store.Store, bus *eventbus.Bus, toolProv tools.Provider, snapFn func() registry.Snapshot) *Adapter {
 	return &Adapter{
 		provStore: provStore, st: st, bus: bus, toolProv: toolProv,
-		snapFn: snapFn, depthCap: DefaultDepthCap, loop: LoopLegacy,
+		snapFn: snapFn, depthCap: DefaultDepthCap, loop: LoopLegacy, effortOpt: DefaultEffortOption,
 		cancels: map[string]context.CancelFunc{},
 		models:  map[string]chatGenerator{},
 		idGen:   func() string { return fmt.Sprintf("evt-%d-%d", time.Now().UnixNano(), nextID()) },
@@ -169,6 +185,7 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 		}
 		in.toolAllow = spec.Tools
 		in.grant = spec.MaxDepth
+		in.reasoningEffort = spec.ReasoningEffort
 		if req.Model == "" && spec.Model != "" {
 			req.Model = spec.Model
 		}
@@ -214,6 +231,7 @@ func (a *Adapter) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 			in.systemPrompt = strings.TrimSpace(in.systemPrompt + "\n\n" + section)
 		}
 	}
+	in.skills = req.Skills // progressive skills: the analysis's recommendations (D3)
 	in.sessionID, in.execID, in.goal, in.token, in.prov = sessionID, rootExec, req.Goal, token, prov
 	events := make(chan domain.TimelineEvent, 64)
 	go a.run(runCtx, cancel, events, in)

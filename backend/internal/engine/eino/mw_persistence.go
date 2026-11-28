@@ -36,6 +36,9 @@ type persistenceMW struct {
 	in     runInput
 	st     *runState
 	emit   emitFunc
+	// extras are engine-provided tools outside the user's plane (the
+	// offload reader); they are offered and executed like the rest.
+	extras []tools.Tool
 }
 
 func (m *persistenceMW) AfterModelRewriteState(ctx context.Context, state *adk.ChatModelAgentState, _ *adk.ModelContext) (context.Context, *adk.ChatModelAgentState, error) {
@@ -64,17 +67,17 @@ func (m *persistenceMW) AfterModelRewriteState(ctx context.Context, state *adk.C
 // (legacy parity: the loop rebuilt its inventory per step). An endpoint
 // error never surfaces to the ADK, which would fail the run; the legacy
 // loop showed the model an "error: …" result instead.
-func (m *persistenceMW) WrapInvokableToolCall(_ context.Context, _ adk.InvokableToolCallEndpoint, tCtx *adk.ToolContext) (adk.InvokableToolCallEndpoint, error) {
-	return func(_ context.Context, argsJSON string, _ ...tool.Option) (string, error) {
-		return m.execute(tCtx.Name, argsJSON, tCtx.CallID), nil
+func (m *persistenceMW) WrapInvokableToolCall(_ context.Context, endpoint adk.InvokableToolCallEndpoint, tCtx *adk.ToolContext) (adk.InvokableToolCallEndpoint, error) {
+	return func(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+		return m.execute(ctx, tCtx.Name, argsJSON, tCtx.CallID, endpoint), nil
 	}, nil
 }
 
 // unknownHandler routes names the compiled node does not know (hallucinated,
 // or appeared mid-run) through the same live-inventory round.
 func (m *persistenceMW) unknownHandler() func(context.Context, string, string) (string, error) {
-	return func(_ context.Context, name, input string) (string, error) {
-		return m.execute(name, input, m.st.pendingID(name)), nil
+	return func(ctx context.Context, name, input string) (string, error) {
+		return m.execute(ctx, name, input, m.st.pendingID(name), nil), nil
 	}
 }
 
@@ -84,12 +87,19 @@ func (m *persistenceMW) unknownHandler() func(context.Context, string, string) (
 // its error as "error: …". Every outcome is recorded with the tracker
 // (the stuck kill's failing-call scoring) and surfaces as a tool_call
 // row + event, exactly like the legacy loop.
-func (m *persistenceMW) execute(name, argsJSON, callID string) string {
+func (m *persistenceMW) execute(ctx context.Context, name, argsJSON, callID string, endpoint adk.InvokableToolCallEndpoint) string {
 	var res tools.Result
-	if m.st.suppress {
+	switch {
+	case m.st.suppress:
 		res = tools.Result{Err: fmt.Errorf("%w: %q", ErrToolNotOffered, name)}
-	} else {
-		res = execOffered(m.ctx, m.a.offeredTools(m.ctx, m.events, m.in), name, argsJSON) // the LIVE plane (empty → not offered)
+	case endpoint != nil && m.st.foreign[name]:
+		// A middleware-injected tool (the skill middleware's `skill`) is not
+		// part of the user's plane: run its own endpoint. Its error (an
+		// unknown skill) becomes the model-facing text like any tool error.
+		out, err := endpoint(ctx, argsJSON)
+		res = tools.Result{Output: out, Err: err}
+	default:
+		res = execOffered(ctx, m.inventory(), name, argsJSON) // the LIVE plane (empty → not offered)
 	}
 	content, errText := res.Output, ""
 	if res.Err != nil {
@@ -98,6 +108,12 @@ func (m *persistenceMW) execute(name, argsJSON, callID string) string {
 	m.st.tracker.Record(name, argsJSON, errText)
 	m.emitToolCall(callID, name, content)
 	return content
+}
+
+// inventory is the executable plane at call time: the user's live tools
+// plus the engine's extras (the offload reader).
+func (m *persistenceMW) inventory() []tools.Tool {
+	return append(m.a.offeredTools(m.ctx, m.events, m.in), m.extras...)
 }
 
 func (m *persistenceMW) emitToolCall(callID, name, content string) {

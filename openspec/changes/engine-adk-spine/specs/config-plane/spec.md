@@ -8,8 +8,8 @@ default `adk` after the migration slice — `legacy` during the transition),
 `skills.injection` (`progressive` | `bodies`, default `progressive`), and
 under `compaction`: `summarizer` (optional qualified `provider/model` for
 in-run summaries; empty = the run's own model) and `tool_result_cap`
-(size in tokens; 0 = framework default). Unknown values SHALL hard-fail
-(strict decode).
+(size in BYTES; absent = 12 KB). Unknown values SHALL hard-fail (strict
+decode).
 
 #### Scenario: The run path is selectable
 - **WHEN** config sets `engine_loop: legacy`

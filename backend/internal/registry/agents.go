@@ -32,8 +32,31 @@ type AgentSpec struct {
 	// answer carries no tool calls (the guard against narrated tool use —
 	// delegation-truthfulness). Off unless declared.
 	RequireToolUse bool `yaml:"require_tool_use,omitempty"`
+	// ReasoningEffort is the thinking budget the engine passes to the
+	// model for this agent's runs (engine-adk-spine, decision D5): low,
+	// medium, high or none — the OpenAI-compatible `reasoning_effort`
+	// field, which Ollama ≥ 0.31 translates (`none` → thinking off). Empty
+	// = the provider's default. Mechanical agents (builders, the
+	// summarizer) declare low/none; judgement agents leave it unset.
+	ReasoningEffort string `yaml:"reasoning_effort,omitempty"`
 
 	Path string `yaml:"-"`
+}
+
+// Reasoning effort levels an agent may declare.
+const (
+	EffortLow    = "low"
+	EffortMedium = "medium"
+	EffortHigh   = "high"
+	EffortNone   = "none"
+)
+
+func validEffort(v string) bool {
+	switch v {
+	case "", EffortLow, EffortMedium, EffortHigh, EffortNone:
+		return true
+	}
+	return false
 }
 
 // loadAgents loads ~/.zbot/agents/*.yaml plus *.md files whose YAML
@@ -83,6 +106,10 @@ func loadAgents(snap *Snapshot, dir string, errs *[]LoadError) {
 		}
 		if spec.Name == "" {
 			addErr(errs, path, KindAgent, fmt.Errorf("agent name is required"))
+			continue
+		}
+		if !validEffort(spec.ReasoningEffort) {
+			addErr(errs, path, KindAgent, fmt.Errorf("reasoning_effort must be one of %s, %s, %s, %s (got %q)", EffortLow, EffortMedium, EffortHigh, EffortNone, spec.ReasoningEffort))
 			continue
 		}
 		spec.Path = path

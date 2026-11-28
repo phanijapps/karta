@@ -26,6 +26,12 @@ type runInput struct {
 	// requireToolUse (the agent's declaration): a first answer without
 	// tool calls is nudged once before it is accepted.
 	requireToolUse bool
+	// reasoningEffort (the agent's declaration, D5) rides every model call
+	// of this run on the ADK path ("" = the provider's default).
+	reasoningEffort string
+	// skills narrows the skill tool to the analysis's recommendations
+	// (nil/empty = every provisioned skill) — ADK path, progressive skills.
+	skills []string
 
 	// Ward hosting (slice 3): the session's sticky host; nil = wards
 	// off. Root runs get the ward tools; children get the file tools +

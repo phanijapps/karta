@@ -362,3 +362,34 @@ func TestAutoTitleFromAnalysis(t *testing.T) {
 		}
 	}
 }
+
+// Progressive skills (engine-adk-spine D3): on a spine run the prompt
+// NAMES the recommended, provisioned skills instead of inlining their
+// bodies, points the model at the skill tool, and passes the names to the
+// engine (GoalRequest.Skills). The bodies path is untouched (legacy loop,
+// or skills.injection: bodies).
+func TestWrapperProgressiveSkills(t *testing.T) {
+	snap := wrapSnap()
+	fc := &fakeCompleter{responses: []string{wrapperContract}}
+	w := newWrapper(fc, snap, nil)
+	w.ProgressiveSkills = true
+	if _, err := w.RunGoal(context.Background(), domain.GoalRequest{SessionID: "s1", Goal: "research amd vs intel"}); err != nil {
+		t.Fatalf("RunGoal: %v", err)
+	}
+	eng := w.Engine.(*fakeEngine)
+	eng.mu.Lock()
+	req := eng.lastReq
+	eng.mu.Unlock()
+	sp := req.SystemPrompt
+	for _, want := range []string{"## Skills", "clean-code", "skill(name)", "Skills one call away"} {
+		if !strings.Contains(sp, want) {
+			t.Fatalf("progressive prompt missing %q:\n%s", want, sp)
+		}
+	}
+	if strings.Contains(sp, "BODY-OF-CLEAN-CODE") || strings.Contains(sp, "Skills provided in context") {
+		t.Fatalf("progressive prompt must not inline bodies or claim they are provided:\n%s", sp)
+	}
+	if len(req.Skills) != 1 || req.Skills[0] != "clean-code" {
+		t.Fatalf("the engine must receive the provisioned recommendations: %v", req.Skills)
+	}
+}

@@ -1,7 +1,7 @@
 // The usage middleware (engine-adk-spine): WrapModel around every model
-// call — per-call usage onto the run totals (the legacy loop read it off
-// each completion). Slice 1 adds the per-agent reasoning effort option
-// here: this is the one seam where a call's options are composed.
+// call — the per-agent reasoning effort option goes on the call (D5), the
+// per-call usage comes back onto the run totals (the legacy loop read it
+// off each completion).
 
 package eino
 
@@ -17,11 +17,15 @@ import (
 
 type usageMW struct {
 	adk.BaseChatModelAgentMiddleware
-	st *runState
+	st     *runState
+	effort string       // the agent's reasoning_effort ("" = provider default)
+	opt    EffortOption // how it rides a call (the adapter's)
 }
 
 func (m *usageMW) WrapModel(_ context.Context, inner model.BaseModel[*schema.Message], _ *adk.ModelContext) (model.BaseModel[*schema.Message], error) {
-	return &usageModel{BaseModel: inner, st: m.st}, nil
+	// Slice 1 (D5): this is the one seam where a call's options are composed
+	// — the effort rides every model call of the run, the usage comes back.
+	return &usageModel{BaseModel: withEffort(inner, m.effort, m.opt), st: m.st}, nil
 }
 
 type usageModel struct {

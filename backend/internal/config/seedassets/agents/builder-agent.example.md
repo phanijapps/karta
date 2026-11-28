@@ -5,6 +5,7 @@ display_name: Code Agent
 model: ""
 max_depth: 0
 require_tool_use: true  # a first answer without tools is nudged once (build, don't narrate)
+reasoning_effort: low  # mechanical work — write, run, verify; think less (solar run: 18k reasoning tokens for 127 lines)
 ---
 # Code Agent
 

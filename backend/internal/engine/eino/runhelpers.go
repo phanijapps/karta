@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
@@ -103,12 +104,20 @@ func (a *Adapter) emitToolCall(ctx context.Context, events chan domain.TimelineE
 // governed by the DEPTH grant, not the allowlist: an orchestrator with
 // tools:[] still delegates.
 func (a *Adapter) offeredTools(ctx context.Context, events chan domain.TimelineEvent, in runInput) []tools.Tool {
+	kept, _ := a.inventory(ctx, events, in)
+	return kept
+}
+
+// inventory assembles the plane ONCE and splits it: tools kept, and the
+// reserved-prefixed user tools dropped (the ADK driver names the drops on
+// the stream; the legacy loop drops silently).
+func (a *Adapter) inventory(ctx context.Context, events chan domain.TimelineEvent, in runInput) (kept, dropped []tools.Tool) {
 	var offered []tools.Tool
 	if in.toolAllow != nil && len(in.toolAllow) == 0 {
 		if in.depth < in.grant && in.depth < a.depthCap && a.snapFn != nil {
 			offered = append(offered, a.delegateTool(ctx, events, in))
 		}
-		return offered
+		return offered, nil
 	}
 	offered = engine.FilterTools(a.toolProv, in.toolAllow)
 	offered = append(offered, filterWardTools(wardToolSet(in), in.toolAllow)...)
@@ -118,5 +127,14 @@ func (a *Adapter) offeredTools(ctx context.Context, events chan domain.TimelineE
 	if a.mcpTools != nil {
 		offered = append(offered, filterWardTools(a.mcpTools(), in.toolAllow)...)
 	}
-	return offered
+	// The `karta_` prefix is RESERVED for engine tools (they would shadow
+	// an engine tool or break a notice's pointer).
+	for _, t := range offered {
+		if strings.HasPrefix(t.Def().Name, reservedToolPrefix) {
+			dropped = append(dropped, t)
+			continue
+		}
+		kept = append(kept, t)
+	}
+	return kept, dropped
 }

@@ -449,3 +449,47 @@ func TestSeedHonestyUpgrade(t *testing.T) {
 		t.Fatal("post-marker deletion must stick")
 	}
 }
+
+// The reasoning-effort upgrade (engine-adk-spine D5): a home whose builder
+// seed is still the post-honesty seed byte-for-byte gets
+// `reasoning_effort: low` ONCE; a user-edited copy is never touched; the
+// marker drops so the upgrade never repeats.
+func TestSeedEffortUpgrade(t *testing.T) {
+	home, paths := tempHome(t)
+	if err := os.MkdirAll(paths.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []string{exampleRosterMarker, personaSeedMarker, personaSeedV2Marker, agentHonestySeedMarker} {
+		if err := os.WriteFile(filepath.Join(home, m), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	builder := filepath.Join(paths.AgentsDir, "builder-agent.example.md")
+	if err := os.WriteFile(builder, []byte(agentEffortV2Bodies["builder-agent.example.md"]), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Bootstrap(context.Background(), paths); err != nil {
+		t.Fatalf("upgrade Bootstrap: %v", err)
+	}
+	got, _ := os.ReadFile(builder)
+	if !strings.Contains(string(got), "reasoning_effort: low") || !strings.Contains(string(got), "## Honesty contract") {
+		t.Fatalf("the unmodified builder seed must gain the effort and keep the honesty contract:\n%s", got)
+	}
+	if _, err := os.Stat(filepath.Join(home, agentEffortSeedMarker)); err != nil {
+		t.Fatalf("effort marker missing: %v", err)
+	}
+	edited := string(got) + "\nmy own note\n"
+	if err := os.WriteFile(builder, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(home, agentEffortSeedMarker)); err != nil {
+		t.Fatal(err)
+	}
+	if err := Bootstrap(context.Background(), paths); err != nil {
+		t.Fatal(err)
+	}
+	got2, _ := os.ReadFile(builder)
+	if string(got2) != edited {
+		t.Fatalf("a user-edited builder seed must be untouched by the effort upgrade:\n%s", got2)
+	}
+}

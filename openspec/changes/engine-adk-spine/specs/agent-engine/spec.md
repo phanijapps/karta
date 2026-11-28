@@ -76,11 +76,14 @@ be visible as timeline events. Agents MAY declare a reasoning effort the
 engine passes to the model call.
 
 #### Scenario: An oversized tool result is capped
-- **WHEN** a tool returns content over the configured cap
-- **THEN** the model-facing history keeps the head plus a pointer, the full content is retrievable by a ranged read, and the durable rows keep the original content
+- **WHEN** a tool returns content over the configured byte cap on the ADK path
+- **THEN** the model-facing history keeps a head-and-tail preview plus a pointer, the original bytes are retrievable by a ranged read of the offload, the durable rows keep the original content, and the delegate fold-back and loaded skill bodies are never capped
 #### Scenario: Skills load on demand
-- **WHEN** an engine run starts with skills provisioned
-- **THEN** the run's prompts carry the skills' names and descriptions (not the bodies), and a skill body enters context only when the model loads it
+- **WHEN** an ADK run starts with progressive injection and an analysis that recommended provisioned skills
+- **THEN** the run's prompt carries the skills' names (not the bodies), the skill tool offers exactly those, and a body enters context only when the model loads it; an agent declaring `tools: []` is offered neither the skill tool nor the offload reader
+#### Scenario: In-run compaction is the kernel policy
+- **WHEN** an ADK run's context exceeds the compaction budget
+- **THEN** the engine asks the `domain.Compactor` policy (never its own summarization logic), keeps the instruction and the structured recent tail verbatim, and emits a `compaction_triggered` event with before/after stats
 #### Scenario: Children compact in-run
 - **WHEN** a delegated child's context exceeds the summarization trigger
 - **THEN** its history is compressed mid-run and the compaction is observable on the timeline

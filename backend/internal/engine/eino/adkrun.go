@@ -12,8 +12,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/adk/middlewares/reduction"
+	"github.com/cloudwego/eino/adk/middlewares/skill"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
@@ -37,12 +41,34 @@ func (a *Adapter) runAgent(ctx context.Context, events chan domain.TimelineEvent
 		_ = a.st.FinishExecution(in.execID, "failed", err.Error(), 0, 0)
 		return "", err
 	}
-	offered := a.offeredTools(ctx, events, in)
+	offered, dropped := a.inventory(ctx, events, in)
+	if len(dropped) > 0 {
+		names := make([]string, 0, len(dropped))
+		for _, t := range dropped {
+			names = append(names, t.Def().Name)
+		}
+		s.emit(domain.EventAgentStep, "engine: tools with the reserved "+reservedToolPrefix+" prefix are not offered: "+strings.Join(names, ", "))
+	}
 	st := newRunState(in.maxSteps)
 	base := baseModelOf(s.chatModel)
+	// One offload directory per run (the continuation shares it): oversized
+	// tool results live here for the run's duration only — the durable rows
+	// keep the originals — and go with it.
+	var offload *offloadRoot
+	if a.opts.ToolResultCap > 0 && (in.toolAllow == nil || len(in.toolAllow) > 0) {
+		if o, err := newOffloadRoot(); err == nil {
+			offload = o
+			defer func() {
+				o.close()
+				_ = os.RemoveAll(o.dir) //nolint:errcheck // best-effort cleanup of a temp dir
+			}()
+		} else {
+			s.emit(domain.EventAgentStep, "engine: tool-result offload unavailable (results stay uncapped): "+err.Error())
+		}
+	}
 	input := seed
 	for attempt := 0; ; attempt++ {
-		final, err := a.runOnce(ctx, s, in, base, input, summary, st, offered)
+		final, err := a.runOnce(ctx, s, in, base, input, summary, st, offered, offload)
 		if err != nil {
 			return "", err // the failure path already described + finished itself
 		}
@@ -81,11 +107,71 @@ func (a *Adapter) runAgent(ctx context.Context, events chan domain.TimelineEvent
 // runOnce drives one agent run end to end and returns the terminal
 // (tool-free) assistant message, or an error after describing the
 // failure on the stream and finishing the execution.
-func (a *Adapter) runOnce(ctx context.Context, s *runSetup, in runInput, base model.BaseModel[*schema.Message], input []*schema.Message, summary string, st *runState, offered []tools.Tool) (*schema.Message, error) {
+func (a *Adapter) runOnce(ctx context.Context, s *runSetup, in runInput, base model.BaseModel[*schema.Message], input []*schema.Message, summary string, st *runState, offered []tools.Tool, offload *offloadRoot) (*schema.Message, error) {
+	// The continuation run inherits the REMAINING iteration budget (the
+	// legacy ceiling counts every model call of the run, nudged or not).
+	remaining := st.steps - st.calls
+	if remaining <= 0 {
+		return nil, a.failRun(ctx, s, in, st, adk.ErrExceedMaxIterations)
+	}
+	// Slice 1 — the context-budget middlewares (operator decisions D3/D4/D5)
+	// and the engine-provided tools they need on the plane.
+	// `tools: []` is an explicit no-tools inventory (slice 0's invariant):
+	// no engine extras either — nothing to cap, nothing to load.
+	noTools := in.toolAllow != nil && len(in.toolAllow) == 0
+	var extras []tools.Tool
+	var budgeting []adk.ChatModelAgentMiddleware
+	if offload != nil && !noTools {
+		extras = append(extras, readFileTool{offload: offload})
+		red, err := reduction.New(ctx, &reduction.Config{
+			Backend:           offloadBackend{offload: offload},
+			ReadFileToolName:  readFileToolName,
+			RootDir:           offload.dir,
+			MaxLengthForTrunc: a.opts.ToolResultCap,
+			MaxTokensForClear: int64(a.summarizeAt()), // tool results alone never fill the window
+			// The delegate fold-back carries the deliverable receipts at its
+			// END (a head-only preview would cut them); a loaded skill body is
+			// exactly what the model asked for. Exempt from BOTH phases.
+			TruncExcludeTools: []string{"delegate_agent", skillToolName},
+			ClearExcludeTools: []string{"delegate_agent", skillToolName},
+		})
+		if err != nil {
+			return nil, a.failRun(ctx, s, in, st, fmt.Errorf("reduction middleware: %w", err))
+		}
+		budgeting = append(budgeting, red)
+	}
 	budget := &budgetMW{st: st, emit: s.emit}
-	persist := &persistenceMW{a: a, ctx: ctx, events: s.events, in: in, st: st, emit: s.emit}
-	usage := &usageMW{st: st}
-	toolsForNode := einoTools(offered)
+	persist := &persistenceMW{a: a, ctx: ctx, events: s.events, in: in, st: st, emit: s.emit, extras: extras}
+	usage := &usageMW{st: st, effort: in.reasoningEffort, opt: a.effortOpt}
+	// In-run compaction: the thin bridge over the kernel policy
+	// (internal/compaction behind domain.Compactor — the constitution's
+	// Compaction Rule), bound to the run's model for the summarizer.
+	if a.compactorFor != nil {
+		budgeting = append(budgeting, &compactionMW{
+			a: a, ctx: ctx, events: s.events, in: in, emit: s.emit,
+			compactor: a.compactorFor(in.providerName, in.modelID),
+			budget:    domain.TokenBudget{MaxTotalTokens: a.summarizeAt()},
+		})
+	}
+	// Hook order = composition order: reduction shrinks tool results, then
+	// compaction counts what is left, the persistence and budget hooks see
+	// the final state (the budget's nudge must stay the last message).
+	handlers := append(budgeting, persist, budget)
+	// Skills on demand only when the analysis RAN: a nil list means no
+	// analysis (bypass/failure) — no skill tool, as the bodies path had no
+	// skills section; a non-empty-or-empty-but-non-nil list offers the
+	// recommendations (empty = every provisioned skill, decision D3).
+	if a.opts.ProgressiveSkills && a.snapFn != nil && !noTools && in.skills != nil {
+		name := skillToolName
+		sk, err := skill.NewMiddleware(ctx, &skill.Config{Backend: &scopedSkillBackend{snap: a.snapFn, allow: in.skills}, SkillToolName: &name})
+		if err != nil {
+			return nil, a.failRun(ctx, s, in, st, fmt.Errorf("skill middleware: %w", err))
+		}
+		handlers = append(handlers, sk) // injects the `skill` tool at BeforeAgent (foreign to the plane: passed through)
+	}
+	handlers = append(handlers, usage)
+
+	toolsForNode := einoTools(append(append([]tools.Tool{}, offered...), extras...))
 	if len(toolsForNode) == 0 {
 		toolsForNode = []tool.BaseTool{placeholderTool{}} // see placeholderTool
 	}
@@ -96,24 +182,40 @@ func (a *Adapter) runOnce(ctx context.Context, s *runSetup, in runInput, base mo
 	// nothing). The compiled node's tools are only name slots: every call
 	// is executed against the live inventory (persistenceMW.execute), and
 	// names that appeared since the node was compiled reach the same path
-	// through the unknown-tool handler.
+	// through the unknown-tool handler. Tool infos the middlewares add
+	// themselves (the skill tool) are kept, not replaced.
+	compiled := map[string]bool{}
+	for _, t := range toolsForNode {
+		if info, err := t.Info(ctx); err == nil {
+			compiled[info.Name] = true
+		}
+	}
 	budget.refresh = func(state *adk.ChatModelAgentState) {
 		if st.suppress {
 			return
 		}
+		if st.foreign == nil {
+			// First call: whatever the middlewares added beyond the compiled
+			// inventory (the skill tool) is theirs — kept, never re-derived.
+			st.foreign = map[string]bool{}
+			for _, info := range state.ToolInfos {
+				if info != nil && !compiled[info.Name] {
+					st.foreign[info.Name] = true
+				}
+			}
+		}
 		var infos []*schema.ToolInfo
-		for _, t := range einoTools(a.offeredTools(ctx, s.events, in)) {
+		for _, t := range einoTools(persist.inventory()) {
 			if info, err := t.Info(ctx); err == nil {
 				infos = append(infos, info)
 			}
 		}
+		for _, info := range state.ToolInfos {
+			if info != nil && st.foreign[info.Name] {
+				infos = append(infos, info)
+			}
+		}
 		state.ToolInfos = infos
-	}
-	// The continuation run inherits the REMAINING iteration budget (the
-	// legacy ceiling counts every model call of the run, nudged or not).
-	remaining := st.steps - st.calls
-	if remaining <= 0 {
-		return nil, a.failRun(ctx, s, in, st, adk.ErrExceedMaxIterations)
 	}
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          in.agent(),
@@ -127,7 +229,7 @@ func (a *Adapter) runOnce(ctx context.Context, s *runSetup, in runInput, base mo
 			UnknownToolsHandler: persist.unknownHandler(),
 		}},
 		MaxIterations: remaining, // the run's absolute ceiling, less the calls already made
-		Handlers:      []adk.ChatModelAgentMiddleware{budget, persist, usage},
+		Handlers:      handlers,
 	})
 	if err != nil {
 		return nil, a.failRun(ctx, s, in, st, err)
@@ -246,4 +348,27 @@ func rowsToMessages(rows []store.Message) []*schema.Message {
 		}
 	}
 	return msgs
+}
+
+// summarizeAt is the in-run summarization trigger (0 = off).
+func (a *Adapter) summarizeAt() int { return a.opts.SummarizeAt }
+
+// emitCompaction persists, publishes and streams a compaction_triggered
+// event with its stats (attempted-durable-first, the run's attribution).
+func (a *Adapter) emitCompaction(ctx context.Context, events chan domain.TimelineEvent, in runInput, stats *domain.CompactionStats) {
+	text := fmt.Sprintf("context summarized in-run (chars/4 estimate): %d → %d tokens (%d → %d messages)", stats.TokensBefore, stats.TokensAfter, stats.MessagesBefore, stats.MessagesAfter)
+	chanKind, kind := domain.EventCompactionTriggered, domain.EventCompactionTriggered
+	if in.isChild {
+		chanKind = domain.EventDelegation
+	}
+	evt := domain.TimelineEvent{ID: a.idGen(), SessionID: in.sessionID, ExecutionID: in.execID, Kind: chanKind, Text: text, Agent: in.agent(), Compaction: stats}
+	payload, _ := json.Marshal(map[string]any{"text": text, "agent": in.agent(), "compaction": stats})
+	_ = a.st.AppendEvent(store.Event{ID: evt.ID, SessionID: in.sessionID, ExecutionID: in.execID, Kind: string(kind), Payload: string(payload)}) //nolint:errcheck // attempted-durable-first (F-15 posture)
+	if a.bus != nil {
+		_ = a.bus.Publish(context.Background(), evt) //nolint:errcheck // fire-and-forget emit (F-15) // ctx-ok: F-15
+	}
+	select {
+	case events <- evt:
+	case <-ctx.Done():
+	}
 }

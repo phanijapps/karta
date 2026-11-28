@@ -149,6 +149,7 @@ func (d delegateTool) Exec(_ context.Context, argsJSON string) tools.Result {
 		systemPrompt: spec.SystemPrompt, toolAllow: spec.Tools,
 		agentName: spec.Name, depth: d.parent.depth + 1,
 		grant: spec.MaxDepth, isChild: true, requireToolUse: spec.RequireToolUse,
+		reasoningEffort: spec.ReasoningEffort, skills: d.parent.skills,
 		wardHost: d.parent.wardHost, // read-only inheritance: children act inside the ward (file tools), structural stays root-only
 	}
 	// A hosted child executes as the ward's agent too: the same

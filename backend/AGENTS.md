@@ -17,9 +17,13 @@ its `eino-ext` modules). Every other package depends exclusively on the
 Compaction logic lives in `internal/compaction/` and implements
 `domain.Compactor` (`ShouldCompact`, `Compact`). It operates purely on
 `domain.Message` and `domain.TokenBudget`. It is NEVER hardcoded inside an
-engine adapter; engines integrate it via a thin middleware adapter (Eino:
-`ChatModelAgentMiddleware` `BeforeModel` hook) that fires `PreCompact` hooks
-and emits a `CompactionTriggered` event (tokens before/after, strategy).
+engine adapter — including a framework's own summarization middleware
+(engine-adk-spine G4); engines integrate it via a thin middleware adapter
+(Eino: `internal/engine/eino/mw_compaction.go`, a `ChatModelAgentMiddleware`
+`BeforeModel` hook) that leaves the policy to the service (which fires
+`PreCompact` hooks) and emits a `CompactionTriggered` event (tokens
+before/after, strategy). The daemon wires the policy's summarizer model
+(`compaction.summarizer`); adapters only bind it to the run's model.
 
 ## Downward Dependency Graph
 
@@ -88,4 +92,7 @@ name their owning follow-up, never left as silent comments.
   hot-reload; zero hardcoded agents, prompts, skills, hooks, or MCPs.
 - Hook execution (`internal/hooks/`, implementing `domain.HookRunner`) follows
   the exit-code contract: 0 allow, 2 block (stderr → agent as recoverable
-  error), other non-zero warn-and-continue.
+  error), other non-zero warn-and-continue. STATUS: the runner is not
+  implemented yet — manifests are validated (`registry/hooks.go`) and the
+  seams accept a runner (`compaction.Service.Hooks`), but nothing executes
+  hooks today (engine-adk-spine G5 R2-1; follow-up: hook-runner).

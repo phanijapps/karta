@@ -55,6 +55,12 @@ func seedExamples(ctx context.Context, paths Paths) error {
 			return err
 		}
 	}
+	// The reasoning-effort upgrade of unmodified builder seeds (D5).
+	if !markerExists(paths.Home, agentEffortSeedMarker) {
+		if err := upgradeAgentSeedsEffort(ctx, paths); err != nil {
+			return err
+		}
+	}
 	// Agents+skills ride the roster marker (seed-operator-roster):
 	// one marker written after BOTH walks, so the pair seeds as a unit.
 	if markerExists(paths.Home, exampleRosterMarker) {
@@ -155,14 +161,48 @@ func mustReadSeedV1(path string) string {
 	return string(raw)
 }
 
+const agentEffortSeedMarker = ".agent-seeds-effort"
+
+// agentEffortV2FS embeds the pre-effort builder seed (the exact bytes the
+// honesty upgrade wrote) for the byte-identical comparison.
+//
+//go:embed seedassets/agents_v2/builder-agent.example.md
+var agentEffortV2FS embed.FS
+
+var agentEffortV2Bodies = map[string]string{
+	"builder-agent.example.md": mustReadSeedV2("seedassets/agents_v2/builder-agent.example.md"),
+}
+
+func mustReadSeedV2(path string) string {
+	raw, err := agentEffortV2FS.ReadFile(path)
+	if err != nil {
+		panic("config: embedded pre-effort agent seed missing: " + err.Error())
+	}
+	return string(raw)
+}
+
+// upgradeAgentSeedsEffort replaces unmodified pre-effort builder seeds
+// with the reasoning_effort: low seed (engine-adk-spine, decision D5),
+// once per home.
+func upgradeAgentSeedsEffort(ctx context.Context, paths Paths) error {
+	return upgradeAgentSeeds(ctx, paths, agentEffortV2Bodies, agentEffortSeedMarker)
+}
+
 // upgradeAgentSeedsHonesty replaces unmodified pre-honesty research and
 // builder seeds with the honesty-contract seeds, crash-atomically
 // (temp + rename), once per home.
 func upgradeAgentSeedsHonesty(ctx context.Context, paths Paths) error {
+	return upgradeAgentSeeds(ctx, paths, agentHonestyV1Bodies, agentHonestySeedMarker)
+}
+
+// upgradeAgentSeeds rewrites every installed copy that still matches its
+// embedded previous body (user-modified copies are untouched), then drops
+// the marker — once per home.
+func upgradeAgentSeeds(ctx context.Context, paths Paths, previous map[string]string, marker string) error {
 	if paths.AgentsDir == "" {
 		return nil
 	}
-	for name, oldBody := range agentHonestyV1Bodies {
+	for name, oldBody := range previous {
 		dst := filepath.Join(paths.AgentsDir, name)
 		raw, err := os.ReadFile(dst)
 		if os.IsNotExist(err) {
@@ -182,7 +222,7 @@ func upgradeAgentSeedsHonesty(ctx context.Context, paths Paths) error {
 			return err
 		}
 	}
-	return dropMarker(filepath.Join(paths.Home, agentHonestySeedMarker))
+	return dropMarker(filepath.Join(paths.Home, marker))
 }
 
 // replaceFileAtomically writes body to a temp file beside dst and

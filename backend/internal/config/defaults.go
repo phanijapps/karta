@@ -30,7 +30,8 @@ func Default() Config {
 		EngineLoop:   LoopLegacy,
 		Delegation:   DelegationConfig{MaxDepth: DefaultDelegationMaxDepth},
 		Server:       ServerConfig{Address: "127.0.0.1:8787"},
-		Compaction:   CompactionConfig{MaxContextTokens: 128000, ReserveOutputTokens: 8192},
+		Compaction:   CompactionConfig{MaxContextTokens: 128000, ReserveOutputTokens: 8192, ToolResultCap: DefaultToolResultCap},
+		Skills:       SkillsConfig{Injection: SkillsProgressive},
 		Wards:        WardsConfig{VaultRoot: ""}, // empty = OS-aware ~/Documents/wards (wards.ResolveVaultRoot)
 		SystemPrompt: SystemPromptConfig{Role: "role", Soul: "soul", OS: "auto", Tools: "tools", Custom: []string{"research-protocol"}},
 		Intent:       IntentConfig{Enabled: boolPtrLocal(true)},

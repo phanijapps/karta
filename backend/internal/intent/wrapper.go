@@ -125,6 +125,12 @@ type Wrapper struct {
 	Wards    WardIndex
 	RecallFn Recall
 	Cfg      Config
+	// ProgressiveSkills: the engine offers the recommended skills through
+	// its `skill` tool (ADK spine, skills.injection: progressive) — the
+	// prompt names them instead of inlining their bodies, and the names
+	// ride GoalRequest.Skills. False (legacy loop, or skills.injection:
+	// bodies) keeps the full SKILL.md bodies in the prompt.
+	ProgressiveSkills bool
 }
 
 // RunGoal runs the middleware then the engine, prepending the analysis
@@ -209,7 +215,7 @@ func (w *Wrapper) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 	}
 
 	// 4) Run with the budget + composed prompt.
-	events, err := w.Engine.RunGoal(ctx, domain.GoalRequest{
+	runReq := domain.GoalRequest{
 		SessionID:    req.SessionID,
 		Goal:         req.Goal,
 		Agent:        req.Agent,
@@ -217,7 +223,14 @@ func (w *Wrapper) RunGoal(ctx context.Context, req domain.GoalRequest) (<-chan d
 		Context:      req.Context,
 		MaxSteps:     budget,
 		SystemPrompt: systemPrompt,
-	})
+	}
+	if w.ProgressiveSkills && analysis.PrimaryIntent != "" {
+		// The skill tool offers exactly the recommended (and provisioned)
+		// skills — decision D3; an analysis with no recommendation offers
+		// every provisioned skill (the engine's empty-list rule).
+		runReq.Skills = w.provisionedSkills(analysis.RecommendedSkills)
+	}
+	events, err := w.Engine.RunGoal(ctx, runReq)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +368,11 @@ func (w *Wrapper) composePrompt(ctx context.Context, goal, persona string, a dom
 		}
 	}
 	if a.PrimaryIntent != "" {
-		if s := sysprompt.TaskAnalysis(a); s != "" {
+		taskAnalysis := sysprompt.TaskAnalysis
+		if w.ProgressiveSkills {
+			taskAnalysis = sysprompt.TaskAnalysisProgressive
+		}
+		if s := taskAnalysis(a); s != "" {
 			b.WriteString("\n\n" + s)
 		}
 		// The ward recommendation is ACTIONABLE: instruct the root to
@@ -372,8 +389,14 @@ func (w *Wrapper) composePrompt(ctx context.Context, goal, persona string, a dom
 			}
 			fmt.Fprintf(&b, "\nWard step: call ward_create(name=%q, archetype=%q) to host this run in a new ward.\n", a.WardRecommendation.WardName, arch)
 		}
-		if s := sysprompt.Skills(w.skillBodies(a.RecommendedSkills)); s != "" {
-			b.WriteString("\n\n" + s)
+		var skillsSection string
+		if w.ProgressiveSkills {
+			skillsSection = sysprompt.SkillsProgressive(w.provisionedSkills(a.RecommendedSkills))
+		} else {
+			skillsSection = sysprompt.Skills(w.skillBodies(a.RecommendedSkills))
+		}
+		if skillsSection != "" {
+			b.WriteString("\n\n" + skillsSection)
 		}
 	}
 	_ = budget
@@ -382,6 +405,19 @@ func (w *Wrapper) composePrompt(ctx context.Context, goal, persona string, a dom
 
 // skillBodies loads the validated recommended skills' bodies from the
 // registry (runtime provisioning; no load_skill tool).
+// provisionedSkills filters the analysis's skill names to the provisioned
+// ones (an unknown recommendation is dropped, like the bodies path does).
+func (w *Wrapper) provisionedSkills(names []string) []string {
+	snap := w.snapshot()
+	out := []string{} // non-nil: "the analysis ran" (an empty list offers every provisioned skill)
+	for _, n := range names {
+		if _, ok := snap.Skills[n]; ok {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 func (w *Wrapper) skillBodies(names []string) map[string]string {
 	if len(names) == 0 {
 		return nil

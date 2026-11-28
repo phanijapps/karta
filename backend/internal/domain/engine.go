@@ -42,6 +42,11 @@ type GoalRequest struct {
 	// it is daemon-only wiring (the intent middleware's composed
 	// prompt) — never client input, never contract-visible.
 	SystemPrompt string `json:"-"`
+	// Skills names the provisioned skills the analysis recommended for
+	// this run — the ones the engine's `skill` tool offers on the ADK
+	// spine (progressive injection, engine-adk-spine D3). json:"-" for
+	// the same reason as SystemPrompt; empty = every provisioned skill.
+	Skills []string `json:"-"`
 }
 
 // UserInput is a user turn delivered to a waiting session.

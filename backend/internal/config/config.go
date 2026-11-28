@@ -27,6 +27,7 @@ type Config struct {
 	SystemPrompt SystemPromptConfig `yaml:"system_prompt"`
 	Intent       IntentConfig       `yaml:"intent_analysis"`
 	Delegation   DelegationConfig   `yaml:"delegation"`
+	Skills       SkillsConfig       `yaml:"skills"`
 }
 
 // SystemPromptConfig selects the composed system prompt's static
@@ -120,6 +121,10 @@ const (
 type CompactionConfig struct {
 	MaxContextTokens    int `yaml:"max_context_tokens"`
 	ReserveOutputTokens int `yaml:"reserve_output_tokens"`
+	// Summarizer and ToolResultCap: the in-run context budget
+	// (context_budget.go).
+	Summarizer    string `yaml:"summarizer,omitempty"`
+	ToolResultCap int    `yaml:"tool_result_cap,omitempty"`
 }
 
 // WardsConfig locates the ward vault. The vault is USER DATA and lives
@@ -291,6 +296,9 @@ func Load(paths Paths) (Config, error) {
 		cfg.EngineLoop = LoopLegacy // absent key: the transition default
 	} else if cfg.EngineLoop != LoopLegacy && cfg.EngineLoop != LoopADK {
 		return Config{}, fmt.Errorf("config: %s: engine_loop must be one of %q, %q (got %q)", paths.ConfigFile, LoopADK, LoopLegacy, cfg.EngineLoop)
+	}
+	if err := applyContextBudgetDefaults(&cfg, paths.ConfigFile); err != nil {
+		return Config{}, err
 	}
 	if cfg.Delegation.MaxDepth == 0 {
 		cfg.Delegation.MaxDepth = DefaultDelegationMaxDepth // absent key: the hold

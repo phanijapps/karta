@@ -49,3 +49,12 @@ in the dependency graph (nothing here imports registry/eventbus/engine).
   runs first in `seedExamples`): homes already marked by the roster
   change receive it on upgrade exactly once; afterwards edits and
   deletions stick like every other seed.
+
+- The context budget knobs live in `context_budget.go` (engine-adk-spine
+  slice 1): `skills.injection` (`progressive` default | `bodies`),
+  `compaction.tool_result_cap` (bytes, default 12 KB), and
+  `compaction.summarizer` (optional provider/model; empty = the run's own
+  model). Absent keys default; unknown values fail loudly. The builder
+  seed carries `reasoning_effort: low` and upgrades once per home from
+  its byte-identical post-honesty copy (`.agent-seeds-effort`;
+  `upgradeAgentSeeds` is the shared once-per-home rewrite).
