@@ -137,4 +137,7 @@ Operator: ______________________  Date: __________
     (operator, 2026-11-27: "I know 2 hasn't been implemented")
 - [x] Decision 3 (D4): `compaction.summarizer: ollama/glm-5.3-flash:cloud`
     set in config.yaml (operator: "I am fine with 3"); daemon reloaded
-- [ ] Archive approved → `openspec archive -y engine-adk-spine` + scenario audit
+- [x] Archive approved (operator: "go for it", 2026-11-27) → archived as
+      `2026-11-27-engine-adk-spine`; scenario audit PASS (26→38, 25→27,
+      39→43, 35→38 headers; every original requirement/scenario kept;
+      6 requirements added; `openspec validate --all` 36/36)
